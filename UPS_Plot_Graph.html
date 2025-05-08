@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เว็บแอปคำนวณ UPS และเครื่องมือเสริม</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif; /* Or a Thai font like 'Sarabun' */
+        }
+        #runtimeChartContainer {
+            position: relative;
+            height: 50vh;
+            width: 100%;
+            max-width: 800px;
+            margin: 1.5rem auto;
+        }
+        canvas {
+            display: block;
+            box-sizing: border-box;
+            height: 100%;
+            width: 100%;
+        }
+        .message-box {
+            padding: 1rem;
+            margin-top: 1rem;
+            border-radius: 0.375rem; /* rounded-md */
+            font-weight: 500;
+        }
+        .message-box-error {
+            background-color: #fef2f2; /* red-50 */
+            color: #dc2626; /* red-600 */
+            border: 1px solid #fecaca; /* red-300 */
+        }
+        .message-box-success {
+            background-color: #f0fdf4; /* green-50 */
+            color: #16a34a; /* green-600 */
+            border: 1px solid #bbf7d0; /* green-300 */
+        }
+        /* Hide number input arrows */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }        input[type=number] {
+          -moz-appearance: textfield; /* Firefox */
+          appearance: textfield; /* Standard */
+        }
+        /* Section separation */
+        section:not(:last-child) {
+            margin-bottom: 2.5rem; /* mb-10 */
+            padding-bottom: 1.5rem; /* pb-6 */
+            border-bottom: 1px solid #e5e7eb; /* border-gray-200 */
+        }
+        /* Styling for device list items */
+        .device-item {
+            display: grid;
+            grid-template-columns: repeat(1, 1fr); /* Single column on small screens */
+            gap: 0.75rem; /* gap-3 */
+            padding: 1rem; /* p-4 */
+            border: 1px solid #e5e7eb; /* border-gray-200 */
+            border-radius: 0.375rem; /* rounded-md */
+            margin-bottom: 0.75rem; /* mb-3 */
+            align-items: end; /* Align items to bottom */
+        }
+        /* Grid layout for larger screens */
+        @media (min-width: 768px) { /* md breakpoint */
+             .device-item {
+                 /* Adjust columns: Name(2), Value(1), Unit(1), PF(1), Button(auto) */
+                 grid-template-columns: 2fr 1fr 1fr 1fr auto;
+             }
+        }
+         /* Hide PF input initially */
+        .pf-input-container {
+            display: none;
+        }
+        /* Show PF input when VA is selected using JS by adding 'visible' class */
+        .device-item .pf-input-container.visible {
+             display: block;
+        }
+
+    </style>
+    <link rel="preconnect" href="https://rsms.me/">
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto bg-white p-6 md:p-8 rounded-lg shadow-md">
+
+        <section>
+            <h1 class="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-6">1. เครื่องคำนวณระยะเวลาสำรองไฟ UPS</h1>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                    <label for="batteryCapacity" class="block text-sm font-medium text-gray-700 mb-1">ความจุแบตเตอรี่ (Ah)</label>
+                    <input type="number" id="batteryCapacity" name="batteryCapacity" placeholder="เช่น 100" min="0.01" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label for="batteryVoltage" class="block text-sm font-medium text-gray-700 mb-1">แรงดันแบตเตอรี่ (V)</label>
+                    <input type="number" id="batteryVoltage" name="batteryVoltage" placeholder="เช่น 12" min="0.01" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label for="upsEfficiency" class="block text-sm font-medium text-gray-700 mb-1">ประสิทธิภาพ UPS (%)</label>
+                    <input type="number" id="upsEfficiency" name="upsEfficiency" placeholder="เช่น 85" min="1" max="100" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label for="loadPower" class="block text-sm font-medium text-gray-700 mb-1">กำลังไฟที่ใช้ (W)</label>
+                    <input type="number" id="loadPower" name="loadPower" placeholder="เช่น 500" min="0.01" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+            </div>
+            <div class="text-center mb-6">
+                <button id="calculateRuntimeBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">
+                    คำนวณ Runtime และสร้างกราฟ
+                </button>
+            </div>
+            <div id="runtimeResultDisplay" class="text-center mb-6" style="display: none;">
+                 <p class="text-lg font-semibold text-gray-800">ระยะเวลาสำรองไฟโดยประมาณสำหรับโหลด <span id="displayLoad" class="font-bold"></span> W:</p>
+                 <p class="text-2xl font-bold text-indigo-600"><span id="calculatedRuntime"></span> นาที</p>
+            </div>
+             <div id="runtimeMessageBox" class="message-box" style="display: none;"></div>
+            <div id="runtimeChartContainer">
+                <canvas id="runtimeChart"></canvas>
+            </div>
+        </section>
+
+        <section>
+             <h2 class="text-xl md:text-2xl font-bold text-center text-gray-700 mb-6">2. คำนวณขนาดแบตเตอรี่ที่ต้องการ (Ah)</h2>
+             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                 <div>
+                    <label for="reqBattLoad" class="block text-sm font-medium text-gray-700 mb-1">กำลังไฟที่ใช้ (W)</label> <!-- For battery Ah calculation -->
+                    <input type="number" id="reqBattLoad" placeholder="เช่น 500" min="0.01" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500">
+                 </div>
+                 <div>
+                    <label for="reqBattRuntime" class="block text-sm font-medium text-gray-700 mb-1">ระยะเวลาสำรองไฟที่ต้องการ (นาที)</label>
+                    <input type="number" id="reqBattRuntime" placeholder="เช่น 30" min="0.01" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500">
+                 </div>
+                 <div>
+                    <label for="reqBattVoltage" class="block text-sm font-medium text-gray-700 mb-1">แรงดันแบตเตอรี่ (V)</label>
+                    <input type="number" id="reqBattVoltage" placeholder="เช่น 12" min="0.01" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500">
+                 </div>
+                 <div>
+                    <label for="reqBattEfficiency" class="block text-sm font-medium text-gray-700 mb-1">ประสิทธิภาพ UPS (%)</label>
+                    <input type="number" id="reqBattEfficiency" placeholder="เช่น 85" min="1" max="100" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500">
+                 </div>
+             </div>
+             <div class="text-center mb-4">
+                 <button id="calculateReqBattBtn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">
+                     คำนวณขนาดแบตเตอรี่ (Ah)
+                 </button>
+             </div>
+             <div id="reqBattResultDisplay" class="text-center mb-4" style="display: none;">
+                  <p class="text-lg font-semibold text-gray-800">ขนาดแบตเตอรี่ที่ต้องการโดยประมาณ:</p>
+                  <p class="text-2xl font-bold text-purple-600"><span id="calculatedAh"></span> Ah</p>
+             </div>
+             <div id="reqBattMessageBox" class="message-box" style="display: none;"></div>
+        </section>
+
+        <section>
+            <h2 class="text-xl md:text-2xl font-bold text-center text-gray-700 mb-6">3. คำนวณ Load รวมของอุปกรณ์</h2>
+            <div id="deviceList" class="mb-4">
+                </div>
+            <div class="text-left mb-6">
+                 <button id="addDeviceBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out text-sm">
+                     + เพิ่มอุปกรณ์
+                 </button>
+            </div>
+            <div class="text-center mb-4">
+                <button id="calculateTotalLoadBtn" class="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">
+                    คำนวณ Load รวม (W)
+                </button>
+            </div>
+             <div id="totalLoadResultDisplay" class="text-center mb-4" style="display: none;">
+                 <p class="text-lg font-semibold text-gray-800">Load รวมของอุปกรณ์ทั้งหมด:</p>
+                 <p class="text-2xl font-bold text-orange-600"><span id="calculatedTotalLoadW"></span> W</p>
+            </div>
+            <div id="totalLoadMessageBox" class="message-box" style="display: none;"></div>
+        </section>
+
+        <section>
+            <h2 class="text-xl md:text-2xl font-bold text-center text-gray-700 mb-6">4. เครื่องมือแปลงค่า (VA <-> W)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4 items-end">
+                <div>
+                    <label for="convertValueVAW" class="block text-sm font-medium text-gray-700 mb-1">ค่าที่ต้องการแปลง</label>
+                    <input type="number" id="convertValueVAW" placeholder="ใส่ตัวเลข" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500">
+                </div>
+                <div>
+                    <label for="convertFromVAW" class="block text-sm font-medium text-gray-700 mb-1">แปลงจาก</label>
+                    <select id="convertFromVAW" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 bg-white">
+                        <option value="VA">VA (Volt-Ampere)</option>
+                        <option value="W">W (Watt)</option>
+                    </select>
+                </div>
+                 <div>
+                    <label for="powerFactor" class="block text-sm font-medium text-gray-700 mb-1">Power Factor (PF)</label>
+                    <input type="number" id="powerFactor" placeholder="เช่น 0.8" step="0.01" min="0.01" max="1" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500">
+                 </div>
+            </div>
+             <p class="text-xs text-gray-500 mb-4 text-center md:text-left">หมายเหตุ: Power Factor (PF) คืออัตราส่วนระหว่างกำลังไฟฟ้าจริง (W) ต่อกำลังไฟฟ้าปรากฏ (VA) โดยทั่วไปมีค่าระหว่าง 0.6 ถึง 1.0</p>
+             <div class="text-center mb-4">
+                <button id="convertBtnVAW" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">
+                    แปลงค่า VA/W
+                </button>
+            </div>
+            <div id="convertResultDisplayVAW" class="text-center mb-4" style="display: none;">
+                 <p class="text-lg font-semibold text-gray-800">ผลการแปลง:</p>
+                 <p class="text-xl font-bold text-teal-600"><span id="originalValueVAW"></span> <span id="originalUnitVAW"></span> = <span id="convertedValueVAW"></span> <span id="convertedUnitVAW"></span></p>
+            </div>
+            <div id="converterMessageBoxVAW" class="message-box" style="display: none;"></div>
+        </section>
+
+        <section>
+            <h2 class="text-xl md:text-2xl font-bold text-center text-gray-700 mb-6">5. เครื่องมือแปลงค่าความจุแบตเตอรี่ (Ah <-> Wh)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4 items-end">
+                <div>
+                    <label for="convertValueAhWh" class="block text-sm font-medium text-gray-700 mb-1">ค่าที่ต้องการแปลง</label>
+                    <input type="number" id="convertValueAhWh" placeholder="ใส่ตัวเลข" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500">
+                </div>
+                <div>
+                    <label for="convertFromAhWh" class="block text-sm font-medium text-gray-700 mb-1">แปลงจาก</label>
+                    <select id="convertFromAhWh" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 bg-white">
+                        <option value="Ah">Ah (Ampere-hour)</option>
+                        <option value="Wh">Wh (Watt-hour)</option>
+                    </select>
+                </div>
+                 <div>
+                    <label for="convertVoltage" class="block text-sm font-medium text-gray-700 mb-1">แรงดันแบตเตอรี่ (V)</label>
+                    <input type="number" id="convertVoltage" placeholder="เช่น 12" min="0.01" step="any" class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500">
+                 </div>
+            </div>
+             <p class="text-xs text-gray-500 mb-4 text-center md:text-left">หมายเหตุ: การแปลงระหว่าง Ah และ Wh จำเป็นต้องใช้ค่าแรงดัน (Voltage) ของแบตเตอรี่</p>
+             <div class="text-center mb-4">
+                <button id="convertBtnAhWh" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">
+                    แปลงค่า Ah/Wh
+                </button>
+            </div>
+            <div id="convertResultDisplayAhWh" class="text-center mb-4" style="display: none;">
+                 <p class="text-lg font-semibold text-gray-800">ผลการแปลง:</p>
+                 <p class="text-xl font-bold text-cyan-600"><span id="originalValueAhWh"></span> <span id="originalUnitAhWh"></span> = <span id="convertedValueAhWh"></span> <span id="convertedUnitAhWh"></span></p>
+            </div>
+            <div id="converterMessageBoxAhWh" class="message-box" style="display: none;"></div>
+        </section>
+
+    </div>
+
+    <script>
+        // --- Common Elements & Functions ---
+        const ctx = document.getElementById('runtimeChart').getContext('2d');
+        let runtimeChart = null;
+        let specificLoadPoint = { load: null, runtime: null };
+
+        function showMessage(message, type = 'error', targetBox) {
+            targetBox.textContent = message;
+            targetBox.className = `message-box ${type === 'error' ? 'message-box-error' : 'message-box-success'}`;
+            targetBox.style.display = 'block';
+        }
+
+        function hideMessage(targetBox) {
+            targetBox.style.display = 'none';
+        }
+
+        // --- 1. UPS Runtime Calculator ---
+        const calculateRuntimeBtn = document.getElementById('calculateRuntimeBtn');
+        const runtimeResultDisplay = document.getElementById('runtimeResultDisplay');
+        const calculatedRuntimeSpan = document.getElementById('calculatedRuntime');
+        const displayLoadSpan = document.getElementById('displayLoad');
+        const runtimeMessageBox = document.getElementById('runtimeMessageBox');
+
+        function calculateRuntimeMinutes(capacityAh, voltageV, efficiencyPercent, loadW) {
+            if (loadW <= 0) return 0;
+            if (efficiencyPercent <= 0 || efficiencyPercent > 100) return 0;
+            const efficiencyDecimal = efficiencyPercent / 100;
+            const runtimeHours = (capacityAh * voltageV * efficiencyDecimal) / loadW;
+            return runtimeHours * 60;
+        }
+
+        calculateRuntimeBtn.addEventListener('click', () => {
+            hideMessage(runtimeMessageBox);
+            runtimeResultDisplay.style.display = 'none';
+            specificLoadPoint = { load: null, runtime: null };
+
+            const capacity = parseFloat(document.getElementById('batteryCapacity').value);
+            const voltage = parseFloat(document.getElementById('batteryVoltage').value);
+            const efficiency = parseFloat(document.getElementById('upsEfficiency').value);
+            const load = parseFloat(document.getElementById('loadPower').value);
+
+            // Validation
+            if (isNaN(capacity) || capacity <= 0) { showMessage('กรุณากรอกความจุแบตเตอรี่ (Ah) ให้ถูกต้อง (ค่าบวก)', 'error', runtimeMessageBox); return; }
+            if (isNaN(voltage) || voltage <= 0) { showMessage('กรุณากรอกแรงดันแบตเตอรี่ (V) ให้ถูกต้อง (ค่าบวก)', 'error', runtimeMessageBox); return; }
+            if (isNaN(efficiency) || efficiency <= 0 || efficiency > 100) { showMessage('กรุณากรอกประสิทธิภาพ UPS (%) ให้ถูกต้อง (1-100)', 'error', runtimeMessageBox); return; }
+            if (isNaN(load) || load <= 0) { showMessage('กรุณากรอกกำลังไฟที่ใช้ (W) ให้ถูกต้อง (ค่าบวก)', 'error', runtimeMessageBox); return; }
+
+            const specificRuntimeMinutes = calculateRuntimeMinutes(capacity, voltage, efficiency, load);
+            specificLoadPoint = { load: load, runtime: specificRuntimeMinutes };
+
+            displayLoadSpan.textContent = load.toFixed(0);
+            calculatedRuntimeSpan.textContent = specificRuntimeMinutes.toFixed(0);
+            runtimeResultDisplay.style.display = 'block';
+
+            // Graph Data Preparation
+            const loadsForGraph = [];
+            const runtimesForGraph = [];
+            const graphMinLoad = 50;
+            let graphMaxLoad = load;
+            if (graphMaxLoad < graphMinLoad) { graphMaxLoad = graphMinLoad + 50; }
+            const range = graphMaxLoad - graphMinLoad;
+            let loadStep = Math.max(50, Math.ceil(range / 10 / 50) * 50);
+            if (range <= 0) { loadStep = 50; }
+
+            for (let currentLoad = graphMinLoad; currentLoad <= graphMaxLoad; currentLoad += loadStep) {
+                 if (currentLoad > 0) {
+                    loadsForGraph.push(currentLoad);
+                    runtimesForGraph.push(calculateRuntimeMinutes(capacity, voltage, efficiency, currentLoad));
+                 }
+            }
+            if (load >= graphMinLoad && load <= graphMaxLoad && !loadsForGraph.includes(load)) {
+                loadsForGraph.push(load);
+                runtimesForGraph.push(specificRuntimeMinutes);
+            }
+            if (graphMaxLoad > graphMinLoad && !loadsForGraph.includes(graphMaxLoad)) {
+                 loadsForGraph.push(graphMaxLoad);
+                 runtimesForGraph.push(calculateRuntimeMinutes(capacity, voltage, efficiency, graphMaxLoad));
+            }
+            const combined = loadsForGraph.map((l, i) => ({ load: l, runtime: runtimesForGraph[i] }));
+            const uniqueCombined = Array.from(new Map(combined.map(item => [item.load, item])).values());
+            uniqueCombined.sort((a, b) => a.load - b.load);
+            const sortedLoads = uniqueCombined.map(item => item.load);
+            const sortedRuntimes = uniqueCombined.map(item => item.runtime);
+
+            // Ensure at least two distinct points for the line graph for Chart.js
+            if (sortedLoads.length < 2) {
+                const currentPointsMap = new Map();
+                sortedLoads.forEach((l, i) => currentPointsMap.set(l, sortedRuntimes[i]));
+
+                if (sortedLoads.length === 0) {
+                    // If no points, create two default points
+                    let p1Load = Math.max(1, graphMinLoad > 0 ? graphMinLoad : (load > 0 && !isNaN(load) ? Math.max(1, load / 2) : 25));
+                    if (p1Load <= 0) p1Load = 1; // Ensure p1Load is positive
+
+                    let p2Load = p1Load + (loadStep > 0 ? loadStep : 50);
+                    if (p2Load <= p1Load) p2Load = p1Load + 50; // Ensure p2Load is greater than p1Load
+
+                    currentPointsMap.set(p1Load, calculateRuntimeMinutes(capacity, voltage, efficiency, p1Load));
+                    currentPointsMap.set(p2Load, calculateRuntimeMinutes(capacity, voltage, efficiency, p2Load));
+
+                } else if (sortedLoads.length === 1) {
+                    // If one point exists, add another distinct point
+                    let existingLoad = sortedLoads[0];
+                    let p2Load = existingLoad + (loadStep > 0 ? loadStep : 50);
+                    if (p2Load <= existingLoad) p2Load = existingLoad + 50; // Ensure different and greater
+                    if (p2Load <= 0 && existingLoad > 0) p2Load = existingLoad * 2; // Handle if existingLoad is tiny
+                    else if (p2Load <= 0) p2Load = existingLoad + 50; // Fallback if existingLoad was also not positive
+                    if (p2Load <=0) p2Load = 1; // Absolute fallback
+
+                    currentPointsMap.set(p2Load, calculateRuntimeMinutes(capacity, voltage, efficiency, p2Load));
+                }
+
+                sortedLoads.length = 0; // Clear original arrays
+                sortedRuntimes.length = 0;
+                Array.from(currentPointsMap.keys()).sort((a, b) => a - b).forEach(l => {
+                    if (l > 0 && isFinite(currentPointsMap.get(l))) { // Ensure load is positive and runtime is finite
+                        sortedLoads.push(l);
+                        sortedRuntimes.push(currentPointsMap.get(l));
+                    }
+                });
+            }
+
+            // Chart Creation/Update
+            const chartData = {
+                 labels: sortedLoads.map(l => `${l.toFixed(0)} W`),
+                datasets: [
+                    {
+                        label: 'ระยะเวลาสำรองไฟ (นาที)',
+                        data: sortedRuntimes.map(r => r.toFixed(0)),
+                        borderColor: 'rgb(79, 70, 229)',
+                        backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                        borderWidth: 2, tension: 0.1, fill: true, pointRadius: 3, pointHoverRadius: 5
+                    },
+                    {
+                        label: 'จุดที่คำนวณ',
+                        data: sortedLoads.map(l => (l === specificLoadPoint.load ? specificLoadPoint.runtime.toFixed(0) : null)), // Ensure this still works with potentially modified sortedLoads
+                        borderColor: 'rgb(220, 38, 38)', backgroundColor: 'rgb(220, 38, 38)',
+                        pointRadius: 6, pointHoverRadius: 8, borderWidth: 1, showLine: false, type: 'scatter'
+                    }
+                ]
+            };
+            // Ensure the specificLoadPoint is correctly represented in the scatter dataset,
+            // even if its 'load' value isn't in the main 'sortedLoads' for the line.
+            // The current logic for scatter data seems to handle this by checking `l === specificLoadPoint.load`.
+            // If specificLoadPoint.load is not in sortedLoads, it will correctly be null for those points.
+            // If it IS in sortedLoads, it will plot. This is fine.
+
+            const chartOptions = {
+                 responsive: true, maintainAspectRatio: false,
+                 interaction: { mode: 'index', intersect: false, },
+                 scales: {
+                    y: { beginAtZero: true, title: { display: true, text: 'ระยะเวลาสำรองไฟ (นาที)' } },
+                    x: { title: { display: true, text: 'กำลังไฟที่ใช้ (W)' } }
+                 }
+            };
+            if (runtimeChart) runtimeChart.destroy();
+            runtimeChart = new Chart(ctx, { type: 'line', data: chartData, options: chartOptions });
+        });
+
+        // --- 2. Required Battery Capacity Calculator ---
+        const calculateReqBattBtn = document.getElementById('calculateReqBattBtn');
+        const reqBattResultDisplay = document.getElementById('reqBattResultDisplay');
+        const calculatedAhSpan = document.getElementById('calculatedAh');
+        const reqBattMessageBox = document.getElementById('reqBattMessageBox');
+
+        calculateReqBattBtn.addEventListener('click', () => {
+            hideMessage(reqBattMessageBox);
+            reqBattResultDisplay.style.display = 'none';
+
+            const loadW = parseFloat(document.getElementById('reqBattLoad').value);
+            const runtimeMin = parseFloat(document.getElementById('reqBattRuntime').value);
+            const voltageV = parseFloat(document.getElementById('reqBattVoltage').value);
+            const efficiencyPercent = parseFloat(document.getElementById('reqBattEfficiency').value);
+
+            // Validation
+            if (isNaN(loadW) || loadW <= 0) { showMessage('กรุณากรอกกำลังไฟที่ใช้ (W) ให้ถูกต้อง (ค่าบวก)', 'error', reqBattMessageBox); return; }
+            if (isNaN(runtimeMin) || runtimeMin <= 0) { showMessage('กรุณากรอกระยะเวลาสำรองไฟ (นาที) ให้ถูกต้อง (ค่าบวก)', 'error', reqBattMessageBox); return; }
+            if (isNaN(voltageV) || voltageV <= 0) { showMessage('กรุณากรอกแรงดันแบตเตอรี่ (V) ให้ถูกต้อง (ค่าบวก)', 'error', reqBattMessageBox); return; }
+            if (isNaN(efficiencyPercent) || efficiencyPercent <= 0 || efficiencyPercent > 100) { showMessage('กรุณากรอกประสิทธิภาพ UPS (%) ให้ถูกต้อง (1-100)', 'error', reqBattMessageBox); return; }
+
+            // Calculation
+            const runtimeHours = runtimeMin / 60;
+            const efficiencyDecimal = efficiencyPercent / 100;
+
+            // Formula: Ah = (Load (W) * Runtime (hours)) / (Battery Voltage (V) * UPS Efficiency (decimal))
+            // Avoid division by zero if voltage or efficiency is somehow zero after validation
+            if (voltageV === 0 || efficiencyDecimal === 0) {
+                 showMessage('แรงดันแบตเตอรี่หรือประสิทธิภาพ UPS ต้องไม่เป็นศูนย์', 'error', reqBattMessageBox);
+                 return;
+            }
+            const requiredAh = (loadW * runtimeHours) / (voltageV * efficiencyDecimal);
+
+            calculatedAhSpan.textContent = requiredAh.toFixed(2); // Show result with 2 decimal places
+            reqBattResultDisplay.style.display = 'block';
+        });
+
+
+        // --- 3. Total Load Calculator ---
+        const addDeviceBtn = document.getElementById('addDeviceBtn');
+        const deviceListDiv = document.getElementById('deviceList');
+        const calculateTotalLoadBtn = document.getElementById('calculateTotalLoadBtn');
+        const totalLoadResultDisplay = document.getElementById('totalLoadResultDisplay');
+        const calculatedTotalLoadWSpan = document.getElementById('calculatedTotalLoadW');
+        const totalLoadMessageBox = document.getElementById('totalLoadMessageBox');
+        let deviceCounter = 0; // To give unique IDs to elements
+
+        function addDeviceRow() {
+            deviceCounter++;
+            const div = document.createElement('div');
+            div.className = 'device-item';
+            div.innerHTML = `
+                <div>
+                    <label for="deviceName${deviceCounter}" class="block text-xs font-medium text-gray-600 mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
+                    <input type="text" id="deviceName${deviceCounter}" placeholder="เช่น คอมพิวเตอร์" class="deviceName w-full px-3 py-1.5 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                <div>
+                    <label for="deviceLoadValue${deviceCounter}" class="block text-xs font-medium text-gray-600 mb-1">Load*</label>
+                    <input type="number" id="deviceLoadValue${deviceCounter}" placeholder="ค่า" required min="0.01" step="any" class="deviceLoadValue w-full px-3 py-1.5 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                <div>
+                    <label for="deviceLoadUnit${deviceCounter}" class="block text-xs font-medium text-gray-600 mb-1">หน่วย*</label>
+                    <select id="deviceLoadUnit${deviceCounter}" required class="deviceLoadUnit w-full px-3 py-1.5 border border-gray-300 rounded-md shadow-sm text-sm bg-white focus:ring-orange-500 focus:border-orange-500">
+                        <option value="W">W</option>
+                        <option value="VA">VA</option>
+                    </select>
+                </div>
+                <div class="pf-input-container">
+                     <label for="devicePF${deviceCounter}" class="block text-xs font-medium text-gray-600 mb-1">PF* (ถ้าเป็น VA)</label>
+                    <input type="number" id="devicePF${deviceCounter}" placeholder="0.8" step="0.01" min="0.01" max="1" class="devicePF w-full px-3 py-1.5 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                 <button type="button" class="removeDeviceBtn bg-red-500 hover:bg-red-600 text-white font-bold py-1.5 px-3 rounded-md shadow-sm text-xs self-end">
+                     ลบ
+                 </button>
+            `;
+            deviceListDiv.appendChild(div);
+        }
+
+        // Add event listener for adding new devices
+        addDeviceBtn.addEventListener('click', addDeviceRow);
+
+        // Event delegation for removing devices and handling unit changes
+         deviceListDiv.addEventListener('click', (event) => {
+             if (event.target.classList.contains('removeDeviceBtn')) {
+                 event.target.closest('.device-item').remove();
+                 // Recalculate if needed or just let user press the button again
+                 hideMessage(totalLoadMessageBox);
+                 totalLoadResultDisplay.style.display = 'none';
+             }
+         });
+         deviceListDiv.addEventListener('change', (event) => {
+             if (event.target.classList.contains('deviceLoadUnit')) {
+                 const itemDiv = event.target.closest('.device-item');
+                 const pfContainer = itemDiv.querySelector('.pf-input-container');
+                 pfContainer.classList.toggle('visible', event.target.value === 'VA');
+             }
+         });
+
+
+        // Calculate total load
+        calculateTotalLoadBtn.addEventListener('click', () => {
+            hideMessage(totalLoadMessageBox);
+            totalLoadResultDisplay.style.display = 'none';
+            let totalLoadW = 0;
+            let isValid = true;
+            const deviceItems = deviceListDiv.querySelectorAll('.device-item');
+
+            if (deviceItems.length === 0) {
+                 showMessage('กรุณาเพิ่มอุปกรณ์อย่างน้อย 1 ชิ้น', 'error', totalLoadMessageBox);
+                 return;
+            }
+
+            deviceItems.forEach((item, index) => {
+                const loadValueInput = item.querySelector('.deviceLoadValue');
+                const unitSelect = item.querySelector('.deviceLoadUnit');
+                const pfInput = item.querySelector('.devicePF');
+                const deviceNameInput = item.querySelector('.deviceName'); // Optional name
+
+                const loadValue = parseFloat(loadValueInput.value);
+                const unit = unitSelect.value;
+                let deviceLoadW = 0;
+
+                // Validate Load Value
+                if (isNaN(loadValue) || loadValue <= 0) {
+                    showMessage(`กรุณากรอกค่า Load ที่ถูกต้อง (ค่าบวก) สำหรับอุปกรณ์ #${index + 1} (${deviceNameInput.value || 'ไม่มีชื่อ'})`, 'error', totalLoadMessageBox);
+                    loadValueInput.focus();
+                    isValid = false;
+                    return;
+                }
+
+                if (unit === 'W') {
+                    deviceLoadW = loadValue;
+                } else if (unit === 'VA') {
+                    const pfValue = parseFloat(pfInput.value);
+                    // Validate PF only if unit is VA
+                    if (isNaN(pfValue) || pfValue <= 0 || pfValue > 1) {
+                         showMessage(`กรุณากรอก Power Factor (PF) ที่ถูกต้อง (0.01-1) สำหรับอุปกรณ์ #${index + 1} (${deviceNameInput.value || 'ไม่มีชื่อ'})`, 'error', totalLoadMessageBox);
+                         pfInput.focus();
+                         isValid = false;
+                         return;
+                    }
+                    deviceLoadW = loadValue * pfValue;
+                }
+
+                if (isValid) {
+                    totalLoadW += deviceLoadW;
+                }
+            });
+
+            if (isValid) {
+                calculatedTotalLoadWSpan.textContent = totalLoadW.toFixed(2); // Show total with 2 decimals
+                totalLoadResultDisplay.style.display = 'block';
+            }
+        });
+
+        // --- 4. VA/W Conversion ---
+        const convertBtnVAW = document.getElementById('convertBtnVAW');
+        const convertValueInputVAW = document.getElementById('convertValueVAW');
+        const convertFromSelectVAW = document.getElementById('convertFromVAW');
+        const powerFactorInput = document.getElementById('powerFactor');
+        const convertResultDisplayVAW = document.getElementById('convertResultDisplayVAW');
+        const originalValueSpanVAW = document.getElementById('originalValueVAW');
+        const originalUnitSpanVAW = document.getElementById('originalUnitVAW');
+        const convertedValueSpanVAW = document.getElementById('convertedValueVAW');
+        const convertedUnitSpanVAW = document.getElementById('convertedUnitVAW');
+        const converterMessageBoxVAW = document.getElementById('converterMessageBoxVAW');
+
+        convertBtnVAW.addEventListener('click', () => {
+            hideMessage(converterMessageBoxVAW);
+            convertResultDisplayVAW.style.display = 'none';
+            const value = parseFloat(convertValueInputVAW.value);
+            const fromUnit = convertFromSelectVAW.value;
+            const pf = parseFloat(powerFactorInput.value);
+            if (isNaN(value)) { showMessage('กรุณากรอกค่าที่ต้องการแปลงให้เป็นตัวเลข', 'error', converterMessageBoxVAW); return; }
+            // Updated PF validation to allow 1.0 and check > 0
+            if (isNaN(pf) || pf <= 0 || pf > 1) { showMessage('กรุณากรอก Power Factor ให้ถูกต้อง (0 < PF <= 1)', 'error', converterMessageBoxVAW); return; }
+            let convertedValue;
+            let toUnit;
+            if (fromUnit === 'VA') {
+                convertedValue = value * pf; toUnit = 'W';
+            } else { // fromUnit === 'W'
+                // Avoid division by zero if pf is somehow 0 after validation
+                 if (pf === 0) {
+                     showMessage('Power Factor ต้องไม่เป็นศูนย์', 'error', converterMessageBoxVAW);
+                     return;
+                 }
+                convertedValue = value / pf; toUnit = 'VA';
+            }
+            originalValueSpanVAW.textContent = value.toLocaleString();
+            originalUnitSpanVAW.textContent = fromUnit;
+            convertedValueSpanVAW.textContent = convertedValue.toLocaleString(undefined, { maximumFractionDigits: 2 });
+            convertedUnitSpanVAW.textContent = toUnit;
+            convertResultDisplayVAW.style.display = 'block';
+        });
+
+        // --- 5. Ah/Wh Conversion ---
+        const convertBtnAhWh = document.getElementById('convertBtnAhWh');
+        const convertValueInputAhWh = document.getElementById('convertValueAhWh');
+        const convertFromSelectAhWh = document.getElementById('convertFromAhWh');
+        const convertVoltageInput = document.getElementById('convertVoltage');
+        const convertResultDisplayAhWh = document.getElementById('convertResultDisplayAhWh');
+        const originalValueSpanAhWh = document.getElementById('originalValueAhWh');
+        const originalUnitSpanAhWh = document.getElementById('originalUnitAhWh');
+        const convertedValueSpanAhWh = document.getElementById('convertedValueAhWh');
+        const convertedUnitSpanAhWh = document.getElementById('convertedUnitAhWh');
+        const converterMessageBoxAhWh = document.getElementById('converterMessageBoxAhWh');
+
+        convertBtnAhWh.addEventListener('click', () => {
+            hideMessage(converterMessageBoxAhWh);
+            convertResultDisplayAhWh.style.display = 'none';
+            const value = parseFloat(convertValueInputAhWh.value);
+            const fromUnit = convertFromSelectAhWh.value;
+            const voltage = parseFloat(convertVoltageInput.value);
+            if (isNaN(value)) { showMessage('กรุณากรอกค่าที่ต้องการแปลงให้เป็นตัวเลข', 'error', converterMessageBoxAhWh); return; }
+            if (isNaN(voltage) || voltage <= 0) { showMessage('กรุณากรอกแรงดันแบตเตอรี่ (V) ให้ถูกต้อง (ค่าบวก)', 'error', converterMessageBoxAhWh); return; }
+            let convertedValue;
+            let toUnit;
+            if (fromUnit === 'Ah') {
+                convertedValue = value * voltage; toUnit = 'Wh';
+            } else { // fromUnit === 'Wh'
+                 // Avoid division by zero
+                 if (voltage === 0) {
+                     showMessage('แรงดันแบตเตอรี่ต้องไม่เป็นศูนย์', 'error', converterMessageBoxAhWh);
+                     return;
+                 }
+                convertedValue = value / voltage; toUnit = 'Ah';
+            }
+            originalValueSpanAhWh.textContent = value.toLocaleString();
+            originalUnitSpanAhWh.textContent = fromUnit;
+            convertedValueSpanAhWh.textContent = convertedValue.toLocaleString(undefined, { maximumFractionDigits: 2 });
+            convertedUnitSpanAhWh.textContent = toUnit;
+            convertResultDisplayAhWh.style.display = 'block';
+        });
+
+        // Initialize by adding one device row for the total load calculator
+        addDeviceRow();
+
+    </script>
+
+</body>
+</html>
