@@ -933,8 +933,8 @@
                         document.getElementById('upsEfficiency').value = importData.settings.efficiency;
                     }
 
-                    // Update displays
-                    document.getElementById('totalLoad').textContent = `${calculatedData.totalLoad} W`;
+                    // Recalculate total load from DOM (not from cached data)
+                    updateTotalLoad();
 
                     // Update summary
                     updateSummary();
