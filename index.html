@@ -225,6 +225,11 @@
                             <span class="text-gray-700 font-medium">โหลดรวมทั้งหมด (Total Load):</span>
                             <span id="totalLoad" class="text-3xl font-bold text-primary-600">0 W</span>
                         </div>
+                        <!-- Total Plugs Display -->
+                        <div class="flex justify-between items-center text-sm mt-2 pt-2 border-t border-primary-100">
+                            <span class="text-blue-600 font-medium">🔌 จำนวนรูปลั๊กทั้งหมดที่ต้องใช้:</span>
+                            <span id="totalPlugsDisplay" class="text-2xl font-bold text-blue-600">0 รู</span>
+                        </div>
                     </div>
                 </div>
 
@@ -382,6 +387,11 @@
                             <p class="text-gray-500 text-sm">ประสิทธิภาพ UPS</p>
                             <p id="summaryEfficiency" class="text-2xl font-bold text-gray-800">85%</p>
                         </div>
+                        <!-- Total Plugs -->
+                        <div class="bg-white p-4 rounded-lg shadow-sm md:col-span-2">
+                            <p class="text-gray-500 text-sm">🔌 จำนวนรูปลั๊กทั้งหมดที่ต้องใช้</p>
+                            <p id="summaryTotalPlugs" class="text-2xl font-bold text-blue-600">0 รู</p>
+                        </div>
                     </div>
                 </div>
 
@@ -448,6 +458,7 @@
         let calculatedData = {
             totalLoad: 0,
             deviceLoad: 0,     // Load from devices only
+            totalPlugs: 0,     // Total number of plugs needed
             forecastValue: 0,  // Raw forecast input value
             forecastUnit: '%', // Forecast unit: '%' or 'W'
             forecastWatt: 0,   // Calculated forecast watt
@@ -470,11 +481,11 @@
             const deviceHtml = `
                 <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                        <div class="md:col-span-5">
+                        <div class="md:col-span-4">
                             <label class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
                             <input type="text" placeholder="เช่น PoE Switch, NVR, Router..." class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                         </div>
-                        <div class="md:col-span-3">
+                        <div class="md:col-span-2">
                             <label class="block text-gray-600 text-sm mb-1">Load*</label>
                             <input type="number" placeholder="กรอก Watt" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
                         </div>
@@ -484,6 +495,10 @@
                                 <option value="W">W</option>
                                 <option value="VA">VA</option>
                             </select>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
+                            <input type="number" placeholder="จำนวนรู" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" value="1" oninput="updateTotalLoad()">
                         </div>
                         <div class="md:col-span-2">
                             <button onclick="removeDevice(${deviceIdCounter})" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
@@ -506,6 +521,7 @@
 
         function updateTotalLoad() {
             let deviceTotal = 0;
+            let totalPlugs = 0;
             const deviceCards = document.querySelectorAll('.device-card');
 
             devices = [];
@@ -513,14 +529,20 @@
                 const name = card.querySelector('.device-name').value || 'อุปกรณ์ไม่ระบุชื่อ';
                 const load = parseFloat(card.querySelector('.device-load').value) || 0;
                 const unit = card.querySelector('.device-unit').value;
+                const plugs = parseInt(card.querySelector('.device-plugs')?.value) || 1;
 
                 if (load > 0) {
                     // Convert VA to W if needed (assume 0.8 power factor)
                     const watts = unit === 'VA' ? load * 0.8 : load;
                     deviceTotal += watts;
-                    devices.push({ name, load, unit, watts });
+                    totalPlugs += plugs;
+                    devices.push({ name, load, unit, watts, plugs });
                 }
             });
+
+            // Store values separately
+            calculatedData.deviceLoad = Math.round(deviceTotal * 100) / 100;
+            calculatedData.totalPlugs = totalPlugs;
 
             // Get forecast value and calculate based on unit
             const forecastValue = parseFloat(document.getElementById('forecastValue').value) || 0;
@@ -537,8 +559,6 @@
                 }
             }
 
-            // Store values separately
-            calculatedData.deviceLoad = Math.round(deviceTotal * 100) / 100;
             calculatedData.forecastValue = forecastValue;
             calculatedData.forecastWatt = Math.round(forecastWatt * 100) / 100;
             calculatedData.totalLoad = Math.round((deviceTotal + forecastWatt) * 100) / 100;
@@ -547,6 +567,7 @@
             document.getElementById('deviceLoadOnly').textContent = `${calculatedData.deviceLoad} W`;
             document.getElementById('forecastLoadDisplay').textContent = `${calculatedData.forecastWatt} W`;
             document.getElementById('totalLoad').textContent = `${calculatedData.totalLoad} W`;
+            document.getElementById('totalPlugsDisplay').textContent = `${calculatedData.totalPlugs} รู`;
 
             // Show/hide forecast row
             const forecastRow = document.getElementById('forecastRowDisplay');
@@ -754,11 +775,15 @@
             // Efficiency
             document.getElementById('summaryEfficiency').textContent = `${calculatedData.efficiency}%`;
 
+            // Total Plugs
+            const totalPlugs = calculatedData.totalPlugs || 0;
+            document.getElementById('summaryTotalPlugs').textContent = `${totalPlugs} รู`;
+
             // Device List with Forecast
             let deviceListHtml = devices.map(d =>
                 `<div class="flex justify-between py-2 px-3 bg-white rounded-lg">
                     <span class="text-gray-700">${d.name}</span>
-                    <span class="font-medium text-gray-800">${d.load} ${d.unit} (${d.watts.toFixed(2)} W)</span>
+                    <span class="font-medium text-gray-800">${d.load} ${d.unit} (${d.watts.toFixed(2)} W) - ${d.plugs || 1} รู</span>
                 </div>`
             ).join('');
 
@@ -773,7 +798,7 @@
 
             document.getElementById('summaryDeviceList').innerHTML = deviceListHtml || '<p class="text-gray-400">ไม่มีอุปกรณ์</p>';
 
-            // Update recommendations based on load
+            // Update recommendations based on load and plugs
             const recommendations = [];
             recommendations.push(`• เลือก UPS ขนาด ${recommendedVA} VA ขึ้นไป`);
 
@@ -791,7 +816,30 @@
                 recommendations.push(`• 📈 รวม Forecast ${calculatedData.forecastWatt}W สำหรับการขยายในอนาคตแล้ว`);
             }
 
-            recommendations.push('• ตรวจสอบจำนวน Outlet และชนิดปลั๊กให้เพียงพอ');
+            // UPS Outlet recommendations based on total plugs
+            recommendations.push(`• 🔌 ต้องใช้รูปลั๊กทั้งหมด ${totalPlugs} รู`);
+            
+            if (totalPlugs > 0) {
+                // Common UPS outlet counts: 4, 6, 8, 10, 12
+                const upsOutletConfigs = [4, 6, 8, 10, 12];
+                let requiredUpsCount = 1;
+                let outletsPerUps = 0;
+                
+                for (let outlets of upsOutletConfigs) {
+                    if (outlets >= totalPlugs) {
+                        outletsPerUps = outlets;
+                        break;
+                    }
+                }
+                
+                if (outletsPerUps === 0) {
+                    // Need multiple UPS
+                    requiredUpsCount = Math.ceil(totalPlugs / 12); // Max 12 outlets per UPS
+                    recommendations.push(`• ⚠️ ต้องใช้ ${requiredUpsCount} เครื่อง UPS เนื่องจากจำนวนรูปลั๊ก (${totalPlugs} รู) เกินกว่าที่ UPS เดียวจะรองรับได้`);
+                } else {
+                    recommendations.push(`• ✅ UPS 1 เครื่องที่มี ${outletsPerUps} รูปลั๊กเพียงพอสำหรับอุปกรณ์ทั้งหมด`);
+                }
+            }
 
             document.getElementById('recommendations').innerHTML = recommendations.map(r => `<li>${r}</li>`).join('');
         }
@@ -1048,11 +1096,11 @@
                         const deviceHtml = `
                             <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200">
                                 <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                                    <div class="md:col-span-5">
+                                    <div class="md:col-span-4">
                                         <label class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
                                         <input type="text" value="${device.name}" class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                                     </div>
-                                    <div class="md:col-span-3">
+                                    <div class="md:col-span-2">
                                         <label class="block text-gray-600 text-sm mb-1">Load*</label>
                                         <input type="number" value="${device.load}" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
                                     </div>
@@ -1062,6 +1110,10 @@
                                             <option value="W" ${device.unit === 'W' ? 'selected' : ''}>W</option>
                                             <option value="VA" ${device.unit === 'VA' ? 'selected' : ''}>VA</option>
                                         </select>
+                                    </div>
+                                    <div class="md:col-span-2">
+                                        <label class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
+                                        <input type="number" value="${device.plugs || 1}" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="updateTotalLoad()">
                                     </div>
                                     <div class="md:col-span-2">
                                         <button onclick="removeDevice(${deviceIdCounter})" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">

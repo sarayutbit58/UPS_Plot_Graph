@@ -1,7 +1,3 @@
-# Examples
-- src/main.py
-- README.md
-- config.json
+(index.html is a source file, so no need to add anything to .gitignore)
 
-# Expected Output
-(empty — output nothing)
+# No changes needed - only source/config files detected
