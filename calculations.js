@@ -187,12 +187,14 @@
             || [powerW, minutes, voltage, efficiency].some((value, index) => !decimalInputMatchesNumber(value, numericInputs[index]))) return null;
         const p = decimalFraction(powerW), t = decimalFraction(minutes);
         const v = decimalFraction(voltage), e = decimalFraction(efficiency);
-        if (!p || !t || !v || !e || p.numerator <= 0n || t.numerator <= 0n || v.numerator <= 0n
+        if (!p || !t || !v || !e || p.numerator <= 0n || t.numerator < t.denominator || v.numerator <= 0n
             || e.numerator < 50n * e.denominator || e.numerator > 100n * e.denominator) return null;
         const numerator = p.numerator * t.numerator * 100n * v.denominator * e.denominator;
         const denominator = p.denominator * t.denominator * 60n * v.numerator * e.numerator;
-        const scaledAh = (numerator * 1_000_000n + denominator - 1n) / denominator;
-        return fromScaledInteger(scaledAh > 0n ? scaledAh : 1n, 6);
+        const scaledNumerator = numerator * 1_000_000n;
+        if (scaledNumerator < denominator) return null;
+        const scaledAh = (scaledNumerator + denominator - 1n) / denominator;
+        return fromScaledInteger(scaledAh, 6);
     }
 
     function calculateRuntimeMinutes(ampHours, voltage, efficiency, powerW) {
@@ -306,7 +308,7 @@
             runtimeBatteryAh,
         };
         const supportedVoltage = voltageFraction && [12n, 24n, 48n].some(value => voltageFraction.numerator === value * voltageFraction.denominator);
-        if (settings.backupTime === null || !decimalInputMatchesNumber(rawBackupTime, settings.backupTime) || settings.backupTime <= 0
+        if (settings.backupTime === null || !decimalInputMatchesNumber(rawBackupTime, settings.backupTime) || settings.backupTime < 1
             || !supportedVoltage || settings.voltage === null || !decimalInputMatchesNumber(rawVoltage, settings.voltage)
             || settings.efficiency === null || !decimalInputMatchesNumber(rawEfficiency, settings.efficiency)
             || !efficiencyFraction || efficiencyFraction.numerator < 50n * efficiencyFraction.denominator || efficiencyFraction.numerator > 100n * efficiencyFraction.denominator

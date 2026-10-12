@@ -732,3 +732,9 @@ These are presentation/packaging findings; this recheck made no application-code
 - The app uses BigInt literals, numeric separators, optional chaining, and logical assignment; the strict syntax floor is Chrome/Chromium 85, Firefox 79, or Safari/WebKit 14 according to [V8 logical-assignment support](https://v8.dev/features/logical-assignment) and [WebKit Safari 14](https://webkit.org/blog/11340/new-webkit-features-in-safari-14/). Android WebView uses a system Chromium engine; device-specific WebViews were not tested.
 - Added an ES5-compatible bootstrap that probes the required syntax/API before app startup. Unsupported engines receive a visible update message instead of an unusable blank app. Chart.js now loads asynchronously; the existing runtime table fallback remains available if it is late or unavailable.
 - Current Chrome passed the feature probe, rendered the app normally, and showed no Console messages. Forcing the unsupported-browser class displayed the update notice and hid the calculator.
+
+## Battery Capacity Resolution and Import Minimum — 2026-10-12
+
+- Import previously accepted backup times below the UI minimum of one minute. A `1e-320` minute request could also be rounded up to 0.000001 Ah despite an exact requirement near 1.96e-321 Ah.
+- Ah sizing and JSON import now reject backup times below one minute. Ah requirements below 1 µAh return `null` instead of an exaggerated minimum; the exact 1 µAh boundary remains valid.
+- Regression probes confirm 0.5 minute and `1e-320` minute imports fail, while 0.006 W / 1 min / 100 V / 100% returns exactly 0.000001 Ah and a smaller load returns `null`.

@@ -192,6 +192,9 @@ test('counts zero-watt device outlets and ignores blank or invalid rows', () => 
 test('calculates required Ah and rejects invalid sizing inputs', () => {
     assert.equal(calculations.calculateBatteryAh(120, 60, 12, 85), 11.764706);
     assert.equal(calculations.calculateBatteryAh(0.01, 1, 48, 100), 0.000004);
+    assert.equal(calculations.calculateBatteryAh(0.006, 1, 100, 100), 0.000001);
+    assert.equal(calculations.calculateBatteryAh(0.00006, 1, 100, 100), null);
+    assert.equal(calculations.calculateBatteryAh(120, '1e-320', 12, 85), null);
     assert.equal(calculations.calculateBatteryAh(0, 60, 12, 85), null);
     assert.equal(calculations.calculateBatteryAh(120, -1, 12, 85), null);
     assert.equal(calculations.calculateBatteryAh(120, 60, 12, 0), null);
@@ -313,6 +316,12 @@ test('normalizes valid imports and rejects malformed device/settings data before
     assert.throws(() => calculations.normalizeImportData({
         devices: [], calculatedData: {}, settings: { backupTime: -2, voltage: 12, efficiency: 85 },
     }));
+    for (const backupTime of [0.5, '1e-320']) {
+        assert.throws(() => calculations.normalizeImportData({
+            devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }], calculatedData: {},
+            settings: { backupTime, voltage: 12, efficiency: 85 },
+        }), { name: 'InvalidImportDataError' });
+    }
     assert.throws(() => calculations.normalizeImportData({
         devices: [{ name: 'Server', load: true, unit: 'W', plugs: 1 }], calculatedData: {},
     }));
