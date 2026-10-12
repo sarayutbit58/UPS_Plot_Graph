@@ -820,3 +820,10 @@ These are presentation/packaging findings; this recheck made no application-code
 - Import now rejects schema versions newer than 1.5 rather than interpreting an unknown future format as the current schema. Legacy unversioned data and supported 1.2 / 1.5 formats remain accepted.
 - Verification: the partial-Forecast, Basic-export, and future-version regression cases failed before their fixes; the mode-less Enterprise mismatch was reproduced separately by importing a 24 V / 90% legacy payload into Basic. `npm test` 36/36; 1,000 deterministic Basic/Enterprise JSON export→parse→import combinations passed; `node --check calculations.js`, inline JavaScript syntax check, and `git diff --check` passed.
 - A follow-up mode-inference boundary distinguishes legacy Basic calculations (calculatedData explicitly records 12 V / 85%) from saved Enterprise preferences (settings records 24 V / 90%). Import keeps Basic active, retains 24 V / 90% as Enterprise preferences, and recalculates Basic Ah as 11.764706 for 120 W / 60 minutes; the browser confirmed this behavior.
+
+## Deterministic Legacy Mode Default — 2026-10-12
+
+- Mode-less legacy files with no Enterprise markers now resolve to Basic instead of inheriting the currently open UI mode. This makes the same file deterministic when imported from either Basic or Enterprise.
+- Verified in Chrome by opening Enterprise and importing a v1.2 file with 12 V / 85% defaults and W-only devices: the app switched to Basic, the Basic button reported `aria-pressed=true`, Enterprise reported false, and the imported 100 W load remained intact.
+- Legacy Basic files with saved 24 V / 90% Enterprise preferences are still recognized as Basic when their recorded calculation used 12 V / 85%; the preferences remain available after switching modes. Conversely, non-default active calculation settings infer Enterprise.
+- Verification after this change: `npm test` 37/37; `node --check calculations.js`; inline JavaScript syntax; `git diff --check`.

@@ -582,11 +582,25 @@
                 || devices.some(device => device.unit === 'VA' || device.plugs !== 1)
                 || forecastNumber > 0;
             const hasSavedEnterpriseSettings = settings.voltage !== 12 || settings.efficiency !== 85;
+            const calculatedVoltage = finiteNumber(data.calculatedData.voltage);
+            const calculatedEfficiency = finiteNumber(data.calculatedData.efficiency);
+            const hasValidCalculatedSettings = calculatedVoltage !== null && calculatedEfficiency !== null
+                && decimalInputMatchesNumber(data.calculatedData.voltage, calculatedVoltage)
+                && decimalInputMatchesNumber(data.calculatedData.efficiency, calculatedEfficiency)
+                && [12, 24, 48].includes(calculatedVoltage)
+                && calculatedEfficiency >= 50 && calculatedEfficiency <= 100;
             const hasBasicCalculatedSettings = decimalInputMatchesNumber(data.calculatedData.voltage, 12)
                 && decimalInputMatchesNumber(data.calculatedData.efficiency, 85);
+            const hasEnterpriseCalculatedSettings = hasValidCalculatedSettings
+                && (calculatedVoltage !== 12 || calculatedEfficiency !== 85);
             if (hasEnterpriseMarkers) mode = 'enterprise';
             else if (hasSavedEnterpriseSettings && hasBasicCalculatedSettings) mode = 'basic';
-            else if (hasSavedEnterpriseSettings) mode = 'enterprise';
+            else if (hasSavedEnterpriseSettings || hasEnterpriseCalculatedSettings) mode = 'enterprise';
+            else mode = 'basic';
+            if (mode === 'enterprise' && !hasSavedEnterpriseSettings && hasEnterpriseCalculatedSettings) {
+                settings.voltage = calculatedVoltage;
+                settings.efficiency = calculatedEfficiency;
+            }
         }
         if (runtimeSource === 'manufacturer' && mode !== 'enterprise') {
             throw invalidImport('ต้องใช้โหมด Enterprise กับกราฟ Runtime ของผู้ผลิต');
@@ -609,7 +623,11 @@
     }
 
     function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, runtimeBatteryWasAutoFilled = false, mode = null, runtimeSource = 'formula', runtimeCurve = null, exportDate = new Date() }) {
-        const exportMode = mode ?? (runtimeSource === 'manufacturer' ? 'enterprise' : null);
+        const hasEnterpriseMarkers = runtimeSource === 'manufacturer'
+            || finiteNumber(settings.voltage) !== 12 || finiteNumber(settings.efficiency) !== 85
+            || devices.some(device => device.unit === 'VA' || device.plugs !== 1)
+            || (calculatedData.forecastValue ?? 0) > 0;
+        const exportMode = mode ?? (hasEnterpriseMarkers ? 'enterprise' : 'basic');
         const exportRuntimeSource = exportMode === 'basic' ? 'formula' : runtimeSource;
         const exportSettings = runtimeBatteryWasAutoFilled
             ? { ...settings, runtimeBatteryAh: null }

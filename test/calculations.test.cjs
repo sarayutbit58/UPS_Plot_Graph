@@ -696,13 +696,32 @@ test('preserves Basic or Enterprise mode across export and import', () => {
     assert.equal(calculations.normalizeImportData({
         devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
         calculatedData: {},
-    }).mode, null);
+    }).mode, 'basic');
 
     assert.throws(() => calculations.normalizeImportData({
         mode: 'workstation',
         devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
         calculatedData: {},
     }), { name: 'InvalidImportDataError' });
+});
+
+test('exports formula snapshots without a supplied mode as explicitly Basic', () => {
+    const exported = calculations.buildExportData({
+        devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+        calculatedData: { forecastValue: 0, forecastUnit: '%' },
+        settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    });
+    assert.equal(exported.mode, 'basic');
+    assert.equal(calculations.normalizeImportData(exported).mode, 'basic');
+
+    const advanced = calculations.buildExportData({
+        devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+        calculatedData: { forecastValue: 0, forecastUnit: '%' },
+        settings: { backupTime: 60, voltage: 24, efficiency: 90, runtimeBatteryAh: null },
+        calculationSettings: { backupTime: 60, voltage: 24, efficiency: 90, runtimeBatteryAh: null },
+    });
+    assert.equal(advanced.mode, 'enterprise');
+    assert.equal(calculations.normalizeImportData(advanced).mode, 'enterprise');
 });
 
 test('keeps compatibility with the previous v1.2 export shape and legacy Forecast watt fields', () => {
@@ -748,6 +767,16 @@ test('keeps compatibility with the previous v1.2 export shape and legacy Forecas
     assert.equal(legacyBasicWithSavedEnterprisePreferences.mode, 'basic');
     assert.equal(legacyBasicWithSavedEnterprisePreferences.settings.voltage, 24);
     assert.equal(legacyBasicWithSavedEnterprisePreferences.settings.efficiency, 90);
+
+    const legacyEnterpriseCalculationWithDefaultSettings = calculations.normalizeImportData({
+        version: '1.2',
+        devices: [{ name: 'Router', load: 120, unit: 'W' }],
+        calculatedData: { backupTime: 60, voltage: 24, efficiency: 90 },
+        settings: { backupTime: 60, voltage: 12, efficiency: 85 },
+    });
+    assert.equal(legacyEnterpriseCalculationWithDefaultSettings.mode, 'enterprise');
+    assert.equal(legacyEnterpriseCalculationWithDefaultSettings.settings.voltage, 24);
+    assert.equal(legacyEnterpriseCalculationWithDefaultSettings.settings.efficiency, 90);
 });
 
 test('exports a Basic-mode snapshot with formula Runtime even if an inactive curve is supplied', () => {
