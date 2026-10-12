@@ -641,3 +641,8 @@ These are presentation/packaging findings; this recheck made no application-code
 - Found that auto-filled 6.944445 Ah violated the `step="0.01"` constraint on the Runtime input (`stepMismatch=true`). Decimal numeric controls now use `step="any"` where calculations accept fractional precision. The same auto-filled value remains valid in the browser.
 - Decimal-entry browser check: 100 W + 1.5% Forecast produced 101.5 W; with 24 V / 90.5% / 90 min, Ah was 7.009669 and Runtime 90 min. Load, Forecast, efficiency, backup time, and auto-filled Ah all had `stepMismatch=false`.
 - Final regression run: `npm test` — 15/15 passed. Inline JavaScript parsed; `git diff --check` passed. Browser check at 390 × 844 had no horizontal overflow; the mode/import calculations matched the selected mode.
+
+## Outlet Count Path Check — 2026-10-12
+
+- Traced `planOutlets()` through Enterprise Summary: configurations up to 12 outlets select one screening unit; 13–24 produce two, and 25 produces three. When more than 12 outlets are required, the UI says the count exceeds a single UPS and labels the unit count approximate rather than showing `0` outlets as a valid per-unit capacity.
+- Regression checks cover 4, 5, 12, 13, 24, and 25 plugs. No new outlet-count defect found; actual outlet availability remains model-specific.
