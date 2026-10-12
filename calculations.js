@@ -358,7 +358,8 @@
         const scaled = roundFractionToScaledInteger(resultNumerator, resultDenominator, 2);
         if (scaled === null) return null;
         if (scaled > 0n) return fromScaledInteger(scaled, 2);
-        const unrounded = Number(resultNumerator) / Number(resultDenominator);
+        const loadRatio = (load - lower.loadW) / (upper.loadW - lower.loadW);
+        const unrounded = lower.runtimeMinutes + loadRatio * (upper.runtimeMinutes - lower.runtimeMinutes);
         return Number.isFinite(unrounded) && unrounded > 0 ? unrounded : null;
     }
 

@@ -318,6 +318,10 @@ test('interpolates manufacturer runtime only within published load points', () =
         { loadW: 1, runtimeMinutes: 2e21 },
         { loadW: 2, runtimeMinutes: 1e21 },
     ], 1.5), null);
+    assert.equal(calculations.calculateRuntimeFromCurve([
+        { loadW: 1, runtimeMinutes: '1e-300' },
+        { loadW: 2, runtimeMinutes: '5e-301' },
+    ], 1.5), 7.5e-301);
     assert.equal(calculations.calculateRuntimeFromCurve(points, 99.999), null);
     assert.equal(calculations.calculateRuntimeFromCurve(points, 400.001), null);
     assert.equal(calculations.calculateRuntimeFromCurve(points, '9007199254740993'), null);
