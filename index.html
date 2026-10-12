@@ -501,13 +501,13 @@
                         <label for="backupTimeMin" class="block text-gray-700 font-medium mb-2">ระยะเวลาสำรองไฟที่ต้องการ (นาที)</label>
                         <input type="number" id="backupTimeMin" name="backupTimeMin" value="60" min="1" step="any"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            oninput="calculateBatteryAh()">
+                            oninput="handleBatterySettingsInput()">
                     </div>
                     <div class="enterprise-only">
                         <label for="batteryVoltage" class="block text-gray-700 font-medium mb-2">แรงดันแบตเตอรี่ (V)</label>
                         <select id="batteryVoltage" name="batteryVoltage"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            oninput="calculateBatteryAh()">
+                            oninput="handleBatterySettingsInput()">
                             <option value="12">12V</option>
                             <option value="24">24V</option>
                             <option value="48">48V</option>
@@ -517,7 +517,7 @@
                         <label for="upsEfficiency" class="block text-gray-700 font-medium mb-2">สมมติฐานประสิทธิภาพ UPS (%)</label>
                         <input type="number" id="upsEfficiency" name="upsEfficiency" value="85" min="50" max="100" step="any"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            oninput="calculateBatteryAh()">
+                            oninput="handleBatterySettingsInput()">
                         <p class="field-help mt-1">ค่าเริ่มต้น 85% เป็นสมมติฐานของสูตร ไม่ใช่ค่าทั่วไปของทุก UPS; ประสิทธิภาพจริงขึ้นกับรุ่นและระดับโหลด</p>
                     </div>
                 </div>
@@ -1191,6 +1191,17 @@
         }
 
         // Battery Calculator
+        function handleBatterySettingsInput() {
+            calculatedData.runtime = null;
+            document.getElementById('runtimeResult').classList.add('hidden');
+            document.getElementById('chartContainer').classList.add('hidden');
+            if (runtimeChart) {
+                runtimeChart.destroy();
+                runtimeChart = null;
+            }
+            calculateBatteryAh();
+        }
+
         function calculateBatteryAh() {
             const powerW = calculatedData.totalLoad;
             const timeMin = document.getElementById('backupTimeMin').value;
