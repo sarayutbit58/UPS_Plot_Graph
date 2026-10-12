@@ -66,6 +66,29 @@ test('calculates runtime with the inverse formula and handles zero or invalid ca
     assert.ok(Math.abs(cancellationRuntime / 3e307 - 1) < 1e-12);
 });
 
+test('keeps Ah sizing conservative and inverse Runtime within display precision across a supported input grid', () => {
+    const loadsW = [10, 45, 120, 750];
+    const backupMinutes = [15, 30, 60, 240];
+    const voltages = [12, 24, 48];
+    const efficiencies = [50, 85, 100];
+
+    for (const loadW of loadsW) {
+        for (const minutes of backupMinutes) {
+            for (const voltage of voltages) {
+                for (const efficiency of efficiencies) {
+                    const exactAh = loadW * (minutes / 60) / (voltage * (efficiency / 100));
+                    const requiredAh = calculations.calculateBatteryAh(loadW, minutes, voltage, efficiency);
+                    assert.ok(requiredAh >= exactAh - 1e-12, `Ah must not under-size ${loadW} W / ${minutes} min / ${voltage} V / ${efficiency}%`);
+                    assert.ok(requiredAh - exactAh < 0.00000101, 'Ah rounding should remain within one micro-Ah');
+
+                    const reproducedMinutes = calculations.calculateRuntimeMinutes(requiredAh, voltage, efficiency, loadW);
+                    assert.ok(Math.abs(reproducedMinutes - minutes) <= 0.01, `inverse Runtime must agree for ${loadW} W / ${minutes} min / ${voltage} V / ${efficiency}%`);
+                }
+            }
+        }
+    }
+});
+
 test('builds a unique numeric runtime curve that matches the exact current load', () => {
     const curve = calculations.buildRuntimeCurve(11.76, 12, 85, 100);
     const loads = curve.map(point => point.loadW);
