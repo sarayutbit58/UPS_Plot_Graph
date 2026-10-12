@@ -2,7 +2,8 @@
   "name": "ups-plot-graph",
   "private": true,
   "scripts": {
-    "build:css": "tailwindcss -i ./styles/tailwind.input.css -o ./styles/tailwind.css --minify"
+    "build:css": "tailwindcss -i ./styles/tailwind.input.css -o ./styles/tailwind.css --minify",
+    "test": "node --test"
   },
   "devDependencies": {
     "tailwindcss": "3.4.17"

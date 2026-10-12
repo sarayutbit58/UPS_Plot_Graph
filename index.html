@@ -663,11 +663,13 @@
 
     <footer class="app-footer">UPS Picker · ผลลัพธ์เป็นค่าประมาณเพื่อช่วยวางแผนเบื้องต้น</footer>
 
+    <script src="./calculations.js"></script>
     <script>
         // State
         let currentStep = 1;
         let currentMode = 'basic';
         let runtimeBatteryWasAutoFilled = false;
+        let enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
         let devices = [];
         let deviceIdCounter = 0;
         let runtimeChart = null;
@@ -695,7 +697,27 @@
         });
 
         function setMode(mode) {
-            currentMode = mode === 'enterprise' ? 'enterprise' : 'basic';
+            const nextMode = mode === 'enterprise' ? 'enterprise' : 'basic';
+            if (currentMode === 'enterprise' && nextMode === 'basic') {
+                enterpriseBatterySettings = {
+                    voltage: Number(document.getElementById('batteryVoltage').value),
+                    efficiency: Number(document.getElementById('upsEfficiency').value),
+                };
+            }
+            if (currentMode === 'basic' && nextMode === 'enterprise') {
+                document.getElementById('batteryVoltage').value = enterpriseBatterySettings.voltage;
+                document.getElementById('upsEfficiency').value = enterpriseBatterySettings.efficiency;
+            }
+            currentMode = nextMode;
+            if (currentMode === 'basic') {
+                document.getElementById('batteryVoltage').value = 12;
+                document.getElementById('upsEfficiency').value = 85;
+                document.getElementById('runtimeVoltage').value = 12;
+                document.getElementById('runtimeEfficiency').value = 85;
+            } else {
+                document.getElementById('runtimeVoltage').value = document.getElementById('batteryVoltage').value;
+                document.getElementById('runtimeEfficiency').value = document.getElementById('upsEfficiency').value;
+            }
             document.body.dataset.mode = currentMode;
             document.getElementById('basicModeButton').setAttribute('aria-pressed', currentMode === 'basic');
             document.getElementById('enterpriseModeButton').setAttribute('aria-pressed', currentMode === 'enterprise');
@@ -703,6 +725,11 @@
                 ? 'ข้อมูลหลักที่จำเป็นสำหรับการคำนวณ'
                 : 'ปรับสมมติฐาน Forecast และรายละเอียดโหลดเพิ่มเติม';
             updateBasicContextNote();
+            if (calculatedData.totalLoad > 0 && currentStep >= 2) calculateBatteryAh();
+            if (currentStep >= 3 && calculatedData.totalLoad > 0) {
+                syncRuntimeBatteryAh();
+                calculateRuntime();
+            }
             if (currentStep === 4) updateSummary();
         }
 
@@ -791,48 +818,26 @@
         }
 
         function updateTotalLoad() {
-            let deviceTotal = 0;
-            let totalPlugs = 0;
             const deviceCards = document.querySelectorAll('.device-card');
-
-            devices = [];
+            const enteredDevices = [];
             deviceCards.forEach((card) => {
                 const name = card.querySelector('.device-name').value || 'อุปกรณ์ไม่ระบุชื่อ';
-                const load = parseFloat(card.querySelector('.device-load').value) || 0;
+                const load = card.querySelector('.device-load').value;
                 const unit = card.querySelector('.device-unit').value;
-                const plugs = parseInt(card.querySelector('.device-plugs')?.value) || 1;
-
-                if (load > 0) {
-                    // Convert VA to W if needed (assume 0.8 power factor)
-                    const watts = unit === 'VA' ? load * 0.8 : load;
-                    deviceTotal += watts;
-                    totalPlugs += plugs;
-                    devices.push({ name, load, unit, watts, plugs });
-                }
+                const plugs = card.querySelector('.device-plugs')?.value || 1;
+                enteredDevices.push({ name, load, unit, plugs });
             });
-
-            // Store values separately
-            calculatedData.deviceLoad = Math.round(deviceTotal * 100) / 100;
-            calculatedData.totalPlugs = totalPlugs;
-
-            // Get forecast value and calculate based on unit
-            const forecastValue = parseFloat(document.getElementById('forecastValue').value) || 0;
+            const forecastValue = document.getElementById('forecastValue').value;
             const forecastUnit = calculatedData.forecastUnit || '%';
-            let forecastWatt = 0;
-
-            if (forecastValue > 0) {
-                if (forecastUnit === '%') {
-                    // Calculate percentage of device load
-                    forecastWatt = deviceTotal * (forecastValue / 100);
-                } else {
-                    // Direct watt value
-                    forecastWatt = forecastValue;
-                }
-            }
-
-            calculatedData.forecastValue = forecastValue;
-            calculatedData.forecastWatt = Math.round(forecastWatt * 100) / 100;
-            calculatedData.totalLoad = Math.round((deviceTotal + forecastWatt) * 100) / 100;
+            const breakdown = UPScalculations.calculateLoadBreakdown(enteredDevices, forecastValue, forecastUnit);
+            devices = breakdown.devices;
+            calculatedData.deviceLoad = breakdown.deviceLoad;
+            calculatedData.totalPlugs = breakdown.totalPlugs;
+            calculatedData.forecastValue = Number.isFinite(Number(forecastValue)) && Number(forecastValue) > 0 ? Number(forecastValue) : 0;
+            calculatedData.forecastWatt = breakdown.forecastWatt;
+            calculatedData.totalLoad = breakdown.totalLoad;
+            const deviceTotal = breakdown.deviceLoad;
+            const forecastWatt = breakdown.forecastWatt;
             updateBasicContextNote();
             if (calculatedData.totalLoad > 0) {
                 const loadError = document.getElementById('loadError');
@@ -896,17 +901,18 @@
         // Battery Calculator
         function calculateBatteryAh() {
             const powerW = calculatedData.totalLoad;
-            const timeMin = parseFloat(document.getElementById('backupTimeMin').value) || 60;
-            const voltage = parseFloat(document.getElementById('batteryVoltage').value) || 12;
-            const efficiency = parseFloat(document.getElementById('upsEfficiency').value) || 85;
-
-            // Formula: Ah = (Power × Time in hours) / (Voltage × Efficiency)
-            const timeHours = timeMin / 60;
-            const efficiencyDecimal = efficiency / 100;
-
-            const batteryAh = (powerW * timeHours) / (voltage * efficiencyDecimal);
-
-            calculatedData.batteryAh = Math.round(batteryAh * 100) / 100;
+            const timeMin = Number(document.getElementById('backupTimeMin').value);
+            const voltage = currentMode === 'basic' ? 12 : Number(document.getElementById('batteryVoltage').value);
+            const efficiency = currentMode === 'basic' ? 85 : Number(document.getElementById('upsEfficiency').value);
+            const batteryAh = UPScalculations.calculateBatteryAh(powerW, timeMin, voltage, efficiency);
+            if (batteryAh === null) {
+                calculatedData.batteryAh = null;
+                document.getElementById('batteryAhResult').textContent = 'ตรวจสอบโหลด เวลา แรงดัน และประสิทธิภาพ';
+                document.getElementById('batteryResult').classList.remove('hidden');
+                updateDashboardMetrics();
+                return;
+            }
+            calculatedData.batteryAh = batteryAh;
             calculatedData.voltage = voltage;
             calculatedData.efficiency = efficiency;
             calculatedData.backupTime = timeMin;
@@ -918,14 +924,17 @@
 
         // Runtime Calculator
         function calculateRuntime() {
-            const batteryAh = parseFloat(document.getElementById('runtimeBatteryAh').value) || calculatedData.batteryAh;
-            const voltage = parseFloat(document.getElementById('runtimeVoltage').value) || calculatedData.voltage;
-            const efficiency = parseFloat(document.getElementById('runtimeEfficiency').value) || calculatedData.efficiency;
+            const capacityInput = document.getElementById('runtimeBatteryAh').value;
+            const batteryAh = capacityInput === '' ? calculatedData.batteryAh : Number(capacityInput);
+            const voltage = currentMode === 'basic' ? 12 : Number(document.getElementById('runtimeVoltage').value);
+            const efficiency = currentMode === 'basic' ? 85 : Number(document.getElementById('runtimeEfficiency').value);
             const powerW = calculatedData.totalLoad;
-
-            if (powerW <= 0) {
-                calculatedData.runtime = 0;
-                document.getElementById('runtimeMinutes').textContent = 'ยังคำนวณไม่ได้ — กรอกโหลดก่อน';
+            const runtimeMinutes = UPScalculations.calculateRuntimeMinutes(batteryAh, voltage, efficiency, powerW);
+            if (runtimeMinutes === null) {
+                calculatedData.runtime = null;
+                document.getElementById('runtimeMinutes').textContent = powerW <= 0
+                    ? 'ยังคำนวณไม่ได้ — กรอกโหลดก่อน'
+                    : 'ตรวจสอบความจุแบตเตอรี่ แรงดัน และประสิทธิภาพ';
                 document.getElementById('runtimeResult').classList.remove('hidden');
                 document.getElementById('chartContainer').classList.add('hidden');
                 if (runtimeChart) {
@@ -935,11 +944,6 @@
                 updateDashboardMetrics();
                 return;
             }
-
-            // Formula: Runtime (hours) = (Ah × Voltage × Efficiency) / Power
-            const efficiencyDecimal = efficiency / 100;
-            const runtimeHours = (batteryAh * voltage * efficiencyDecimal) / powerW;
-            const runtimeMinutes = Math.round(runtimeHours * 60);
 
             calculatedData.runtime = runtimeMinutes;
 
@@ -953,19 +957,10 @@
         }
 
         function generateChart(batteryAh, voltage, efficiency) {
-            const efficiencyDecimal = efficiency / 100;
-            const dataPoints = [];
-            const labels = [];
-
-            // Generate data points for different power loads
-            const powerLevels = [50, 100, 150, 200, 250, 300, Math.round(calculatedData.totalLoad)];
-            const validPowerLevels = powerLevels.filter(power => power > 0).sort((a, b) => a - b);
-
-            validPowerLevels.forEach(power => {
-                const runtime = (batteryAh * voltage * efficiencyDecimal) / power * 60;
-                labels.push(`${power} W`);
-                dataPoints.push(Math.round(runtime));
-            });
+            const curve = UPScalculations.buildRuntimeCurve(batteryAh, voltage, efficiency, calculatedData.totalLoad);
+            const validPowerLevels = curve.map(point => point.loadW);
+            const dataPoints = curve.map(point => point.runtimeMinutes);
+            const labels = validPowerLevels.map(power => `${power} W`);
 
             const tableBody = document.getElementById('runtimeDataTable');
             tableBody.replaceChildren();
@@ -1000,13 +995,13 @@
                         fill: true,
                         tension: 0.4,
                         pointBackgroundColor: dataPoints.map((_, i) =>
-                            validPowerLevels[i] === Math.round(calculatedData.totalLoad) ? '#ef4444' : '#2456d6'
+                            curve[i].currentLoad ? '#ef4444' : '#2456d6'
                         ),
                         pointRadius: dataPoints.map((_, i) =>
-                            validPowerLevels[i] === Math.round(calculatedData.totalLoad) ? 8 : 5
+                            curve[i].currentLoad ? 8 : 5
                         ),
                         pointStyle: dataPoints.map((_, i) =>
-                            validPowerLevels[i] === Math.round(calculatedData.totalLoad) ? 'triangle' : 'circle'
+                            curve[i].currentLoad ? 'triangle' : 'circle'
                         ),
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2
@@ -1062,12 +1057,7 @@
         }
 
         function escapeHtml(value) {
-            return String(value ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
+            return UPScalculations.escapeHtml(value);
         }
 
         // Summary
@@ -1080,17 +1070,19 @@
             document.getElementById('summaryTotalLoad').innerHTML = totalLoadText;
 
             // Recommended UPS VA (add 30% headroom)
-            const recommendedVA = Math.ceil(calculatedData.totalLoad * 1.3 / 100) * 100;
+            const recommendedVA = UPScalculations.recommendUpsVA(calculatedData.totalLoad);
             document.getElementById('summaryUpsVA').textContent = `${recommendedVA} VA`;
 
             // Battery Ah
-            document.getElementById('summaryBatteryAh').textContent = `${calculatedData.batteryAh} Ah`;
+            document.getElementById('summaryBatteryAh').textContent = Number.isFinite(calculatedData.batteryAh)
+                ? `${calculatedData.batteryAh} Ah` : '— Ah';
 
             // Voltage
             document.getElementById('summaryVoltage').textContent = `${calculatedData.voltage} V`;
 
             // Runtime
-            document.getElementById('summaryRuntime').textContent = `${calculatedData.runtime} นาที`;
+            document.getElementById('summaryRuntime').textContent = Number.isFinite(calculatedData.runtime)
+                ? `${calculatedData.runtime} นาที` : '— นาที';
 
             // Efficiency
             document.getElementById('summaryEfficiency').textContent = `${calculatedData.efficiency}%`;
@@ -1121,8 +1113,9 @@
             // Keep the Basic summary focused; expose existing screening guidance in Enterprise.
             const recommendations = [];
             recommendations.push(`ขนาดแนะนำจากสูตรเดิม: ${recommendedVA} VA ขึ้นไป`);
+            recommendations.push('เป็นค่าคัดกรองจากโหลด W เผื่อ 30% และปัดขึ้นทีละ 100 VA; ตรวจพิกัด VA/W และกราฟ Runtime ของ UPS รุ่นจริงก่อนเลือก');
 
-            if (calculatedData.runtime < 30) {
+            if (Number.isFinite(calculatedData.runtime) && calculatedData.runtime < 30) {
                 recommendations.push('Runtime ต่ำกว่า 30 นาทีตามค่าประมาณนี้ — พิจารณาเพิ่มความจุแบตเตอรี่');
             }
 
@@ -1142,20 +1135,8 @@
 
             if (currentMode === 'enterprise' && totalPlugs > 0) {
                 // Common UPS outlet counts: 4, 6, 8, 10, 12
-                const upsOutletConfigs = [4, 6, 8, 10, 12];
-                let requiredUpsCount = 1;
-                let outletsPerUps = 0;
-                
-                for (let outlets of upsOutletConfigs) {
-                    if (outlets >= totalPlugs) {
-                        outletsPerUps = outlets;
-                        break;
-                    }
-                }
-                
+                const { requiredUpsCount, outletsPerUps } = UPScalculations.planOutlets(totalPlugs);
                 if (outletsPerUps === 0) {
-                    // Need multiple UPS
-                    requiredUpsCount = Math.ceil(totalPlugs / 12); // Max 12 outlets per UPS
                     recommendations.push(`ต้องใช้ UPS ประมาณ ${requiredUpsCount} เครื่อง เนื่องจากจำนวนรูปลั๊ก (${totalPlugs} รู) เกินกว่าที่ UPS เดียวจะรองรับได้`);
                 } else {
                     recommendations.push(`UPS 1 เครื่องที่มี ${outletsPerUps} รูปลั๊กเพียงพอตามการคัดกรองจำนวนช่อง`);
@@ -1281,6 +1262,7 @@
         function restart() {
             currentStep = 1;
             runtimeBatteryWasAutoFilled = false;
+            enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
             devices = [];
             calculatedData = {
                 totalLoad: 0,
@@ -1334,23 +1316,16 @@
             // Update data before export
             updateTotalLoad();
 
-            const exportData = {
-                version: '1.2',
-                appName: 'UPS Picker',
-                exportDate: new Date().toISOString(),
-                devices: devices,
-                calculatedData: calculatedData,
-                forecast: {
-                    value: calculatedData.forecastValue,
-                    unit: calculatedData.forecastUnit,
-                    watt: calculatedData.forecastWatt
-                },
+            const exportData = UPScalculations.buildExportData({
+                devices,
+                calculatedData,
                 settings: {
-                    backupTime: parseFloat(document.getElementById('backupTimeMin').value) || 60,
-                    voltage: parseFloat(document.getElementById('batteryVoltage').value) || 12,
-                    efficiency: parseFloat(document.getElementById('upsEfficiency').value) || 85
-                }
-            };
+                    backupTime: Number(document.getElementById('backupTimeMin').value),
+                    voltage: currentMode === 'basic' ? 12 : Number(document.getElementById('batteryVoltage').value),
+                    efficiency: currentMode === 'basic' ? 85 : Number(document.getElementById('upsEfficiency').value),
+                    runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : Number(document.getElementById('runtimeBatteryAh').value),
+                },
+            });
 
             const jsonString = JSON.stringify(exportData, null, 2);
 
@@ -1414,16 +1389,21 @@
             reader.onload = function (e) {
                 try {
                     const importData = JSON.parse(e.target.result);
-
-                    // Validate data
-                    if (!importData.devices || !importData.calculatedData) {
-                        throw new Error('Invalid file format');
-                    }
-
-                    // Restore devices
-                    devices = importData.devices;
-                    calculatedData = importData.calculatedData;
-                    document.getElementById('runtimeBatteryAh').value = '';
+                    // Validate the complete payload before changing application state or DOM.
+                    const normalized = UPScalculations.normalizeImportData(importData);
+                    devices = normalized.devices;
+                    calculatedData = {
+                        totalLoad: 0, deviceLoad: 0, totalPlugs: 0,
+                        forecastValue: normalized.forecast.value,
+                        forecastUnit: normalized.forecast.unit,
+                        forecastWatt: 0, batteryAh: 0,
+                        voltage: normalized.settings.voltage,
+                        efficiency: normalized.settings.efficiency,
+                        backupTime: normalized.settings.backupTime,
+                        runtime: 0,
+                    };
+                    enterpriseBatterySettings = { voltage: normalized.settings.voltage, efficiency: normalized.settings.efficiency };
+                    document.getElementById('runtimeBatteryAh').value = normalized.settings.runtimeBatteryAh ?? '';
                     runtimeBatteryWasAutoFilled = false;
 
                     // Clear and rebuild device list
@@ -1441,7 +1421,7 @@
                                     </div>
                                     <div class="md:col-span-2">
                             <label class="field-label">กำลังไฟ*</label>
-                            <input type="number" value="${device.load}" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
+                                    <input type="number" value="${escapeHtml(device.load)}" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
                                     </div>
                                     <div class="enterprise-only md:col-span-2">
                                         <label class="block text-gray-600 text-sm mb-1">หน่วย*</label>
@@ -1453,7 +1433,7 @@
                                     </div>
                                     <div class="enterprise-only md:col-span-2">
                                         <label class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
-                                        <input type="number" value="${device.plugs || 1}" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="updateTotalLoad()">
+                                        <input type="number" value="${escapeHtml(device.plugs)}" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="updateTotalLoad()">
                                     </div>
                                     <div class="md:col-span-2">
                                         <button onclick="removeDevice(${deviceIdCounter})" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
@@ -1467,32 +1447,13 @@
                     });
 
                     // Restore settings
-                    if (importData.settings) {
-                        document.getElementById('backupTimeMin').value = importData.settings.backupTime;
-                        document.getElementById('batteryVoltage').value = importData.settings.voltage;
-                        document.getElementById('upsEfficiency').value = importData.settings.efficiency;
-                    }
-
-                    // Restore forecast (support v1.2 and older formats)
-                    if (importData.forecast) {
-                        // New v1.2 format with value and unit
-                        calculatedData.forecastValue = importData.forecast.value || 0;
-                        calculatedData.forecastUnit = importData.forecast.unit || '%';
-                        document.getElementById('forecastValue').value = importData.forecast.value > 0 ? importData.forecast.value : '';
-                        setForecastUnit(importData.forecast.unit || '%');
-                    } else {
-                        // Old format - forecastWatt only (assume W mode)
-                        const forecastWatt = importData.forecastWatt || (importData.calculatedData && importData.calculatedData.forecastWatt) || 0;
-                        if (forecastWatt > 0) {
-                            calculatedData.forecastValue = forecastWatt;
-                            calculatedData.forecastUnit = 'W';
-                            document.getElementById('forecastValue').value = forecastWatt;
-                            setForecastUnit('W');
-                        } else {
-                            document.getElementById('forecastValue').value = '';
-                            setForecastUnit('%');
-                        }
-                    }
+                    document.getElementById('backupTimeMin').value = normalized.settings.backupTime;
+                    document.getElementById('batteryVoltage').value = normalized.settings.voltage;
+                    document.getElementById('upsEfficiency').value = normalized.settings.efficiency;
+                    document.getElementById('runtimeVoltage').value = normalized.settings.voltage;
+                    document.getElementById('runtimeEfficiency').value = normalized.settings.efficiency;
+                    document.getElementById('forecastValue').value = normalized.forecast.value || '';
+                    setForecastUnit(normalized.forecast.unit);
 
                     // Recalculate total load from DOM (not from cached data)
                     updateTotalLoad();

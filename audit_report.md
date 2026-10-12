@@ -551,3 +551,14 @@ These are presentation/packaging findings; this recheck made no application-code
 - Rechecked at 390 × 844: both mode labels and `100 W` occupy one line, document width stays within the viewport, and Enterprise-only controls remain visible after switching modes.
 - Browser console after a cache-busted reload: 0 errors and 0 warnings; `styles/tailwind.css` returned HTTP 200, with no Tailwind CDN or favicon request.
 - `npm run build:css` exits successfully. It still prints the separate Browserslist `caniuse-lite is outdated` advisory during the build; this warning is not emitted by the running page.
+
+## Calculation and Import Hardening — 2026-10-12
+
+- Extracted deterministic load, battery Ah, runtime, runtime-curve, UPS screening, import-normalization, and export-building logic into `calculations.js`; added built-in Node tests without a new runtime dependency.
+- Kept the existing formulas: VA uses PF 0.8, Forecast is added to device watts, Ah uses load × hours ÷ (voltage × efficiency), runtime uses the inverse, and UPS sizing retains 30% headroom rounded up per 100 VA.
+- Basic mode now consistently calculates with 12 V / 85%; Enterprise voltage and efficiency values are saved when leaving and restored when returning.
+- Zero/invalid capacity and invalid runtime inputs no longer fall through to hidden defaults or produce negative/infinite results. Runtime graph sample loads are unique and use the exact current load.
+- JSON imports are schema-checked before state or DOM changes. Dynamic device values are escaped in both text and numeric input attributes; exports now preserve the manual runtime battery Ah value.
+- The VA recommendation remains a screening heuristic, not product-specific UPS selection. Runtime is an idealized estimate and does not model battery discharge curves, aging, temperature, or vendor-specific behavior.
+- Validation: `npm test` — 9 tests passed; `node --check calculations.js` and inline-script parse passed; `npm run build:css` succeeded with the existing build-time outdated Browserslist advisory; `git diff --check` passed.
+- Browser interaction recheck was skipped because available RAM was approximately 315 MB during this run. No claim is made that every runtime/browser/device combination is bug-free.
