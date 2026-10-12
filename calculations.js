@@ -15,6 +15,28 @@
         return Number.isFinite(number) ? number : null;
     }
 
+    function decimalFraction(value) {
+        const match = /^(-?)(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(value.toString());
+        if (!match) return null;
+        const fraction = match[3] || '';
+        const exponent = Number(match[4] || 0);
+        let numerator = BigInt(`${match[2]}${fraction}`);
+        let denominator = 1n;
+        const scale = fraction.length - exponent;
+        if (scale > 0) denominator = 10n ** BigInt(scale);
+        else if (scale < 0) numerator *= 10n ** BigInt(-scale);
+        if (match[1] === '-') numerator = -numerator;
+        return { numerator, denominator };
+    }
+
+    function scaledIntegerText(value, places) {
+        const negative = value < 0n;
+        const digits = (negative ? -value : value).toString().padStart(places + 1, '0');
+        const whole = places ? digits.slice(0, -places) : digits;
+        const fraction = places ? `.${digits.slice(-places)}` : '';
+        return `${negative ? '-' : ''}${whole}${fraction}`;
+    }
+
     function round(value, places = 6) {
         const factor = 10 ** places;
         if (!Number.isFinite(value)) return null;
@@ -41,11 +63,7 @@
     }
 
     function fromScaledInteger(value, places) {
-        const negative = value < 0n;
-        const digits = (negative ? -value : value).toString().padStart(places + 1, '0');
-        const whole = places ? digits.slice(0, -places) : digits;
-        const fraction = places ? `.${digits.slice(-places)}` : '';
-        const text = `${negative ? '-' : ''}${whole}${fraction}`;
+        const text = scaledIntegerText(value, places);
         const number = Number(text);
         if (!Number.isFinite(number) || Math.abs(number) >= 1e21 || number.toFixed(places) !== text) return null;
         return number;
@@ -152,15 +170,12 @@
         const power = finiteNumber(powerW), time = finiteNumber(minutes);
         const volts = finiteNumber(voltage), percent = finiteNumber(efficiency);
         if (power === null || power <= 0 || time === null || time <= 0 || volts === null || volts <= 0 || percent === null || percent < 50 || percent > 100) return null;
-        let requiredAh = (power / volts) * (time / 60) / (percent / 100);
-        if (!Number.isFinite(requiredAh) || requiredAh === 0) {
-            requiredAh = Math.exp(Math.log(power) + Math.log(time) - Math.log(60) - Math.log(volts) - Math.log(percent / 100));
-        }
-        if (!Number.isFinite(requiredAh)) return null;
-        const scaledAh = requiredAh * 1e6;
-        const roundedAh = Number.isFinite(scaledAh)
-            ? Math.max(0.000001, Math.ceil(scaledAh) / 1e6)
-            : requiredAh;
+        const p = decimalFraction(power), t = decimalFraction(time);
+        const v = decimalFraction(volts), e = decimalFraction(percent);
+        const numerator = p.numerator * t.numerator * 100n * v.denominator * e.denominator;
+        const denominator = p.denominator * t.denominator * 60n * v.numerator * e.numerator;
+        const scaledAh = (numerator * 1_000_000n + denominator - 1n) / denominator;
+        const roundedAh = Number(scaledIntegerText(scaledAh > 0n ? scaledAh : 1n, 6));
         return Number.isFinite(roundedAh) ? roundedAh : null;
     }
 
@@ -168,17 +183,21 @@
         const ah = finiteNumber(ampHours), volts = finiteNumber(voltage);
         const percent = finiteNumber(efficiency), power = finiteNumber(powerW);
         if (ah === null || ah < 0 || volts === null || volts <= 0 || percent === null || percent < 50 || percent > 100 || power === null || power <= 0) return null;
-        let exactMinutes = (ah / power) * volts * (percent / 100) * 60;
-        if (!Number.isFinite(exactMinutes) || exactMinutes === 0) {
-            exactMinutes = Math.exp(Math.log(ah) - Math.log(power) + Math.log(volts) + Math.log(percent / 100) + Math.log(60));
+        const a = decimalFraction(ah), v = decimalFraction(volts);
+        const e = decimalFraction(percent), p = decimalFraction(power);
+        const numerator = a.numerator * v.numerator * e.numerator * 60n * p.denominator;
+        const denominator = a.denominator * v.denominator * e.denominator * 100n * p.numerator;
+        const hundredthsNumerator = numerator * 100n;
+        const roundedHundredths = (hundredthsNumerator * 2n + denominator) / (denominator * 2n);
+        if (ah > 0 && roundedHundredths === 0n) {
+            let exactMinutes = (ah / power) * volts * (percent / 100) * 60;
+            if (!Number.isFinite(exactMinutes) || exactMinutes === 0) {
+                exactMinutes = Math.exp(Math.log(ah) - Math.log(power) + Math.log(volts) + Math.log(percent / 100) + Math.log(60));
+            }
+            return Number.isFinite(exactMinutes) && exactMinutes > 0 ? exactMinutes : Number.MIN_VALUE;
         }
-        if (!Number.isFinite(exactMinutes)) return null;
-        const scaledMinutes = exactMinutes * 100;
-        const roundedMinutes = Number.isFinite(scaledMinutes)
-            ? Math.round(scaledMinutes) / 100
-            : exactMinutes;
-        if (ah > 0 && roundedMinutes === 0) return exactMinutes > 0 ? exactMinutes : Number.MIN_VALUE;
-        return roundedMinutes;
+        const roundedMinutes = Number(scaledIntegerText(roundedHundredths, 2));
+        return Number.isFinite(roundedMinutes) ? roundedMinutes : null;
     }
 
     function buildRuntimeCurve(ampHours, voltage, efficiency, currentLoadW) {

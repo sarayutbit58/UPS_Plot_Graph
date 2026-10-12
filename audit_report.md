@@ -687,3 +687,14 @@ These are presentation/packaging findings; this recheck made no application-code
 - A breakpoint sweep found the Enterprise Forecast unit toggle was clipped at 320–390 px although the document itself did not scroll. At 320 px the toggle wrapper measured only 3.2 px while its two buttons extended to x=399 px.
 - The Forecast number input now has `min-w-0` and the unit toggle has `shrink-0`; rebuilt the checked-in Tailwind CSS.
 - Rechecked 320, 360, 390, 414, 480, 600, 760, 761, 800, 1000, 1001, and 1366 px: both toggle buttons fit their wrapper, no element crosses the viewport edge, and no document horizontal overflow was observed.
+
+## Ah and Runtime Decimal Rounding — 2026-10-12
+
+- Independent probes reproduced two formula-quantization errors: `calculateBatteryAh(3, 63, 12, 60)` returned 0.437501 Ah instead of exact 0.4375 Ah because binary noise made `ceil` add 1 µAh; Runtime 3.375 min rounded down to 3.37 instead of 3.38. A second 0.765-minute case also rounded down to 0.76.
+- Added exact decimal-rational quantization with BigInt: required Ah rounds upward to 1 µAh without over-ceiling exact values; Runtime rounds half-up to 0.01 min. Regression tests were observed failing before the fix and pass afterward.
+- Verified in the browser and Node: exact Ah cases return 0.4375 and 0.234375; Runtime boundary cases return 3.38 and 0.77; the prior standard case remains 59.98 min.
+
+## Tablet Form and Mode Toggle — 2026-10-12
+
+- At 768 × 1024, “พื้นฐาน” wrapped onto two lines and Enterprise load fields were only 57 px wide. Mode buttons now stay on one line; Enterprise device fields use two columns through 1000 px.
+- Rechecked 320, 360, 390, 480, 600, 760, 761, 768, 800, 1000, 1001, and 1366 px. No element crossed the viewport; mode labels remained one line; fields measured 204 px at 768 px and 96 px at 1001 px.

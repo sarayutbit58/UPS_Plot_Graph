@@ -141,6 +141,8 @@ test('calculates required Ah and rejects invalid sizing inputs', () => {
     assert.equal(calculations.calculateBatteryAh(120, 60, 12, 49), null);
     assert.equal(calculations.calculateBatteryAh(120, 60, 12, 50), 20);
     assert.equal(calculations.calculateBatteryAh(120, 60, 12, 100), 10);
+    assert.equal(calculations.calculateBatteryAh(3, 63, 12, 60), 0.4375);
+    assert.equal(calculations.calculateBatteryAh(1, 162, 12, 96), 0.234375);
     assert.equal(calculations.calculateBatteryAh(Infinity, 60, 12, 85), null);
     assert.ok(calculations.calculateBatteryAh(1e308, 1e308, 1e308, 100) > 0);
     assert.ok(calculations.calculateBatteryAh(1e308, 1e-308, 1e-308, 100) > 0);
@@ -155,6 +157,8 @@ test('calculates runtime with the inverse formula and handles zero or invalid ca
     assert.equal(calculations.calculateRuntimeMinutes(11.76, 12, 49, 120), null);
     assert.equal(calculations.calculateRuntimeMinutes(1 / 12, 12, 100, 120), 0.5);
     assert.equal(calculations.calculateRuntimeMinutes(0.25, 12, 100, 120), 1.5);
+    assert.equal(calculations.calculateRuntimeMinutes(1, 12, 60, 128), 3.38);
+    assert.equal(calculations.calculateRuntimeMinutes(1, 12, 85, 800), 0.77);
     assert.ok(Math.abs(calculations.calculateRuntimeMinutes(1 / 6000, 12, 100, 120) - 0.001) < 1e-12);
     assert.equal(calculations.calculateRuntimeMinutes(Number.MIN_VALUE, 12, 100, Number.MAX_VALUE), Number.MIN_VALUE);
     assert.equal(calculations.calculateRuntimeMinutes(1e306, 1e308, 50, 1e308), 3e307);
