@@ -277,6 +277,14 @@
         return error;
     }
 
+    function runtimeCurveImportFailureMessage(error, existingModel) {
+        const details = error && typeof error.message === 'string' ? error.message : 'ตรวจสอบไฟล์และข้อมูลรุ่น';
+        const retainedCurve = typeof existingModel === 'string' && existingModel.trim()
+            ? `ยังใช้เส้นโค้งเดิมของ ${existingModel} ต่อ`
+            : 'ยังไม่มีเส้นโค้งที่ใช้งาน';
+        return `นำเข้าไม่ได้: ${details} · ${retainedCurve}`;
+    }
+
     function normalizeRuntimeCurvePoints(points) {
         if (!Array.isArray(points) || points.length < 2 || points.length > 1000) return null;
         const normalized = [];
@@ -524,5 +532,5 @@
         };
     }
 
-    return { calculateLoadBreakdown, calculateBatteryAh, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, normalizeRuntimeCurveData, recommendUpsVA, planOutlets, escapeHtml, normalizeImportData, buildExportData };
+    return { calculateLoadBreakdown, calculateBatteryAh, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, recommendUpsVA, planOutlets, escapeHtml, normalizeImportData, buildExportData };
 }));

@@ -882,7 +882,9 @@
             const file = event.target.files && event.target.files[0];
             if (!file) return;
             if (file.size > 256_000) {
-                document.getElementById('runtimeCurveStatus').textContent = 'ไฟล์ CSV ต้องไม่เกิน 256 KB';
+                document.getElementById('runtimeCurveStatus').textContent = UPScalculations.runtimeCurveImportFailureMessage(
+                    new Error('ไฟล์ CSV ต้องไม่เกิน 256 KB'), runtimeCurve && runtimeCurve.model,
+                );
                 event.target.value = '';
                 return;
             }
@@ -902,13 +904,15 @@
                     document.getElementById('runtimeCurveStatus').textContent = `โหลดแล้ว ${points.length} จุด (${points[0].loadW}–${points[points.length - 1].loadW} W)`;
                     setRuntimeSource('manufacturer');
                 } catch (error) {
-                    document.getElementById('runtimeCurveStatus').textContent = `นำเข้าไม่ได้: ${error.message || 'ตรวจสอบไฟล์และข้อมูลรุ่น'}`;
+                    document.getElementById('runtimeCurveStatus').textContent = UPScalculations.runtimeCurveImportFailureMessage(error, runtimeCurve && runtimeCurve.model);
                 } finally {
                     event.target.value = '';
                 }
             };
             reader.onerror = function () {
-                document.getElementById('runtimeCurveStatus').textContent = 'อ่านไฟล์ไม่ได้ กรุณาเลือก CSV อีกครั้ง';
+                document.getElementById('runtimeCurveStatus').textContent = UPScalculations.runtimeCurveImportFailureMessage(
+                    new Error('อ่านไฟล์ไม่ได้ กรุณาเลือก CSV อีกครั้ง'), runtimeCurve && runtimeCurve.model,
+                );
                 event.target.value = '';
             };
             reader.readAsText(file, 'UTF-8');

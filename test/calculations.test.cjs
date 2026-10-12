@@ -340,6 +340,13 @@ test('builds a manufacturer curve with a marked interpolated current-load point'
     assert.deepEqual(calculations.buildManufacturerRuntimeCurve(points, 99), []);
 });
 
+test('explains which curve remains active after a failed CSV import', () => {
+    assert.equal(typeof calculations.runtimeCurveImportFailureMessage, 'function');
+    const error = new Error('CSV format error');
+    assert.match(calculations.runtimeCurveImportFailureMessage(error, 'UPS Model X'), /UPS Model X/);
+    assert.match(calculations.runtimeCurveImportFailureMessage(error, null), /ยังไม่มีเส้นโค้งที่ใช้งาน/);
+});
+
 test('validates and preserves manufacturer runtime curve provenance in imports', () => {
     const runtimeCurve = {
         model: 'UPS-Example 1000',
