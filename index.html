@@ -384,7 +384,7 @@
                     <div class="metric-hint">คำนวณจากเวลาสำรองที่ระบุ</div>
                 </article>
                 <article class="metric-card">
-                    <div class="metric-label">Runtime โดยประมาณ</div>
+                    <div id="dashboardRuntimeLabel" class="metric-label">Runtime โดยประมาณ</div>
                     <div id="dashboardRuntime" class="metric-value">— นาที</div>
                     <div class="metric-hint">ขึ้นกับโหลดและสมมติฐาน UPS</div>
                 </article>
@@ -535,23 +535,60 @@
             <!-- Step 3: Runtime Calculator -->
             <div id="step3" class="step-content hidden" role="region" aria-labelledby="step3-heading">
                 <h2 id="step3-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">เวลาสำรองไฟ</h2>
-                <p class="text-gray-500 mb-6">ใส่ความจุแบตเตอรี่ที่มี เพื่อประมาณ Runtime ตามโหลด</p>
+                <p class="text-gray-500 mb-6">เลือกสูตรประมาณหรือเส้นโค้งผู้ผลิตตามข้อมูลที่มี</p>
+
+                <div class="enterprise-only mb-5">
+                    <label for="runtimeSourceSelect" class="field-label">แหล่งคำนวณ Runtime</label>
+                    <select id="runtimeSourceSelect" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all" onchange="setRuntimeSource(this.value)">
+                        <option value="formula">สูตร Ah (ค่าประมาณ)</option>
+                        <option value="manufacturer">เส้นโค้ง Runtime จากผู้ผลิต</option>
+                    </select>
+                </div>
+
+                <div id="manufacturerCurvePanel" class="enterprise-only hidden mb-5 p-4 rounded-xl border border-indigo-200 bg-indigo-50">
+                    <h3 class="font-semibold text-indigo-900 mb-2">ข้อมูลรุ่นและเส้นโค้งผู้ผลิต</h3>
+                    <p class="field-help mb-4">นำเข้า CSV ที่มีหัวตาราง <code>load_w,runtime_minutes</code> ระบบจะแทรกค่าระหว่างจุดเท่านั้น และไม่คาดคะเนนอกช่วงข้อมูล</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="runtimeCurveModel" class="field-label">รุ่น UPS</label>
+                            <input id="runtimeCurveModel" type="text" maxlength="160" class="w-full px-3 py-2 border border-gray-300 rounded-lg input-focus" placeholder="ผู้ผลิตและรุ่น" oninput="refreshRuntimeCurveMetadata()">
+                        </div>
+                        <div>
+                            <label for="runtimeCurveBatteryConfig" class="field-label">ชุดแบตเตอรี่</label>
+                            <input id="runtimeCurveBatteryConfig" type="text" maxlength="240" class="w-full px-3 py-2 border border-gray-300 rounded-lg input-focus" placeholder="แบตเตอรี่ภายใน / จำนวนตู้เสริม" oninput="refreshRuntimeCurveMetadata()">
+                        </div>
+                        <div>
+                            <label for="runtimeCurveSource" class="field-label">แหล่งข้อมูลผู้ผลิต</label>
+                            <input id="runtimeCurveSource" type="text" maxlength="2048" class="w-full px-3 py-2 border border-gray-300 rounded-lg input-focus" placeholder="URL หรือชื่อเอกสาร/เลขหน้า" oninput="refreshRuntimeCurveMetadata()">
+                        </div>
+                        <div>
+                            <label for="runtimeCurveConditions" class="field-label">เงื่อนไขทดสอบ (ถ้ามี)</label>
+                            <input id="runtimeCurveConditions" type="text" maxlength="1024" class="w-full px-3 py-2 border border-gray-300 rounded-lg input-focus" placeholder="เช่น แบตเตอรี่เต็ม, 25 °C" oninput="refreshRuntimeCurveMetadata()">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="runtimeCurveFile" class="field-label">ไฟล์ Runtime CSV</label>
+                            <input id="runtimeCurveFile" type="file" accept=".csv,text/csv" class="block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-4 file:py-2 file:font-semibold" onchange="importRuntimeCurve(event)">
+                        </div>
+                    </div>
+                    <p id="runtimeCurveStatus" class="field-help mt-3" role="status" aria-live="polite">ยังไม่ได้โหลดเส้นโค้งผู้ผลิต</p>
+                    <button type="button" class="mt-2 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-700" onclick="clearRuntimeCurve()">ล้างข้อมูลเส้นโค้ง</button>
+                </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
+                    <div class="runtime-formula-field">
                         <label for="runtimeBatteryAh" class="block text-gray-700 font-medium mb-2">ความจุแบตเตอรี่ (Ah)</label>
                         <input type="number" id="runtimeBatteryAh" name="runtimeBatteryAh" min="0" step="any"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
                             oninput="handleRuntimeBatteryInput()">
                         <p class="text-xs text-gray-400 mt-1">ใส่ Ah รวมของชุดแบตเตอรี่ตามแรงดันระบบ: ต่ออนุกรมเพิ่ม V แต่ Ah เท่าเดิม; ต่อขนานจึงรวม Ah</p>
                     </div>
-                    <div class="enterprise-only">
+                    <div class="enterprise-only runtime-formula-field">
                         <label for="runtimeVoltage" class="block text-gray-700 font-medium mb-2">แรงดันแบตเตอรี่ (V)</label>
                         <input type="number" id="runtimeVoltage" name="runtimeVoltage" value="12"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
                             step="any" readonly>
                     </div>
-                    <div class="enterprise-only">
+                    <div class="enterprise-only runtime-formula-field">
                         <label for="runtimeEfficiency" class="block text-gray-700 font-medium mb-2">สมมติฐานประสิทธิภาพ UPS (%)</label>
                         <input type="number" id="runtimeEfficiency" name="runtimeEfficiency" value="85"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
@@ -571,9 +608,10 @@
                 </button>
 
                 <div id="runtimeResult" class="hidden mt-6 p-6 result-highlight rounded-xl">
-                    <p class="text-gray-700 text-center mb-2">ระยะเวลาสำรองไฟโดยประมาณสำหรับโหลด <span
+                    <p id="runtimeResultDescription" class="text-gray-700 text-center mb-2">ระยะเวลาสำรองไฟโดยประมาณสำหรับโหลด <span
                             id="runtimeLoadDisplay">0</span> W:</p>
                     <p id="runtimeMinutes" class="text-4xl font-bold text-amber-600 text-center" aria-live="polite" aria-atomic="true">0 นาที</p>
+                    <p id="runtimeBasisLabel" class="field-help mt-2 text-center">ค่าประมาณจากสูตร Ah เชิงเส้น</p>
                 </div>
 
                 <div id="chartContainer" class="hidden mt-8">
@@ -588,7 +626,7 @@
                         <div class="data-table-wrap mt-3">
                             <table class="data-table">
                                 <caption class="sr-only">ค่าประมาณ Runtime ตามระดับโหลด</caption>
-                                <thead><tr><th scope="col">โหลด (W)</th><th scope="col">Runtime โดยประมาณ (นาที)</th></tr></thead>
+                                <thead><tr><th scope="col">โหลด (W)</th><th id="runtimeTableValueHeading" scope="col">Runtime โดยประมาณ (นาที)</th></tr></thead>
                                 <tbody id="runtimeDataTable"></tbody>
                             </table>
                         </div>
@@ -614,8 +652,9 @@
                             <p id="summaryUpsVA" class="text-2xl font-bold text-green-600">0 VA</p>
                         </div>
                         <div class="bg-white p-4 rounded-lg shadow-sm">
-                            <p class="text-gray-500 text-sm">ความจุแบตเตอรี่ที่ต้องการ</p>
+                            <p id="summaryBatteryLabel" class="text-gray-500 text-sm">ความจุแบตเตอรี่ที่ต้องการ</p>
                             <p id="summaryBatteryAh" class="text-2xl font-bold text-gray-800">0 Ah</p>
+                            <p id="summaryBatteryBasis" class="field-help mt-1">ค่าประมาณจากสูตร Ah และสมมติฐานแรงดัน/ประสิทธิภาพ</p>
                         </div>
                         <div class="bg-white p-4 rounded-lg shadow-sm">
                             <p class="text-gray-500 text-sm">แรงดันแบตเตอรี่</p>
@@ -624,6 +663,10 @@
                         <div class="bg-white p-4 rounded-lg shadow-sm">
                             <p class="text-gray-500 text-sm">ระยะเวลาสำรองไฟ</p>
                             <p id="summaryRuntime" class="text-2xl font-bold text-amber-600">0 นาที</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow-sm md:col-span-2">
+                            <p class="text-gray-500 text-sm">แหล่งข้อมูล Runtime</p>
+                            <p id="summaryRuntimeBasis" class="text-sm text-gray-700">สูตร Ah เชิงเส้น (ค่าประมาณ)</p>
                         </div>
                         <div class="bg-white p-4 rounded-lg shadow-sm">
                             <p class="text-gray-500 text-sm">สมมติฐานประสิทธิภาพ UPS</p>
@@ -696,6 +739,9 @@
         // State
         let currentStep = 1;
         let currentMode = 'basic';
+        let runtimeSource = 'formula';
+        let runtimeCurve = null;
+        let runtimeCurvePoints = [];
         let loadInputValid = true;
         let precisionInvalidTarget = null;
         let runtimeBatteryWasAutoFilled = false;
@@ -754,6 +800,7 @@
             document.getElementById('modeDescription').textContent = currentMode === 'basic'
                 ? 'ข้อมูลหลักที่จำเป็นสำหรับการคำนวณ'
                 : 'ปรับสมมติฐาน Forecast และรายละเอียดโหลดเพิ่มเติม';
+            updateRuntimeSourceControls();
             document.querySelectorAll('.device-card').forEach(updateDeviceLoadLabel);
             updateBasicContextNote();
             if (calculatedData.totalLoad > 0) calculateBatteryAh();
@@ -762,6 +809,123 @@
                 syncRuntimeBatteryAh();
                 calculateRuntime();
             }
+            if (currentStep === 4) updateSummary();
+        }
+
+        function updateRuntimeSourceControls() {
+            const useManufacturerCurve = currentMode === 'enterprise' && runtimeSource === 'manufacturer';
+            const sourceSelect = document.getElementById('runtimeSourceSelect');
+            if (sourceSelect) sourceSelect.value = runtimeSource;
+            document.querySelectorAll('.runtime-formula-field').forEach(field => field.classList.toggle('hidden', useManufacturerCurve));
+            const curvePanel = document.getElementById('manufacturerCurvePanel');
+            if (curvePanel) curvePanel.classList.toggle('hidden', !useManufacturerCurve);
+            const basis = useManufacturerCurve
+                ? runtimeCurve
+                    ? `เส้นโค้งผู้ผลิต · ${runtimeCurve.model} · ${runtimeCurve.batteryConfig}`
+                    : 'เลือกเส้นโค้งผู้ผลิต แต่ยังไม่ได้โหลดข้อมูล'
+                : 'ค่าประมาณจากสูตร Ah เชิงเส้น';
+            const resultBasis = document.getElementById('runtimeBasisLabel');
+            if (resultBasis) resultBasis.textContent = useManufacturerCurve && runtimeCurve
+                ? `${basis} — แทรกค่าเฉพาะระหว่างจุดข้อมูล; ไม่มีการคาดคะเนนอกช่วง`
+                : basis;
+            const summaryBasis = document.getElementById('summaryRuntimeBasis');
+            if (summaryBasis) summaryBasis.textContent = useManufacturerCurve && runtimeCurve
+                ? `${basis} · แหล่ง: ${runtimeCurve.source}${runtimeCurve.conditions ? ` · เงื่อนไข: ${runtimeCurve.conditions}` : ''}`
+                : basis;
+            const resultDescription = document.getElementById('runtimeResultDescription');
+            if (resultDescription && resultDescription.firstChild) {
+                resultDescription.firstChild.nodeValue = useManufacturerCurve
+                    ? 'Runtime จากข้อมูลผู้ผลิตสำหรับโหลด ' : 'ระยะเวลาสำรองไฟโดยประมาณสำหรับโหลด ';
+            }
+            const dashboardLabel = document.getElementById('dashboardRuntimeLabel');
+            if (dashboardLabel) dashboardLabel.textContent = useManufacturerCurve ? 'Runtime จากผู้ผลิต' : 'Runtime โดยประมาณ';
+            const batteryLabel = document.getElementById('summaryBatteryLabel');
+            if (batteryLabel) batteryLabel.textContent = useManufacturerCurve
+                ? 'ความจุแบตเตอรี่ที่ต้องการ (สูตรประมาณ)'
+                : 'ความจุแบตเตอรี่ที่ต้องการ';
+            const batteryBasis = document.getElementById('summaryBatteryBasis');
+            if (batteryBasis) batteryBasis.textContent = useManufacturerCurve
+                ? 'ค่าประมาณ Ah นี้ยังใช้สูตรเดิม ไม่ได้คำนวณกลับจากชุดแบตเตอรี่ในเส้นโค้งผู้ผลิต'
+                : 'ค่าประมาณจากสูตร Ah และสมมติฐานแรงดัน/ประสิทธิภาพ';
+        }
+
+        function setRuntimeSource(source) {
+            if (!['formula', 'manufacturer'].includes(source) || currentMode !== 'enterprise') return;
+            runtimeSource = source;
+            updateRuntimeSourceControls();
+            if (calculatedData.totalLoad > 0 && (currentStep >= 3 || document.getElementById('runtimeBatteryAh').value !== '')) {
+                calculateRuntime();
+            }
+            if (currentStep === 4) updateSummary();
+        }
+
+        function refreshRuntimeCurveMetadata() {
+            if (runtimeCurvePoints.length < 2) return;
+            try {
+                runtimeCurve = UPScalculations.normalizeRuntimeCurveData({
+                    model: document.getElementById('runtimeCurveModel').value,
+                    batteryConfig: document.getElementById('runtimeCurveBatteryConfig').value,
+                    source: document.getElementById('runtimeCurveSource').value,
+                    conditions: document.getElementById('runtimeCurveConditions').value,
+                    points: runtimeCurvePoints,
+                });
+                document.getElementById('runtimeCurveStatus').textContent = `พร้อมใช้ ${runtimeCurve.points.length} จุด (${runtimeCurve.points[0].loadW}–${runtimeCurve.points[runtimeCurve.points.length - 1].loadW} W)`;
+            } catch (error) {
+                runtimeCurve = null;
+                document.getElementById('runtimeCurveStatus').textContent = `ข้อมูลรุ่นยังไม่ครบ: ${error.message || 'กรอกข้อมูลให้ครบ'}`;
+            }
+            updateRuntimeSourceControls();
+            if (runtimeSource === 'manufacturer' && currentStep >= 3 && calculatedData.totalLoad > 0) calculateRuntime();
+        }
+
+        function importRuntimeCurve(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            if (file.size > 256_000) {
+                document.getElementById('runtimeCurveStatus').textContent = 'ไฟล์ CSV ต้องไม่เกิน 256 KB';
+                event.target.value = '';
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (loadEvent) {
+                try {
+                    const points = UPScalculations.parseRuntimeCurveCsv(String(loadEvent.target.result || ''));
+                    const candidate = UPScalculations.normalizeRuntimeCurveData({
+                        model: document.getElementById('runtimeCurveModel').value,
+                        batteryConfig: document.getElementById('runtimeCurveBatteryConfig').value,
+                        source: document.getElementById('runtimeCurveSource').value,
+                        conditions: document.getElementById('runtimeCurveConditions').value,
+                        points,
+                    });
+                    runtimeCurvePoints = points;
+                    runtimeCurve = candidate;
+                    document.getElementById('runtimeCurveStatus').textContent = `โหลดแล้ว ${points.length} จุด (${points[0].loadW}–${points[points.length - 1].loadW} W)`;
+                    setRuntimeSource('manufacturer');
+                } catch (error) {
+                    document.getElementById('runtimeCurveStatus').textContent = `นำเข้าไม่ได้: ${error.message || 'ตรวจสอบไฟล์และข้อมูลรุ่น'}`;
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.onerror = function () {
+                document.getElementById('runtimeCurveStatus').textContent = 'อ่านไฟล์ไม่ได้ กรุณาเลือก CSV อีกครั้ง';
+                event.target.value = '';
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        function clearRuntimeCurve() {
+            runtimeCurve = null;
+            runtimeCurvePoints = [];
+            document.getElementById('runtimeCurveModel').value = '';
+            document.getElementById('runtimeCurveBatteryConfig').value = '';
+            document.getElementById('runtimeCurveSource').value = '';
+            document.getElementById('runtimeCurveConditions').value = '';
+            document.getElementById('runtimeCurveFile').value = '';
+            document.getElementById('runtimeCurveStatus').textContent = 'ยังไม่ได้โหลดเส้นโค้งผู้ผลิต';
+            runtimeSource = 'formula';
+            updateRuntimeSourceControls();
+            if (calculatedData.totalLoad > 0 && currentStep >= 3) calculateRuntime();
             if (currentStep === 4) updateSummary();
         }
 
@@ -793,6 +957,8 @@
 
         function updateDashboardMetrics() {
             document.getElementById('dashboardLoad').textContent = `${calculatedData.totalLoad} W`;
+            document.getElementById('dashboardRuntimeLabel').textContent = currentMode === 'enterprise' && runtimeSource === 'manufacturer'
+                ? 'Runtime จากผู้ผลิต' : 'Runtime โดยประมาณ';
             document.getElementById('dashboardBattery').textContent = calculatedData.batteryAh > 0
                 ? `${calculatedData.batteryAh} Ah` : '— Ah';
             document.getElementById('dashboardRuntime').textContent = Number.isFinite(calculatedData.runtime)
@@ -1018,12 +1184,22 @@
             const voltage = currentMode === 'basic' ? 12 : document.getElementById('runtimeVoltage').value;
             const efficiency = currentMode === 'basic' ? 85 : document.getElementById('runtimeEfficiency').value;
             const powerW = calculatedData.totalLoad;
-            const runtimeMinutes = UPScalculations.calculateRuntimeMinutes(batteryAh, voltage, efficiency, powerW);
+            const useManufacturerCurve = currentMode === 'enterprise' && runtimeSource === 'manufacturer';
+            const runtimeMinutes = useManufacturerCurve
+                ? runtimeCurve ? UPScalculations.calculateRuntimeFromCurve(runtimeCurve.points, powerW) : null
+                : UPScalculations.calculateRuntimeMinutes(batteryAh, voltage, efficiency, powerW);
             if (runtimeMinutes === null) {
                 calculatedData.runtime = null;
                 document.getElementById('runtimeMinutes').textContent = powerW <= 0
                     ? 'ยังคำนวณไม่ได้ — กรอกโหลดก่อน'
-                    : 'ตรวจสอบความจุแบตเตอรี่ แรงดัน และประสิทธิภาพ';
+                    : useManufacturerCurve && !runtimeCurve
+                        ? 'กรอกข้อมูลรุ่น/ชุดแบตเตอรี่และนำเข้า CSV จากผู้ผลิตก่อน'
+                        : useManufacturerCurve
+                            ? `โหลด ${powerW} W อยู่นอกช่วง ${runtimeCurve.points[0].loadW}–${runtimeCurve.points[runtimeCurve.points.length - 1].loadW} W ของเส้นโค้งนี้`
+                            : 'ตรวจสอบความจุแบตเตอรี่ แรงดัน และประสิทธิภาพ';
+                document.getElementById('runtimeBasisLabel').textContent = useManufacturerCurve
+                    ? 'ใช้เฉพาะจุดและช่วงที่มีข้อมูลผู้ผลิต; ไม่มีการคาดคะเนนอกช่วง'
+                    : 'ค่าประมาณจากสูตร Ah เชิงเส้น';
                 document.getElementById('runtimeResult').classList.remove('hidden');
                 document.getElementById('chartContainer').classList.add('hidden');
                 if (runtimeChart) {
@@ -1038,15 +1214,20 @@
 
             document.getElementById('runtimeLoadDisplay').textContent = powerW;
             document.getElementById('runtimeMinutes').textContent = `${formatRuntimeMinutes(runtimeMinutes)} นาที`;
+            document.getElementById('runtimeBasisLabel').textContent = useManufacturerCurve && runtimeCurve
+                ? `ข้อมูล ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · แทรกค่าระหว่างจุดผู้ผลิตเท่านั้น`
+                : 'ค่าประมาณจากสูตร Ah เชิงเส้น';
             document.getElementById('runtimeResult').classList.remove('hidden');
             updateDashboardMetrics();
 
             // Generate chart
-            generateChart(batteryAh, voltage, efficiency);
+            generateChart(batteryAh, voltage, efficiency, useManufacturerCurve);
         }
 
-        function generateChart(batteryAh, voltage, efficiency) {
-            const curve = UPScalculations.buildRuntimeCurve(batteryAh, voltage, efficiency, calculatedData.totalLoad);
+        function generateChart(batteryAh, voltage, efficiency, useManufacturerCurve = false) {
+            const curve = useManufacturerCurve && runtimeCurve
+                ? UPScalculations.buildManufacturerRuntimeCurve(runtimeCurve.points, calculatedData.totalLoad)
+                : UPScalculations.buildRuntimeCurve(batteryAh, voltage, efficiency, calculatedData.totalLoad);
             const validPowerLevels = curve.map(point => point.loadW);
             const dataPoints = curve.map(point => point.runtimeMinutes);
 
@@ -1061,6 +1242,19 @@
                 row.append(loadCell, runtimeCell);
                 tableBody.appendChild(row);
             });
+
+            const sourceNote = useManufacturerCurve && runtimeCurve
+                ? `กราฟผู้ผลิต ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · ${runtimeCurve.source}${runtimeCurve.conditions ? ` · เงื่อนไข: ${runtimeCurve.conditions}` : ''} (แทรกค่าเฉพาะระหว่างจุด)`
+                : 'กราฟนี้เป็นค่าประมาณจากสูตร Ah แบบเชิงเส้น ไม่ใช่กราฟทดสอบของ UPS รุ่นใดรุ่นหนึ่ง โหมดพื้นฐานใช้ค่าเริ่มต้น 12 V และประสิทธิภาพ 85% สำหรับยืนยันการใช้งานจริงให้เทียบกราฟ Runtime จากผู้ผลิตตามรุ่นและชุดแบตเตอรี่';
+            document.getElementById('runtimeEstimateNote').textContent = sourceNote;
+            document.getElementById('runtimeChart').setAttribute('aria-label', useManufacturerCurve
+                ? `กราฟ Runtime จากผู้ผลิต ${runtimeCurve.model} ตามโหลดเป็นวัตต์`
+                : 'กราฟกระจายแสดง Runtime โดยประมาณตามโหลดเป็นวัตต์');
+            document.getElementById('runtimeTableValueHeading').textContent = useManufacturerCurve
+                ? 'Runtime จากผู้ผลิต (นาที)' : 'Runtime โดยประมาณ (นาที)';
+            document.getElementById('runtimeChartUnavailable').textContent = useManufacturerCurve
+                ? 'กราฟยังไม่พร้อมใช้งาน แต่ดูจุดข้อมูลจากผู้ผลิตในตารางด้านล่างได้'
+                : 'กราฟยังไม่พร้อมใช้งาน แต่ดูค่าประมาณในตารางด้านล่างได้';
 
             document.getElementById('chartContainer').classList.remove('hidden');
 
@@ -1276,7 +1470,7 @@
             if (currentStep === 3) {
                 calculateRuntime();
                 if (!Number.isFinite(calculatedData.runtime)) {
-                    document.getElementById('runtimeBatteryAh').focus();
+                    focusRuntimeIssue();
                     return;
                 }
             }
@@ -1334,7 +1528,7 @@
                 if (!Number.isFinite(calculatedData.runtime)) {
                     currentStep = 3;
                     showStep(3);
-                    document.getElementById('runtimeBatteryAh').focus();
+                    focusRuntimeIssue();
                     return;
                 }
             }
@@ -1347,6 +1541,14 @@
                 return false;
             }
             return true;
+        }
+
+        function focusRuntimeIssue() {
+            if (currentMode === 'enterprise' && runtimeSource === 'manufacturer') {
+                document.getElementById(runtimeCurve ? 'runtimeSourceSelect' : 'runtimeCurveFile').focus();
+                return;
+            }
+            document.getElementById('runtimeBatteryAh').focus();
         }
 
         function focusInvalidLoadInput() {
@@ -1440,6 +1642,9 @@
             loadInputValid = true;
             precisionInvalidTarget = null;
             runtimeBatteryWasAutoFilled = false;
+            runtimeSource = 'formula';
+            runtimeCurve = null;
+            runtimeCurvePoints = [];
             enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
             devices = [];
             calculatedData = {
@@ -1469,6 +1674,12 @@
             document.getElementById('runtimeResult').classList.add('hidden');
             document.getElementById('chartContainer').classList.add('hidden');
             document.getElementById('runtimeBatteryAh').value = '';
+            document.getElementById('runtimeCurveModel').value = '';
+            document.getElementById('runtimeCurveBatteryConfig').value = '';
+            document.getElementById('runtimeCurveSource').value = '';
+            document.getElementById('runtimeCurveConditions').value = '';
+            document.getElementById('runtimeCurveFile').value = '';
+            document.getElementById('runtimeCurveStatus').textContent = 'ยังไม่ได้โหลดเส้นโค้งผู้ผลิต';
             document.getElementById('runtimeDataTable').replaceChildren();
             if (runtimeChart) {
                 runtimeChart.destroy();
@@ -1484,6 +1695,7 @@
 
             // Reset forecast unit toggle to default (%)
             setForecastUnit('%');
+            updateRuntimeSourceControls();
 
             showStep(1);
             document.querySelector('.device-load')?.focus();
@@ -1516,6 +1728,8 @@
                     runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : document.getElementById('runtimeBatteryAh').value,
                 },
                 runtimeBatteryWasAutoFilled,
+                runtimeSource: currentMode === 'enterprise' ? runtimeSource : 'formula',
+                runtimeCurve,
             });
             try {
                 UPScalculations.normalizeImportData(exportData);
@@ -1590,6 +1804,9 @@
                     const normalized = UPScalculations.normalizeImportData(importData);
                     currentStep = 1;
                     devices = normalized.devices;
+                    runtimeSource = normalized.runtimeSource;
+                    runtimeCurve = normalized.runtimeCurve;
+                    runtimeCurvePoints = runtimeCurve ? runtimeCurve.points : [];
                     calculatedData = {
                         totalLoad: 0, deviceLoad: 0, totalPlugs: 0,
                         forecastValue: normalized.forecast.value,
@@ -1601,7 +1818,16 @@
                         runtime: null,
                     };
                     enterpriseBatterySettings = { voltage: normalized.settings.voltage, efficiency: normalized.settings.efficiency };
+                    document.getElementById('runtimeCurveModel').value = runtimeCurve ? runtimeCurve.model : '';
+                    document.getElementById('runtimeCurveBatteryConfig').value = runtimeCurve ? runtimeCurve.batteryConfig : '';
+                    document.getElementById('runtimeCurveSource').value = runtimeCurve ? runtimeCurve.source : '';
+                    document.getElementById('runtimeCurveConditions').value = runtimeCurve ? runtimeCurve.conditions : '';
+                    document.getElementById('runtimeCurveFile').value = '';
+                    document.getElementById('runtimeCurveStatus').textContent = runtimeCurve
+                        ? `โหลดแล้ว ${runtimeCurve.points.length} จุด (${runtimeCurve.points[0].loadW}–${runtimeCurve.points[runtimeCurve.points.length - 1].loadW} W)`
+                        : 'ยังไม่ได้โหลดเส้นโค้งผู้ผลิต';
                     if (normalized.mode && normalized.mode !== currentMode) setMode(normalized.mode, true);
+                    updateRuntimeSourceControls();
                     document.getElementById('runtimeBatteryAh').value = normalized.settings.runtimeBatteryAh ?? '';
                     runtimeBatteryWasAutoFilled = false;
 

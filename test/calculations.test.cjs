@@ -237,7 +237,7 @@ test('calculates runtime with the inverse formula and handles zero or invalid ca
     assert.equal(calculations.calculateRuntimeMinutes('9007199254740993', 12, 85, 100), null);
     assert.equal(calculations.calculateRuntimeMinutes(11.76, 12, 85, '100.000000000000001'), null);
     assert.ok(Math.abs(calculations.calculateRuntimeMinutes(1 / 6000, 12, 100, 120) - 0.001) < 1e-12);
-    assert.equal(calculations.calculateRuntimeMinutes(Number.MIN_VALUE, 12, 100, Number.MAX_VALUE), Number.MIN_VALUE);
+    assert.equal(calculations.calculateRuntimeMinutes(Number.MIN_VALUE, 12, 100, 2000), null);
     assert.equal(calculations.calculateRuntimeMinutes(1e306, 1e308, 50, 1e308), null);
     assert.equal(calculations.calculateRuntimeMinutes(1e306, 1e-308, 50, 1e-308), null);
 });
@@ -283,6 +283,73 @@ test('builds a unique numeric runtime curve that matches the exact current load'
     assert.ok(boundedCurve.length > 0);
     assert.ok(boundedCurve.every(point => Number.isFinite(point.runtimeMinutes)));
     assert.ok(!boundedCurve.some(point => point.loadW === 50));
+});
+
+test('parses manufacturer runtime CSV into validated load/runtime points', () => {
+    assert.equal(typeof calculations.parseRuntimeCurveCsv, 'function');
+    const points = calculations.parseRuntimeCurveCsv('\uFEFFload_w,runtime_minutes\n100,60\n200,30\n400,15\n');
+    assert.deepEqual(points, [
+        { loadW: 100, runtimeMinutes: 60 },
+        { loadW: 200, runtimeMinutes: 30 },
+        { loadW: 400, runtimeMinutes: 15 },
+    ]);
+    assert.throws(() => calculations.parseRuntimeCurveCsv('load_w,runtime_minutes\n100,60\n'), { name: 'InvalidRuntimeCurveError' });
+    assert.throws(() => calculations.parseRuntimeCurveCsv('load_w,runtime_minutes\n100,60\n100,30\n200,15'), { name: 'InvalidRuntimeCurveError' });
+    assert.throws(() => calculations.parseRuntimeCurveCsv('load_w,runtime_minutes\n100,30\n200,60'), { name: 'InvalidRuntimeCurveError' });
+    assert.throws(() => calculations.parseRuntimeCurveCsv('load_w,runtime_minutes\n9007199254740993,60\n200,30'), { name: 'InvalidRuntimeCurveError' });
+});
+
+test('interpolates manufacturer runtime only within published load points', () => {
+    assert.equal(typeof calculations.calculateRuntimeFromCurve, 'function');
+    const points = [
+        { loadW: 100, runtimeMinutes: 60 },
+        { loadW: 200, runtimeMinutes: 30 },
+        { loadW: 400, runtimeMinutes: 15 },
+    ];
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 100), 60);
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 150), 45);
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 250), 26.25);
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 99.999), null);
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 400.001), null);
+    assert.equal(calculations.calculateRuntimeFromCurve(points, '9007199254740993'), null);
+});
+
+test('builds a manufacturer curve with a marked interpolated current-load point', () => {
+    assert.equal(typeof calculations.buildManufacturerRuntimeCurve, 'function');
+    const points = [
+        { loadW: 100, runtimeMinutes: 60 },
+        { loadW: 200, runtimeMinutes: 30 },
+        { loadW: 400, runtimeMinutes: 15 },
+    ];
+    const curve = calculations.buildManufacturerRuntimeCurve(points, 150);
+    assert.deepEqual(curve.map(point => point.loadW), [100, 150, 200, 400]);
+    assert.equal(curve.find(point => point.currentLoad).runtimeMinutes, 45);
+    assert.deepEqual(calculations.buildManufacturerRuntimeCurve(points, 99), []);
+});
+
+test('validates and preserves manufacturer runtime curve provenance in imports', () => {
+    const runtimeCurve = {
+        model: 'UPS-Example 1000',
+        batteryConfig: 'Internal battery pack',
+        source: 'https://vendor.example/runtime-chart.pdf',
+        conditions: 'Fully charged; 25 C',
+        points: [
+            { loadW: 100, runtimeMinutes: 60 },
+            { loadW: 200, runtimeMinutes: 30 },
+        ],
+    };
+    const imported = calculations.normalizeImportData({
+        mode: 'enterprise', runtimeSource: 'manufacturer', runtimeCurve,
+        devices: [{ name: 'Router', load: 150, unit: 'W', plugs: 1 }], calculatedData: {},
+        settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    });
+    assert.equal(imported.runtimeSource, 'manufacturer');
+    assert.deepEqual(imported.runtimeCurve, runtimeCurve);
+    assert.throws(() => calculations.normalizeImportData({
+        mode: 'enterprise', runtimeSource: 'manufacturer', runtimeCurve,
+        devices: [{ name: 'Router', load: 99, unit: 'W', plugs: 1 }], calculatedData: {},
+        settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    }), { name: 'InvalidImportDataError' });
 });
 
 test('calculates PF-based UPS VA screening and validates outlet boundaries', () => {
@@ -363,6 +430,10 @@ test('normalizes valid imports and rejects malformed device/settings data before
     }));
     assert.throws(() => calculations.normalizeImportData({
         devices: [{ name: 'Extreme', load: 1e308, unit: 'W', plugs: 1 }], calculatedData: {},
+    }), { name: 'InvalidImportDataError' });
+    assert.throws(() => calculations.normalizeImportData({
+        devices: [{ name: 'Below runtime range', load: 2000, unit: 'W', plugs: 1 }], calculatedData: {},
+        settings: { backupTime: 60, voltage: 12, efficiency: 100, runtimeBatteryAh: Number.MIN_VALUE },
     }), { name: 'InvalidImportDataError' });
     for (const load of ['9007199254740993', '1e-324', '-1e-324']) {
         assert.throws(() => calculations.normalizeImportData({
@@ -448,6 +519,26 @@ test('exports battery sizing and Runtime recalculated from the latest form setti
     assert.throws(() => calculations.normalizeImportData(precisionChangedExport), { name: 'InvalidImportDataError' });
 });
 
+test('exports and recalculates manufacturer Runtime from the imported curve', () => {
+    const runtimeCurve = {
+        model: 'UPS-Example 1000', batteryConfig: 'Internal battery pack',
+        source: 'https://vendor.example/runtime-chart.pdf', conditions: 'Fully charged; 25 C',
+        points: [{ loadW: 100, runtimeMinutes: 60 }, { loadW: 200, runtimeMinutes: 30 }],
+    };
+    const exported = calculations.buildExportData({
+        mode: 'enterprise', runtimeSource: 'manufacturer', runtimeCurve,
+        devices: [{ name: 'Server', load: 150, unit: 'W', plugs: 1 }],
+        calculatedData: { forecastValue: 0, forecastUnit: '%', totalLoad: 150 },
+        settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    });
+    assert.equal(exported.runtimeSource, 'manufacturer');
+    assert.deepEqual(exported.runtimeCurve, runtimeCurve);
+    assert.equal(exported.calculatedData.runtime, 45);
+    const imported = calculations.normalizeImportData(exported);
+    assert.equal(imported.runtimeSource, 'manufacturer');
+    assert.deepEqual(imported.runtimeCurve, runtimeCurve);
+});
+
 test('preserves auto-filled Runtime capacity as automatic across export and import', () => {
     const exported = calculations.buildExportData({
         devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
@@ -477,7 +568,7 @@ test('preserves Basic or Enterprise mode across export and import', () => {
             },
         });
 
-        assert.equal(exported.version, '1.4');
+        assert.equal(exported.version, '1.5');
         assert.equal(exported.mode, mode);
         assert.equal(calculations.normalizeImportData(exported).mode, mode);
     }

@@ -217,7 +217,7 @@
             if (!Number.isFinite(exactMinutes) || exactMinutes === 0) {
                 exactMinutes = Math.exp(Math.log(ah) - Math.log(power) + Math.log(volts) + Math.log(percent / 100) + Math.log(60));
             }
-            return Number.isFinite(exactMinutes) && exactMinutes > 0 ? exactMinutes : Number.MIN_VALUE;
+            return Number.isFinite(exactMinutes) && exactMinutes > 0 ? exactMinutes : null;
         }
         return fromScaledInteger(roundedHundredths, 2);
     }
@@ -271,12 +271,130 @@
         return error;
     }
 
+    function invalidRuntimeCurve(message) {
+        const error = new Error(message);
+        error.name = 'InvalidRuntimeCurveError';
+        return error;
+    }
+
+    function normalizeRuntimeCurvePoints(points) {
+        if (!Array.isArray(points) || points.length < 2 || points.length > 1000) return null;
+        const normalized = [];
+        for (const point of points) {
+            if (!point || typeof point !== 'object' || Array.isArray(point)) return null;
+            const loadW = finiteNumber(point.loadW);
+            const runtimeMinutes = finiteNumber(point.runtimeMinutes);
+            if (loadW === null || runtimeMinutes === null
+                || !decimalInputMatchesNumber(point.loadW, loadW)
+                || !decimalInputMatchesNumber(point.runtimeMinutes, runtimeMinutes)
+                || loadW <= 0 || runtimeMinutes <= 0) return null;
+            normalized.push({ loadW, runtimeMinutes });
+        }
+        normalized.sort((a, b) => a.loadW - b.loadW);
+        for (let index = 1; index < normalized.length; index++) {
+            if (normalized[index].loadW <= normalized[index - 1].loadW
+                || normalized[index].runtimeMinutes > normalized[index - 1].runtimeMinutes) return null;
+        }
+        return normalized;
+    }
+
+    function parseRuntimeCurveCsv(csvText) {
+        if (typeof csvText !== 'string' || csvText.length > 256_000) throw invalidRuntimeCurve('ไฟล์ CSV ไม่ถูกต้องหรือมีขนาดใหญ่เกินไป');
+        const lines = csvText.replace(/^\uFEFF/, '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        if (lines.length < 3 || lines.length > 1001) throw invalidRuntimeCurve('CSV ต้องมีอย่างน้อย 2 จุดและไม่เกิน 1000 จุด');
+        const header = lines[0].split(',').map(value => value.trim().toLowerCase());
+        if (header.length !== 2 || header[0] !== 'load_w' || header[1] !== 'runtime_minutes') {
+            throw invalidRuntimeCurve('หัวตารางต้องเป็น load_w,runtime_minutes');
+        }
+        const rows = lines.slice(1).map(line => {
+            const values = line.split(',').map(value => value.trim());
+            if (values.length !== 2) throw invalidRuntimeCurve('แต่ละแถวต้องมี Load W และ Runtime นาที');
+            return { loadW: values[0], runtimeMinutes: values[1] };
+        });
+        const points = normalizeRuntimeCurvePoints(rows);
+        if (!points) throw invalidRuntimeCurve('จุดข้อมูลต้องเป็นตัวเลขบวก โหลดไม่ซ้ำ และ Runtime ต้องไม่เพิ่มเมื่อโหลดสูงขึ้น');
+        return points;
+    }
+
+    function normalizeRuntimeCurveData(curve) {
+        if (curve === undefined || curve === null) return null;
+        if (typeof curve !== 'object' || Array.isArray(curve)) throw invalidRuntimeCurve('ข้อมูลกราฟ Runtime ไม่ถูกต้อง');
+        const model = typeof curve.model === 'string' ? curve.model.trim() : '';
+        const batteryConfig = typeof curve.batteryConfig === 'string' ? curve.batteryConfig.trim() : '';
+        const source = typeof curve.source === 'string' ? curve.source.trim() : '';
+        const conditions = curve.conditions === undefined || curve.conditions === null
+            ? '' : typeof curve.conditions === 'string' ? curve.conditions.trim() : null;
+        const points = normalizeRuntimeCurvePoints(curve.points);
+        if (!model || model.length > 160 || !batteryConfig || batteryConfig.length > 240
+            || !source || source.length > 2048 || conditions === null || conditions.length > 1024 || !points) {
+            throw invalidRuntimeCurve('ระบุรุ่น UPS ชุดแบตเตอรี่ แหล่งข้อมูล และจุด Runtime ให้ถูกต้อง');
+        }
+        return { model, batteryConfig, source, conditions, points };
+    }
+
+    function calculateRuntimeFromCurve(inputPoints, currentLoadW) {
+        const points = normalizeRuntimeCurvePoints(inputPoints);
+        const load = finiteNumber(currentLoadW);
+        if (!points || load === null || !decimalInputMatchesNumber(currentLoadW, load) || load < points[0].loadW
+            || load > points[points.length - 1].loadW) return null;
+        const exactPoint = points.find(point => point.loadW === load);
+        if (exactPoint) return exactPoint.runtimeMinutes;
+        let upperIndex = points.findIndex(point => point.loadW > load);
+        if (upperIndex <= 0) return null;
+        const lower = points[upperIndex - 1], upper = points[upperIndex];
+        const loadFraction = decimalFraction(load);
+        const lowerLoad = decimalFraction(lower.loadW), upperLoad = decimalFraction(upper.loadW);
+        const lowerRuntime = decimalFraction(lower.runtimeMinutes), upperRuntime = decimalFraction(upper.runtimeMinutes);
+        const distanceNumerator = loadFraction.numerator * lowerLoad.denominator - lowerLoad.numerator * loadFraction.denominator;
+        const distanceDenominator = loadFraction.denominator * lowerLoad.denominator;
+        const spanNumerator = upperLoad.numerator * lowerLoad.denominator - lowerLoad.numerator * upperLoad.denominator;
+        const spanDenominator = upperLoad.denominator * lowerLoad.denominator;
+        const runtimeDropNumerator = lowerRuntime.numerator * upperRuntime.denominator - upperRuntime.numerator * lowerRuntime.denominator;
+        const runtimeDropDenominator = lowerRuntime.denominator * upperRuntime.denominator;
+        const resultNumerator = lowerRuntime.numerator * runtimeDropDenominator * spanNumerator * distanceDenominator
+            - runtimeDropNumerator * distanceNumerator * lowerRuntime.denominator * spanDenominator;
+        const resultDenominator = lowerRuntime.denominator * runtimeDropDenominator * spanNumerator * distanceDenominator;
+        const scaled = roundFractionToScaledInteger(resultNumerator, resultDenominator, 2);
+        if (scaled === null) return null;
+        if (scaled > 0n) return fromScaledInteger(scaled, 2);
+        const unrounded = Number(resultNumerator) / Number(resultDenominator);
+        return Number.isFinite(unrounded) && unrounded > 0 ? unrounded : null;
+    }
+
+    function buildManufacturerRuntimeCurve(inputPoints, currentLoadW) {
+        const points = normalizeRuntimeCurvePoints(inputPoints);
+        const current = finiteNumber(currentLoadW);
+        if (!points || current === null || !decimalInputMatchesNumber(currentLoadW, current)
+            || calculateRuntimeFromCurve(points, current) === null) return [];
+        const curve = points.map(point => ({ ...point, currentLoad: point.loadW === current }));
+        if (!curve.some(point => point.currentLoad)) {
+            curve.push({
+                loadW: current,
+                runtimeMinutes: calculateRuntimeFromCurve(points, current),
+                currentLoad: true,
+            });
+            curve.sort((a, b) => a.loadW - b.loadW);
+        }
+        return curve;
+    }
+
     function normalizeImportData(data) {
         if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.devices) || !data.calculatedData || typeof data.calculatedData !== 'object' || Array.isArray(data.calculatedData)) {
             throw invalidImport('รูปแบบไฟล์ไม่ถูกต้อง');
         }
         const mode = data.mode === undefined || data.mode === null ? null : data.mode;
         if (mode !== null && !['basic', 'enterprise'].includes(mode)) throw invalidImport('โหมดการใช้งานไม่ถูกต้อง');
+        const runtimeSource = data.runtimeSource === undefined || data.runtimeSource === null ? 'formula' : data.runtimeSource;
+        if (!['formula', 'manufacturer'].includes(runtimeSource)) throw invalidImport('แหล่งข้อมูล Runtime ไม่ถูกต้อง');
+        let runtimeCurve;
+        try {
+            runtimeCurve = normalizeRuntimeCurveData(data.runtimeCurve);
+        } catch (error) {
+            throw invalidImport('ข้อมูลกราฟ Runtime ไม่ถูกต้อง');
+        }
+        if (runtimeSource === 'manufacturer' && (!runtimeCurve || mode !== 'enterprise')) {
+            throw invalidImport('ต้องเลือกโหมด Enterprise และแนบกราฟ Runtime ของผู้ผลิต');
+        }
         const devices = data.devices.map(device => {
             if (!device || typeof device !== 'object' || Array.isArray(device)) throw invalidImport('ข้อมูลอุปกรณ์ไม่ถูกต้อง');
             const rawLoad = device.load;
@@ -336,13 +454,18 @@
         if (breakdown.totalLoad > 0 && calculateBatteryAh(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency) === null) {
             throw invalidImport('ค่าตั้งค่าแบตเตอรี่ทำให้คำนวณ Ah ไม่ได้');
         }
-        if (settings.runtimeBatteryAh !== null && breakdown.totalLoad > 0 && calculateRuntimeMinutes(settings.runtimeBatteryAh, settings.voltage, settings.efficiency, breakdown.totalLoad) === null) {
+        if (runtimeSource === 'manufacturer' && breakdown.totalLoad > 0
+            && calculateRuntimeFromCurve(runtimeCurve.points, breakdown.totalLoad) === null) {
+            throw invalidImport('โหลดอยู่นอกช่วงกราฟ Runtime ของผู้ผลิต');
+        }
+        if (runtimeSource === 'formula' && settings.runtimeBatteryAh !== null && breakdown.totalLoad > 0
+            && calculateRuntimeMinutes(settings.runtimeBatteryAh, settings.voltage, settings.efficiency, breakdown.totalLoad) === null) {
             throw invalidImport('ค่าความจุแบตเตอรี่ทำให้คำนวณ Runtime ไม่ได้');
         }
-        return { devices, settings, forecast: { value: forecastNumber, unit: forecastUnit }, mode };
+        return { devices, settings, forecast: { value: forecastNumber, unit: forecastUnit }, mode, runtimeSource, runtimeCurve };
     }
 
-    function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, runtimeBatteryWasAutoFilled = false, mode = null, exportDate = new Date() }) {
+    function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, runtimeBatteryWasAutoFilled = false, mode = null, runtimeSource = 'formula', runtimeCurve = null, exportDate = new Date() }) {
         const exportSettings = runtimeBatteryWasAutoFilled
             ? { ...settings, runtimeBatteryAh: null }
             : settings;
@@ -359,12 +482,15 @@
         const activeBackupTime = canonicalNumericOrRaw(rawBackupTime);
         const activeVoltage = canonicalNumericOrRaw(rawVoltage);
         const activeEfficiency = canonicalNumericOrRaw(rawEfficiency);
+        const normalizedRuntimeCurve = normalizeRuntimeCurveData(runtimeCurve);
         const batteryAh = breakdown.valid && breakdown.totalLoad > 0
             ? calculateBatteryAh(breakdown.totalLoad, rawBackupTime, rawVoltage, rawEfficiency)
             : null;
         const runtimeCapacityAh = activeCalculationSettings.runtimeBatteryAh ?? exportSettings.runtimeBatteryAh ?? batteryAh;
         const runtime = breakdown.valid && breakdown.totalLoad > 0
-            ? calculateRuntimeMinutes(runtimeCapacityAh, rawVoltage, rawEfficiency, breakdown.totalLoad)
+            ? runtimeSource === 'manufacturer'
+                ? normalizedRuntimeCurve ? calculateRuntimeFromCurve(normalizedRuntimeCurve.points, breakdown.totalLoad) : null
+                : calculateRuntimeMinutes(runtimeCapacityAh, rawVoltage, rawEfficiency, breakdown.totalLoad)
             : null;
         const exportCalculatedData = {
             ...calculatedData,
@@ -387,13 +513,14 @@
             }
         }
         return {
-            version: '1.4', appName: 'UPS Picker', exportDate: exportDate.toISOString(), mode,
+            version: '1.5', appName: 'UPS Picker', exportDate: exportDate.toISOString(), mode, runtimeSource,
             devices: devices.map(device => ({ ...device })),
             calculatedData: exportCalculatedData,
             forecast: { value: forecastValue, unit: forecastUnit, watt: exportCalculatedData.forecastWatt },
             settings: serializedSettings,
+            runtimeCurve: normalizedRuntimeCurve,
         };
     }
 
-    return { calculateLoadBreakdown, calculateBatteryAh, calculateRuntimeMinutes, buildRuntimeCurve, recommendUpsVA, planOutlets, escapeHtml, normalizeImportData, buildExportData };
+    return { calculateLoadBreakdown, calculateBatteryAh, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, normalizeRuntimeCurveData, recommendUpsVA, planOutlets, escapeHtml, normalizeImportData, buildExportData };
 }));
