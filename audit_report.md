@@ -660,3 +660,16 @@ These are presentation/packaging findings; this recheck made no application-code
 - Precision validation now returns the invalid row/Forecast target; browser navigation focused the second device's load field for an under-precision row and the Forecast field for an under-precision fixed-W Forecast.
 - Regression case: two 0.0000006 W rows each round to 0.000001 W, and the total equals their displayed sum, 0.000002 W.
 - The regression test was observed failing before the fix (200.000001 instead of 200). `npm test` now passes 16/16; `git diff --check` passes.
+
+## Large-Magnitude Rounding — 2026-10-12
+
+- Found that the rounding epsilon was multiplied by the scaled value, which biased exact whole-number loads upward at high magnitudes. Moving the epsilon adjustment before scaling avoids that bias.
+- Regression case: 10,000,000,000 W stays exact; 20% Forecast adds 2,000,000,000 W for a total of 12,000,000,000 W. 12,500,000,000 VA at PF 0.8 converts to exactly 10,000,000,000 W.
+- A second edge case showed six-decimal scaling exceeded JavaScript's safe integer range for fractional loads near 10 billion W. The rounding helper now uses `toFixed()` for that range; 9,999,999,999.123457 W and 10,000,000,000.123457 W retain their displayed precision.
+- Both regressions were observed failing before their fixes. `npm test` now passes 18/18; JavaScript syntax check and `git diff --check` pass.
+
+## UI Audit Follow-up — 2026-10-12
+
+- At 390 × 844, the Basic and Enterprise buttons stay on one line with 44 px height. A 100 W total stays on one line, and the document has no horizontal overflow.
+- Startup now calls `showStep(currentStep)`, so step visibility and the first “ถัดไป: ขนาดแบตเตอรี่ →” label are initialized through the same path as later steps.
+- Confirmed the favicon uses an inline data URL and the page loads local `styles/tailwind.css`, avoiding the earlier `/favicon.ico` 404 and Tailwind CDN warning. At this browser run, console was empty and all 13 network requests succeeded.

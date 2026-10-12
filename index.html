@@ -698,7 +698,7 @@
         document.addEventListener('DOMContentLoaded', function () {
             addDevice(); // Add first device
             setMode('basic');
-            updateStepIndicators();
+            showStep(currentStep);
         });
 
         function setMode(mode, preserveEnterpriseSettings = false) {

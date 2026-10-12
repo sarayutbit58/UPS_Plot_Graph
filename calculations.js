@@ -18,9 +18,13 @@
     function round(value, places = 6) {
         const factor = 10 ** places;
         if (!Number.isFinite(value)) return null;
-        const scaled = value * factor;
+        const adjusted = value + Number.EPSILON * Math.sign(value);
+        const scaled = adjusted * factor;
         if (!Number.isFinite(scaled)) return null;
-        const rounded = Math.round(scaled + Number.EPSILON * Math.max(1, Math.abs(scaled))) / factor;
+        if (Math.abs(scaled) > Number.MAX_SAFE_INTEGER) {
+            return Number(value.toFixed(places));
+        }
+        const rounded = Math.round(scaled) / factor;
         return Number.isFinite(rounded) ? rounded : null;
     }
 

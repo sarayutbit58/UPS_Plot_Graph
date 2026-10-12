@@ -44,6 +44,32 @@ test('keeps displayed load, Forecast, and total aligned at six-decimal precision
     assert.equal(displayableRows.totalLoad, 0.000002);
 });
 
+test('does not bias whole-number loads by the rounding epsilon at large magnitudes', () => {
+    const watts = calculations.calculateLoadBreakdown([
+        { name: 'Large load', load: 10_000_000_000, unit: 'W', plugs: 1 },
+    ], 20, '%');
+    assert.equal(watts.deviceLoad, 10_000_000_000);
+    assert.equal(watts.forecastWatt, 2_000_000_000);
+    assert.equal(watts.totalLoad, 12_000_000_000);
+
+    const va = calculations.calculateLoadBreakdown([
+        { name: 'Large VA load', load: 12_500_000_000, unit: 'VA', plugs: 1 },
+    ], 0, '%');
+    assert.equal(va.deviceLoad, 10_000_000_000);
+    assert.equal(va.totalLoad, 10_000_000_000);
+});
+
+test('preserves six-decimal precision when scaled loads exceed the safe integer range', () => {
+    for (const load of [9_999_999_999.123457, 10_000_000_000.123457]) {
+        const result = calculations.calculateLoadBreakdown([
+            { name: 'Fractional large load', load, unit: 'W', plugs: 1 },
+        ], 0, '%');
+        assert.equal(result.valid, true);
+        assert.equal(result.deviceLoad, load);
+        assert.equal(result.totalLoad, load);
+    }
+});
+
 test('counts zero-watt device outlets and ignores blank or invalid rows', () => {
     const result = calculations.calculateLoadBreakdown([
         { name: 'Router', load: 100, unit: 'W', plugs: 1 },
