@@ -503,3 +503,23 @@ const CONFIG = {
 - Basic mode keeps the core W input and calculations visible. Enterprise mode reveals the existing VA conversion, outlet counts, Forecast, editable assumptions, and JSON import/export controls.
 - Kept the existing calculation expressions and defaults; added a visible estimate limitation and a table alternative for chart values.
 - Follow-up security fix: device names are HTML-escaped before rendering in the summary and before inserting into the imported device-name attribute.
+
+## Application Audit — 2026-10-12 09:42 ICT
+
+Target: local static build at commit `68f1abd`, served on `127.0.0.1:8123`; Playwright Chromium; synthetic values only; no account or backend.
+
+| Flow | Evidence | Result |
+| --- | --- | --- |
+| Basic battery sizing and Runtime | Entered 120 W, kept 60-minute target, advanced through both steps | 11.76 Ah and 60 minutes displayed; chart and its data-table disclosure appeared |
+| Enterprise conversion and Forecast | Selected VA for 120 VA, entered 10% Forecast, switched back to Basic | 96 W device load and 105.6 W total; Basic disclosed the hidden VA, Forecast, and outlet-count details |
+| JSON import and summary rendering | Imported a synthetic device name containing an image/event-handler payload | Original name remained visible as text; no injected image node and no handler sentinel were observed |
+| Empty-load validation | Set load to 0 W and selected Next | Navigation stayed on the load step and showed inline validation |
+| Mobile layout | 390 × 844 CSS viewport | No horizontal overflow; mode labels and the 100 W KPI wrapped onto multiple lines |
+
+### Audit Findings
+
+- **Minor — Mobile control wrapping:** At 390 px, the Basic/Enterprise labels wrap, and the load KPI breaks `100 W` across lines. Evidence: `index.html` styles around lines 85–105, 221, 285–303; screenshot in `work/ups-audit-mobile-basic.png`.
+- **Minor — Initial action label:** On first load, the Next button shows only `ถัดไป →`; step-specific labels are assigned by `showStep()`, which is not called during initialization. Evidence: `index.html` lines 672, 712–715, and 1265–1270.
+- **Informational — Static-host console:** The tested page emitted a 404 for `/favicon.ico` and Tailwind's production-CDN warning. The page and its Chart.js/Prompt/Tailwind assets loaded; no application JavaScript exception was observed.
+
+Not tested: export/download behavior, offline/CDN failure, screen-reader hardware/software combinations, malformed JSON types beyond the escaped-name payload, and production hosting.
