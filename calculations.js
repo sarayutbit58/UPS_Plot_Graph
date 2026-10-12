@@ -19,12 +19,13 @@
         if (typeof value !== 'number' && typeof value !== 'string') return null;
         const text = typeof value === 'string' ? value.trim() : Number.isFinite(value) ? value.toString() : '';
         if (text.length === 0 || text.length > 512) return null;
-        const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(text);
+        const match = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i.exec(text);
         if (!match) return null;
-        const fraction = match[3] || '';
-        const exponent = Number(match[4] || 0);
+        const fraction = match[4] ?? match[3] ?? '';
+        const whole = match[2] || '0';
+        const exponent = Number(match[5] || 0);
         if (!Number.isSafeInteger(exponent)) return null;
-        let numerator = BigInt(`${match[2]}${fraction}`);
+        let numerator = BigInt(`${whole}${fraction}`);
         let denominator = 1n;
         const scale = fraction.length - exponent;
         if (Math.abs(scale) > 1024) return null;

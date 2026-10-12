@@ -99,6 +99,18 @@ test('rejects decimal string loads and Forecast values lost by Number coercion',
     ], '1e-324', 'W');
     assert.equal(tinyForecast.valid, false);
     assert.deepEqual(tinyForecast.precisionInvalidTarget, { type: 'forecast' });
+
+    const leadingDecimal = calculations.calculateLoadBreakdown([
+        { name: 'Browser number format', load: '.5', unit: 'W', plugs: 1 },
+    ], 0, '%');
+    assert.equal(leadingDecimal.valid, true);
+    assert.equal(leadingDecimal.totalLoad, 0.5);
+
+    const leadingDecimalHalf = calculations.calculateLoadBreakdown([
+        { name: 'Browser half micro-watt', load: '.0000005', unit: 'W', plugs: 1 },
+    ], 0, '%');
+    assert.equal(leadingDecimalHalf.valid, true);
+    assert.equal(leadingDecimalHalf.totalLoad, 0.000001);
 });
 
 test('does not bias whole-number loads by the rounding epsilon at large magnitudes', () => {

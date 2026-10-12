@@ -726,6 +726,7 @@ These are presentation/packaging findings; this recheck made no application-code
 - Import validation now also rejects decimal strings that Number coercion would alter in device loads, Forecast, backup time, voltage, efficiency, or manual battery Ah.
 - Browser Export check confirmed valid numeric settings remain JSON numbers and a `60.000000000000001` backup time blocks export rather than saving a rounded 60-minute value.
 - Valid numeric strings such as `120.0` and `10.0` are normalized back to numbers only after exact round-trip checks; malformed or precision-losing strings remain rejected.
+- The browser accepts `.5` in a number input; the decimal parser now accepts the same valid leading-decimal form. Browser input `.5` calculates and displays 0.5 W with no validation error or console message.
 
 ## Browser Compatibility Guard — 2026-10-12
 
