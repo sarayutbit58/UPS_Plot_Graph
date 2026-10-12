@@ -728,6 +728,7 @@
             document.getElementById('modeDescription').textContent = currentMode === 'basic'
                 ? 'ข้อมูลหลักที่จำเป็นสำหรับการคำนวณ'
                 : 'ปรับสมมติฐาน Forecast และรายละเอียดโหลดเพิ่มเติม';
+            document.querySelectorAll('.device-card').forEach(updateDeviceLoadLabel);
             updateBasicContextNote();
             if (calculatedData.totalLoad > 0) calculateBatteryAh();
             const runtimeBattery = document.getElementById('runtimeBatteryAh');
@@ -754,6 +755,14 @@
                 ? `${notes.join(' และ ')} — เปิด Enterprise เพื่อดูหรือแก้ไขรายละเอียด`
                 : '';
             note.classList.toggle('hidden', currentMode !== 'basic' || notes.length === 0);
+        }
+
+        function updateDeviceLoadLabel(card) {
+            const label = card.querySelector('.device-load-label');
+            if (!label) return;
+            const unit = card.querySelector('.device-unit')?.value || 'W';
+            label.textContent = currentMode === 'basic' && unit === 'VA'
+                ? 'กำลังไฟ (VA → W)*' : currentMode === 'basic' ? 'กำลังไฟ (W)*' : 'กำลังไฟ*';
         }
 
         function updateDashboardMetrics() {
@@ -787,19 +796,19 @@
         function addDevice() {
             deviceIdCounter++;
             const deviceHtml = `
-                <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200" data-converted-from-va="false">
                 <div class="device-fields grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                         <div class="md:col-span-4">
                             <label for="device-${deviceIdCounter}-name" class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
                             <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" placeholder="เช่น PoE Switch, NVR, Router..." class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                         </div>
                         <div class="md:col-span-2">
-                            <label for="device-${deviceIdCounter}-load" class="field-label">กำลังไฟ (W)*</label>
+                            <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ (W)*</label>
                             <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" placeholder="เช่น 120" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
                         </div>
                         <div class="enterprise-only md:col-span-2">
                             <label for="device-${deviceIdCounter}-unit" class="block text-gray-600 text-sm mb-1">หน่วย*</label>
-                            <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="updateTotalLoad()">
+                            <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="handleDeviceUnitChange(this)">
                                 <option value="W">W</option>
                                 <option value="VA">VA</option>
                             </select>
@@ -818,6 +827,7 @@
                 </div>
             `;
             document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);
+            updateDeviceLoadLabel(document.getElementById(`device-${deviceIdCounter}`));
         }
 
         function removeDevice(id) {
@@ -826,6 +836,11 @@
                 element.remove();
                 updateTotalLoad();
             }
+        }
+
+        function handleDeviceUnitChange(select) {
+            updateDeviceLoadLabel(select.closest('.device-card'));
+            updateTotalLoad();
         }
 
         function updateTotalLoad() {
@@ -1551,12 +1566,12 @@
                                         <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" value="${escapeHtml(device.name)}" class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                                     </div>
                                     <div class="md:col-span-2">
-                            <label for="device-${deviceIdCounter}-load" class="field-label">กำลังไฟ*</label>
+                            <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ*</label>
                                     <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" value="${escapeHtml(device.load)}" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
                                     </div>
                                     <div class="enterprise-only md:col-span-2">
                                         <label for="device-${deviceIdCounter}-unit" class="block text-gray-600 text-sm mb-1">หน่วย*</label>
-                                        <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="updateTotalLoad()">
+                                        <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="handleDeviceUnitChange(this)">
                                             <option value="W" ${device.unit === 'W' ? 'selected' : ''}>W</option>
                                             <option value="VA" ${device.unit === 'VA' ? 'selected' : ''}>VA</option>
                                         </select>
@@ -1575,6 +1590,7 @@
                             </div>
                         `;
                         document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);
+                        updateDeviceLoadLabel(document.getElementById(`device-${deviceIdCounter}`));
                     });
 
                     // Restore settings
