@@ -1209,12 +1209,17 @@
         function nextStep() {
             if (currentStep === 1) {
                 updateTotalLoad();
+                if (!loadInputValid) {
+                    focusInvalidLoadInput();
+                    return;
+                }
                 if (calculatedData.totalLoad <= 0) {
                     currentStep = 1;
                     showStep(1);
                     const loadError = document.getElementById('loadError');
                     loadError.textContent = 'กรอกกำลังไฟมากกว่า 0 W อย่างน้อยหนึ่งรายการก่อนดำเนินการต่อ';
                     loadError.classList.remove('hidden');
+                    focusInvalidLoadInput();
                     return;
                 }
             }
@@ -1251,12 +1256,19 @@
             if (step < 1 || step > 4) return;
             if (step > 1) {
                 updateTotalLoad();
+                if (!loadInputValid) {
+                    currentStep = 1;
+                    showStep(1);
+                    focusInvalidLoadInput();
+                    return;
+                }
                 if (calculatedData.totalLoad <= 0) {
                     currentStep = 1;
                     showStep(1);
                     const loadError = document.getElementById('loadError');
                     loadError.textContent = 'กรอกกำลังไฟมากกว่า 0 W อย่างน้อยหนึ่งรายการก่อนดำเนินการต่อ';
                     loadError.classList.remove('hidden');
+                    focusInvalidLoadInput();
                     return;
                 }
             }
@@ -1292,6 +1304,30 @@
                 return false;
             }
             return true;
+        }
+
+        function focusInvalidLoadInput() {
+            const loadInputs = [...document.querySelectorAll('.device-load')];
+            const invalidLoad = loadInputs.find(input => input.value !== '' && (!Number.isFinite(Number(input.value)) || Number(input.value) < 0));
+            if (invalidLoad) {
+                invalidLoad.focus();
+                return;
+            }
+            const invalidPlugs = [...document.querySelectorAll('.device-plugs')].find(input => {
+                if (input.value === '') return false;
+                const value = Number(input.value);
+                return !Number.isSafeInteger(value) || value < 1;
+            });
+            if (invalidPlugs) {
+                invalidPlugs.focus();
+                return;
+            }
+            const forecast = document.getElementById('forecastValue');
+            if (forecast.value !== '' && (!Number.isFinite(Number(forecast.value)) || Number(forecast.value) < 0)) {
+                forecast.focus();
+                return;
+            }
+            (loadInputs[0] || forecast).focus();
         }
 
         function showStep(step) {
