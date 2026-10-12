@@ -7,7 +7,21 @@
     <title>UPS Picker - เครื่องคำนวณเลือก UPS</title>
     <meta name="description" content="เครื่องมือคำนวณขนาด UPS ที่เหมาะสมสำหรับอุปกรณ์ของคุณ">
     <link rel="icon" href="data:,">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        (function () {
+            var supported = typeof BigInt === 'function' && typeof Element !== 'undefined'
+                && typeof Element.prototype.replaceChildren === 'function';
+            if (supported) {
+                try {
+                    new Function('var value = null; value ??= 1; var item = {}; return item?.value ?? (1_000 + 1n);');
+                } catch (error) {
+                    supported = false;
+                }
+            }
+            if (!supported) document.documentElement.className += ' unsupported-browser';
+        }());
+    </script>
+    <script async src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./styles/tailwind.css">
     <style>
@@ -254,6 +268,9 @@
         .text-green-600 { color: #087f5b !important; }
         .text-purple-600 { color: #52627a !important; }
         .text-gray-400 { color: #64748b !important; }
+        #browserCompatibilityNotice { display: none; max-width: 720px; margin: 32px auto; padding: 24px; border: 1px solid #d97706; border-radius: 16px; background: #fffbeb; color: #713f12; }
+        .unsupported-browser #browserCompatibilityNotice { display: block; }
+        .unsupported-browser body > :not(#browserCompatibilityNotice) { display: none !important; }
 
         @media (max-width: 1000px) {
             .dashboard-shell { grid-template-columns: 210px minmax(0, 1fr); gap: 16px; padding: 16px; }
@@ -297,6 +314,10 @@
 </head>
 
 <body data-mode="basic" class="min-h-screen">
+    <section id="browserCompatibilityNotice" role="alert" aria-labelledby="browserCompatibilityTitle">
+        <h1 id="browserCompatibilityTitle" class="text-xl font-bold">กรุณาอัปเดตเบราว์เซอร์</h1>
+        <p class="mt-2">เบราว์เซอร์นี้ยังไม่รองรับการคำนวณแบบความละเอียดสูงของ UPS Picker กรุณาอัปเดต Safari, Chrome, Edge หรือ Firefox แล้วเปิดหน้านี้อีกครั้ง</p>
+    </section>
     <header class="app-header">
         <div class="header-inner">
             <div class="brand-lockup">
@@ -969,9 +990,9 @@
         // Battery Calculator
         function calculateBatteryAh() {
             const powerW = calculatedData.totalLoad;
-            const timeMin = Number(document.getElementById('backupTimeMin').value);
-            const voltage = currentMode === 'basic' ? 12 : Number(document.getElementById('batteryVoltage').value);
-            const efficiency = currentMode === 'basic' ? 85 : Number(document.getElementById('upsEfficiency').value);
+            const timeMin = document.getElementById('backupTimeMin').value;
+            const voltage = currentMode === 'basic' ? 12 : document.getElementById('batteryVoltage').value;
+            const efficiency = currentMode === 'basic' ? 85 : document.getElementById('upsEfficiency').value;
             const batteryAh = UPScalculations.calculateBatteryAh(powerW, timeMin, voltage, efficiency);
             if (batteryAh === null) {
                 calculatedData.batteryAh = null;
@@ -983,7 +1004,7 @@
             calculatedData.batteryAh = batteryAh;
             calculatedData.voltage = voltage;
             calculatedData.efficiency = efficiency;
-            calculatedData.backupTime = timeMin;
+            calculatedData.backupTime = Number(timeMin);
 
             document.getElementById('batteryAhResult').textContent = `${calculatedData.batteryAh} Ah`;
             document.getElementById('batteryResult').classList.remove('hidden');
@@ -993,9 +1014,9 @@
         // Runtime Calculator
         function calculateRuntime() {
             const capacityInput = document.getElementById('runtimeBatteryAh').value;
-            const batteryAh = capacityInput === '' ? calculatedData.batteryAh : Number(capacityInput);
-            const voltage = currentMode === 'basic' ? 12 : Number(document.getElementById('runtimeVoltage').value);
-            const efficiency = currentMode === 'basic' ? 85 : Number(document.getElementById('runtimeEfficiency').value);
+            const batteryAh = capacityInput === '' ? calculatedData.batteryAh : capacityInput;
+            const voltage = currentMode === 'basic' ? 12 : document.getElementById('runtimeVoltage').value;
+            const efficiency = currentMode === 'basic' ? 85 : document.getElementById('runtimeEfficiency').value;
             const powerW = calculatedData.totalLoad;
             const runtimeMinutes = UPScalculations.calculateRuntimeMinutes(batteryAh, voltage, efficiency, powerW);
             if (runtimeMinutes === null) {
@@ -1482,16 +1503,16 @@
                 devices,
                 calculatedData,
                 settings: {
-                    backupTime: Number(document.getElementById('backupTimeMin').value),
-                    voltage: currentMode === 'basic' ? enterpriseBatterySettings.voltage : Number(document.getElementById('batteryVoltage').value),
-                    efficiency: currentMode === 'basic' ? enterpriseBatterySettings.efficiency : Number(document.getElementById('upsEfficiency').value),
-                    runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : Number(document.getElementById('runtimeBatteryAh').value),
+                    backupTime: document.getElementById('backupTimeMin').value,
+                    voltage: currentMode === 'basic' ? enterpriseBatterySettings.voltage : document.getElementById('batteryVoltage').value,
+                    efficiency: currentMode === 'basic' ? enterpriseBatterySettings.efficiency : document.getElementById('upsEfficiency').value,
+                    runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : document.getElementById('runtimeBatteryAh').value,
                 },
                 calculationSettings: {
-                    backupTime: Number(document.getElementById('backupTimeMin').value),
-                    voltage: currentMode === 'basic' ? 12 : Number(document.getElementById('batteryVoltage').value),
-                    efficiency: currentMode === 'basic' ? 85 : Number(document.getElementById('upsEfficiency').value),
-                    runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : Number(document.getElementById('runtimeBatteryAh').value),
+                    backupTime: document.getElementById('backupTimeMin').value,
+                    voltage: currentMode === 'basic' ? 12 : document.getElementById('batteryVoltage').value,
+                    efficiency: currentMode === 'basic' ? 85 : document.getElementById('upsEfficiency').value,
+                    runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : document.getElementById('runtimeBatteryAh').value,
                 },
                 runtimeBatteryWasAutoFilled,
             });

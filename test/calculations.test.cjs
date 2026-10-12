@@ -76,6 +76,31 @@ test('rounds load and VA conversion at exact decimal midpoints', () => {
     assert.deepEqual(belowHalfForecast.precisionInvalidTarget, { type: 'forecast' });
 });
 
+test('rejects decimal string loads and Forecast values lost by Number coercion', () => {
+    for (const load of ['9007199254740993', '10000000000000001', '1e-324']) {
+        const result = calculations.calculateLoadBreakdown([{ load, unit: 'W', plugs: 1 }], 0, '%');
+        assert.equal(result.valid, false, `load ${load} must not be silently changed`);
+        assert.deepEqual(result.precisionInvalidTarget, { type: 'device-load', index: 0 });
+    }
+
+    const negativeUnderflow = calculations.calculateLoadBreakdown([
+        { load: '-1e-324', unit: 'W', plugs: 1 },
+    ], 0, '%');
+    assert.equal(negativeUnderflow.valid, false);
+
+    const forecast = calculations.calculateLoadBreakdown([
+        { load: 100, unit: 'W', plugs: 1 },
+    ], '9007199254740993', 'W');
+    assert.equal(forecast.valid, false);
+    assert.deepEqual(forecast.precisionInvalidTarget, { type: 'forecast' });
+
+    const tinyForecast = calculations.calculateLoadBreakdown([
+        { load: 100, unit: 'W', plugs: 1 },
+    ], '1e-324', 'W');
+    assert.equal(tinyForecast.valid, false);
+    assert.deepEqual(tinyForecast.precisionInvalidTarget, { type: 'forecast' });
+});
+
 test('does not bias whole-number loads by the rounding epsilon at large magnitudes', () => {
     const watts = calculations.calculateLoadBreakdown([
         { name: 'Large load', load: 10_000_000_000, unit: 'W', plugs: 1 },
@@ -175,6 +200,9 @@ test('calculates required Ah and rejects invalid sizing inputs', () => {
     assert.equal(calculations.calculateBatteryAh(120, 60, 12, 100), 10);
     assert.equal(calculations.calculateBatteryAh(3, 63, 12, 60), 0.4375);
     assert.equal(calculations.calculateBatteryAh(1, 162, 12, 96), 0.234375);
+    assert.equal(calculations.calculateBatteryAh('9007199254740993', 60, 12, 85), null);
+    assert.equal(calculations.calculateBatteryAh(120, '60.000000000000001', 12, 85), null);
+    assert.equal(calculations.calculateBatteryAh(120, 60, 12, '100.000000000000001'), null);
     assert.equal(calculations.calculateBatteryAh(Infinity, 60, 12, 85), null);
     assert.equal(calculations.calculateBatteryAh(1e308, 1e308, 1e308, 100), null);
     assert.equal(calculations.calculateBatteryAh(1e308, 1e-308, 1e-308, 100), null);
@@ -191,6 +219,8 @@ test('calculates runtime with the inverse formula and handles zero or invalid ca
     assert.equal(calculations.calculateRuntimeMinutes(0.25, 12, 100, 120), 1.5);
     assert.equal(calculations.calculateRuntimeMinutes(1, 12, 60, 128), 3.38);
     assert.equal(calculations.calculateRuntimeMinutes(1, 12, 85, 800), 0.77);
+    assert.equal(calculations.calculateRuntimeMinutes('9007199254740993', 12, 85, 100), null);
+    assert.equal(calculations.calculateRuntimeMinutes(11.76, 12, 85, '100.000000000000001'), null);
     assert.ok(Math.abs(calculations.calculateRuntimeMinutes(1 / 6000, 12, 100, 120) - 0.001) < 1e-12);
     assert.equal(calculations.calculateRuntimeMinutes(Number.MIN_VALUE, 12, 100, Number.MAX_VALUE), Number.MIN_VALUE);
     assert.equal(calculations.calculateRuntimeMinutes(1e306, 1e308, 50, 1e308), null);
@@ -237,6 +267,8 @@ test('calculates PF-based UPS VA screening and validates outlet boundaries', () 
     assert.equal(calculations.recommendUpsVA(200), 400);
     assert.equal(calculations.recommendUpsVA(61.53846153846154), 200);
     assert.equal(calculations.recommendUpsVA(615.3846153846154), 1100);
+    assert.equal(calculations.recommendUpsVA('61.53846153846154'), 200);
+    assert.equal(calculations.recommendUpsVA('9007199254740993'), null);
     assert.equal(calculations.recommendUpsVA(0), 0);
     assert.equal(calculations.recommendUpsVA(1.4e308), null);
     assert.equal(calculations.recommendUpsVA(1e308), null);
@@ -302,6 +334,35 @@ test('normalizes valid imports and rejects malformed device/settings data before
     assert.throws(() => calculations.normalizeImportData({
         devices: [{ name: 'Extreme', load: 1e308, unit: 'W', plugs: 1 }], calculatedData: {},
     }), { name: 'InvalidImportDataError' });
+    for (const load of ['9007199254740993', '1e-324', '-1e-324']) {
+        assert.throws(() => calculations.normalizeImportData({
+            devices: [{ name: 'Precision edge', load, unit: 'W', plugs: 1 }], calculatedData: {},
+        }), { name: 'InvalidImportDataError' });
+    }
+    assert.throws(() => calculations.normalizeImportData({
+        devices: [{ name: 'Router', load: 100, unit: 'W', plugs: 1 }], calculatedData: {},
+        forecast: { value: '9007199254740993', unit: 'W' },
+    }), { name: 'InvalidImportDataError' });
+    assert.throws(() => calculations.normalizeImportData({
+        devices: [{ name: 'Router', load: 100, unit: 'W', plugs: 1 }], calculatedData: {},
+        forecast: { value: '1e-324', unit: 'W' },
+    }), { name: 'InvalidImportDataError' });
+    const numericTextImport = calculations.normalizeImportData({
+        devices: [{ name: 'Router', load: '120.0', unit: 'W', plugs: 1 }], calculatedData: {},
+        forecast: { value: '10.0', unit: '%' },
+    });
+    assert.equal(numericTextImport.devices[0].load, 120);
+    assert.equal(numericTextImport.forecast.value, 10);
+    for (const settings of [
+        { voltage: '12.000000000000001' },
+        { efficiency: '100.000000000000001' },
+        { backupTime: '60.000000000000001' },
+        { runtimeBatteryAh: '9007199254740993' },
+    ]) {
+        assert.throws(() => calculations.normalizeImportData({
+            devices: [{ name: 'Router', load: 100, unit: 'W', plugs: 1 }], calculatedData: {}, settings,
+        }), { name: 'InvalidImportDataError' });
+    }
 });
 
 test('round-trips export settings and Forecast through normalized import', () => {
@@ -347,6 +408,14 @@ test('exports battery sizing and Runtime recalculated from the latest form setti
     });
     assert.equal(manualCapacityExport.calculatedData.batteryAh, 5.882353);
     assert.equal(manualCapacityExport.calculatedData.runtime, 59.98);
+
+    const precisionChangedExport = calculations.buildExportData({
+        devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+        calculatedData: { forecastValue: 0, forecastUnit: '%', totalLoad: 120 },
+        settings: { backupTime: '60.000000000000001', voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+        calculationSettings: { backupTime: '60.000000000000001', voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    });
+    assert.throws(() => calculations.normalizeImportData(precisionChangedExport), { name: 'InvalidImportDataError' });
 });
 
 test('preserves auto-filled Runtime capacity as automatic across export and import', () => {

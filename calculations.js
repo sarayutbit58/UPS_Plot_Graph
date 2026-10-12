@@ -16,17 +16,34 @@
     }
 
     function decimalFraction(value) {
-        const match = /^(-?)(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(value.toString());
+        if (typeof value !== 'number' && typeof value !== 'string') return null;
+        const text = typeof value === 'string' ? value.trim() : Number.isFinite(value) ? value.toString() : '';
+        if (text.length === 0 || text.length > 512) return null;
+        const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(text);
         if (!match) return null;
         const fraction = match[3] || '';
         const exponent = Number(match[4] || 0);
+        if (!Number.isSafeInteger(exponent)) return null;
         let numerator = BigInt(`${match[2]}${fraction}`);
         let denominator = 1n;
         const scale = fraction.length - exponent;
+        if (Math.abs(scale) > 1024) return null;
         if (scale > 0) denominator = 10n ** BigInt(scale);
         else if (scale < 0) numerator *= 10n ** BigInt(-scale);
         if (match[1] === '-') numerator = -numerator;
         return { numerator, denominator };
+    }
+
+    function decimalInputMatchesNumber(value, number) {
+        const inputFraction = decimalFraction(value);
+        const numberFraction = decimalFraction(number);
+        return Boolean(inputFraction && numberFraction
+            && inputFraction.numerator * numberFraction.denominator === numberFraction.numerator * inputFraction.denominator);
+    }
+
+    function canonicalNumericOrRaw(value) {
+        const number = finiteNumber(value);
+        return number !== null && decimalInputMatchesNumber(value, number) ? number : value;
     }
 
     function scaledIntegerText(value, places) {
@@ -64,14 +81,20 @@
         let inputsValid = true;
         let precisionInvalidTarget = null;
         inputDevices.forEach((device, index) => {
-            const load = finiteNumber(device && device.load);
+            const rawLoad = device && device.load;
+            const load = finiteNumber(rawLoad);
+            const loadFraction = decimalFraction(rawLoad);
             if (load === null) {
-                const rawLoad = device && device.load;
                 if (rawLoad !== undefined && rawLoad !== null && !(typeof rawLoad === 'string' && rawLoad.trim() === '')) inputsValid = false;
                 return;
             }
-            if (load < 0) {
+            if (!loadFraction || loadFraction.numerator < 0n) {
                 inputsValid = false;
+                return;
+            }
+            if (!decimalInputMatchesNumber(rawLoad, load)) {
+                inputsValid = false;
+                if (loadFraction.numerator > 0n) precisionInvalidTarget ??= { type: 'device-load', index };
                 return;
             }
             const unit = device.unit === undefined || device.unit === null || device.unit === '' ? 'W' : device.unit;
@@ -79,7 +102,6 @@
                 inputsValid = false;
                 return;
             }
-            const loadFraction = decimalFraction(load);
             const wattsNumerator = unit === 'VA' ? loadFraction.numerator * 4n : loadFraction.numerator;
             const wattsDenominator = unit === 'VA' ? loadFraction.denominator * 5n : loadFraction.denominator;
             const plugsValue = finiteNumber(device.plugs);
@@ -95,7 +117,7 @@
                 precisionInvalidTarget ??= { type: 'device-load', index };
                 return;
             }
-            if (load > 0 && roundedWatts === 0) {
+            if (loadFraction.numerator > 0n && roundedWatts === 0) {
                 inputsValid = false;
                 precisionInvalidTarget ??= { type: 'device-load', index };
                 return;
@@ -115,19 +137,20 @@
         });
         const rawForecast = finiteNumber(forecastValue);
         const forecastProvided = forecastValue !== undefined && forecastValue !== null && !(typeof forecastValue === 'string' && forecastValue.trim() === '');
-        if ((forecastProvided && rawForecast === null) || rawForecast < 0) inputsValid = false;
-        const value = rawForecast !== null && rawForecast > 0 ? rawForecast : 0;
+        const parsedForecastFraction = forecastProvided ? decimalFraction(forecastValue) : decimalFraction(0);
+        if ((forecastProvided && (rawForecast === null || !parsedForecastFraction || !decimalInputMatchesNumber(forecastValue, rawForecast)))
+            || rawForecast < 0 || (parsedForecastFraction && parsedForecastFraction.numerator < 0n)) inputsValid = false;
+        const forecastFraction = parsedForecastFraction || decimalFraction(0);
         const resolvedForecastUnit = forecastUnit === undefined || forecastUnit === null || forecastUnit === '' ? '%' : forecastUnit;
         if (!['%', 'W'].includes(resolvedForecastUnit)) inputsValid = false;
         const unit = resolvedForecastUnit === 'W' ? 'W' : '%';
-        const forecastFraction = decimalFraction(value);
         const forecastNumerator = unit === '%' ? deviceLoadMicroWatts * forecastFraction.numerator : forecastFraction.numerator;
         const forecastDenominator = unit === '%'
             ? 1_000_000n * forecastFraction.denominator * 100n
             : forecastFraction.denominator;
         const forecastMicroWatts = roundFractionToScaledInteger(forecastNumerator, forecastDenominator, 6);
         const roundedForecastWatt = forecastMicroWatts === null ? null : fromScaledInteger(forecastMicroWatts, 6);
-        const forecastPositive = value > 0 && (unit === 'W' || deviceLoad > 0);
+        const forecastPositive = forecastFraction.numerator > 0n && (unit === 'W' || deviceLoad > 0);
         if (roundedForecastWatt === null) {
             inputsValid = false;
             if (forecastPositive) precisionInvalidTarget ??= { type: 'forecast' };
@@ -159,11 +182,13 @@
     }
 
     function calculateBatteryAh(powerW, minutes, voltage, efficiency) {
-        const power = finiteNumber(powerW), time = finiteNumber(minutes);
-        const volts = finiteNumber(voltage), percent = finiteNumber(efficiency);
-        if (power === null || power <= 0 || time === null || time <= 0 || volts === null || volts <= 0 || percent === null || percent < 50 || percent > 100) return null;
-        const p = decimalFraction(power), t = decimalFraction(time);
-        const v = decimalFraction(volts), e = decimalFraction(percent);
+        const numericInputs = [powerW, minutes, voltage, efficiency].map(finiteNumber);
+        if (numericInputs.some(value => value === null)
+            || [powerW, minutes, voltage, efficiency].some((value, index) => !decimalInputMatchesNumber(value, numericInputs[index]))) return null;
+        const p = decimalFraction(powerW), t = decimalFraction(minutes);
+        const v = decimalFraction(voltage), e = decimalFraction(efficiency);
+        if (!p || !t || !v || !e || p.numerator <= 0n || t.numerator <= 0n || v.numerator <= 0n
+            || e.numerator < 50n * e.denominator || e.numerator > 100n * e.denominator) return null;
         const numerator = p.numerator * t.numerator * 100n * v.denominator * e.denominator;
         const denominator = p.denominator * t.denominator * 60n * v.numerator * e.numerator;
         const scaledAh = (numerator * 1_000_000n + denominator - 1n) / denominator;
@@ -171,11 +196,15 @@
     }
 
     function calculateRuntimeMinutes(ampHours, voltage, efficiency, powerW) {
+        const numericInputs = [ampHours, voltage, efficiency, powerW].map(finiteNumber);
+        if (numericInputs.some(value => value === null)
+            || [ampHours, voltage, efficiency, powerW].some((value, index) => !decimalInputMatchesNumber(value, numericInputs[index]))) return null;
+        const a = decimalFraction(ampHours), v = decimalFraction(voltage);
+        const e = decimalFraction(efficiency), p = decimalFraction(powerW);
+        if (!a || !v || !e || !p || a.numerator < 0n || v.numerator <= 0n || p.numerator <= 0n
+            || e.numerator < 50n * e.denominator || e.numerator > 100n * e.denominator) return null;
         const ah = finiteNumber(ampHours), volts = finiteNumber(voltage);
         const percent = finiteNumber(efficiency), power = finiteNumber(powerW);
-        if (ah === null || ah < 0 || volts === null || volts <= 0 || percent === null || percent < 50 || percent > 100 || power === null || power <= 0) return null;
-        const a = decimalFraction(ah), v = decimalFraction(volts);
-        const e = decimalFraction(percent), p = decimalFraction(power);
         const numerator = a.numerator * v.numerator * e.numerator * 60n * p.denominator;
         const denominator = a.denominator * v.denominator * e.denominator * 100n * p.numerator;
         const hundredthsNumerator = numerator * 100n;
@@ -203,8 +232,10 @@
 
     function recommendUpsVA(loadW) {
         const load = finiteNumber(loadW);
-        if (load === null || load <= 0) return 0;
-        const watts = decimalFraction(load);
+        if (load === null) return null;
+        const watts = decimalFraction(loadW);
+        if (!watts || !decimalInputMatchesNumber(loadW, load)) return null;
+        if (watts.numerator <= 0n) return 0;
         const powerFactor = decimalFraction(DEFAULT_POWER_FACTOR);
         const headroom = decimalFraction(1.3);
         const numerator = watts.numerator * powerFactor.denominator * headroom.numerator;
@@ -244,9 +275,13 @@
         if (mode !== null && !['basic', 'enterprise'].includes(mode)) throw invalidImport('โหมดการใช้งานไม่ถูกต้อง');
         const devices = data.devices.map(device => {
             if (!device || typeof device !== 'object' || Array.isArray(device)) throw invalidImport('ข้อมูลอุปกรณ์ไม่ถูกต้อง');
-            const load = finiteNumber(device.load);
+            const rawLoad = device.load;
+            const load = finiteNumber(rawLoad);
+            const loadFraction = decimalFraction(rawLoad);
             const plugs = device.plugs === undefined ? 1 : finiteNumber(device.plugs);
-            if (load === null || load < 0 || plugs === null || !Number.isSafeInteger(plugs) || plugs < 1 || !['W', 'VA'].includes(device.unit ?? 'W') || (device.name !== undefined && typeof device.name !== 'string')) {
+            if (load === null || !loadFraction || !decimalInputMatchesNumber(rawLoad, load)
+                || (typeof rawLoad === 'number' && Number.isInteger(load) && !Number.isSafeInteger(load)) || loadFraction.numerator < 0n
+                || plugs === null || !Number.isSafeInteger(plugs) || plugs < 1 || !['W', 'VA'].includes(device.unit ?? 'W') || (device.name !== undefined && typeof device.name !== 'string')) {
                 throw invalidImport('ข้อมูลโหลดหรือจำนวนปลั๊กไม่ถูกต้อง');
             }
             return { name: String(device.name ?? ''), load, unit: device.unit ?? 'W', plugs };
@@ -256,13 +291,26 @@
         const runtimeBatteryValue = sourceSettings.runtimeBatteryAh;
         const runtimeBatteryAh = runtimeBatteryValue === undefined || runtimeBatteryValue === null
             ? null : finiteNumber(runtimeBatteryValue);
+        const rawBackupTime = sourceSettings.backupTime ?? data.calculatedData.backupTime ?? 60;
+        const rawVoltage = sourceSettings.voltage ?? data.calculatedData.voltage ?? 12;
+        const rawEfficiency = sourceSettings.efficiency ?? data.calculatedData.efficiency ?? 85;
+        const backupTimeFraction = decimalFraction(rawBackupTime);
+        const voltageFraction = decimalFraction(rawVoltage);
+        const efficiencyFraction = decimalFraction(rawEfficiency);
+        const runtimeBatteryFraction = runtimeBatteryValue === undefined || runtimeBatteryValue === null
+            ? null : decimalFraction(runtimeBatteryValue);
         const settings = {
-            backupTime: finiteNumber(sourceSettings.backupTime ?? data.calculatedData.backupTime ?? 60),
-            voltage: finiteNumber(sourceSettings.voltage ?? data.calculatedData.voltage ?? 12),
-            efficiency: finiteNumber(sourceSettings.efficiency ?? data.calculatedData.efficiency ?? 85),
+            backupTime: finiteNumber(rawBackupTime),
+            voltage: finiteNumber(rawVoltage),
+            efficiency: finiteNumber(rawEfficiency),
             runtimeBatteryAh,
         };
-        if (settings.backupTime === null || settings.backupTime <= 0 || settings.voltage === null || ![12, 24, 48].includes(settings.voltage) || settings.efficiency === null || settings.efficiency < 50 || settings.efficiency > 100 || (runtimeBatteryValue !== undefined && runtimeBatteryValue !== null && settings.runtimeBatteryAh === null) || (settings.runtimeBatteryAh !== null && settings.runtimeBatteryAh < 0)) {
+        const supportedVoltage = voltageFraction && [12n, 24n, 48n].some(value => voltageFraction.numerator === value * voltageFraction.denominator);
+        if (settings.backupTime === null || !decimalInputMatchesNumber(rawBackupTime, settings.backupTime) || settings.backupTime <= 0
+            || !supportedVoltage || settings.voltage === null || !decimalInputMatchesNumber(rawVoltage, settings.voltage)
+            || settings.efficiency === null || !decimalInputMatchesNumber(rawEfficiency, settings.efficiency)
+            || !efficiencyFraction || efficiencyFraction.numerator < 50n * efficiencyFraction.denominator || efficiencyFraction.numerator > 100n * efficiencyFraction.denominator
+            || (runtimeBatteryValue !== undefined && runtimeBatteryValue !== null && (settings.runtimeBatteryAh === null || !runtimeBatteryFraction || !decimalInputMatchesNumber(runtimeBatteryValue, settings.runtimeBatteryAh) || runtimeBatteryFraction.numerator < 0n))) {
             throw invalidImport('ค่าตั้งค่าแบตเตอรี่ไม่ถูกต้อง');
         }
         if (data.forecast !== undefined && data.forecast !== null && (typeof data.forecast !== 'object' || Array.isArray(data.forecast))) {
@@ -270,10 +318,16 @@
         }
         const forecastSource = data.forecast && typeof data.forecast === 'object' ? data.forecast : null;
         const legacyForecast = data.forecastWatt ?? data.calculatedData.forecastWatt ?? 0;
-        const forecastValue = finiteNumber(forecastSource ? (forecastSource.value ?? 0) : legacyForecast);
+        const rawForecastValue = forecastSource ? (forecastSource.value ?? 0) : legacyForecast;
+        const forecastNumber = finiteNumber(rawForecastValue);
+        const forecastFraction = decimalFraction(rawForecastValue);
         const forecastUnit = forecastSource ? (forecastSource.unit ?? '%') : (legacyForecast ? 'W' : '%');
-        if (forecastValue === null || forecastValue < 0 || !['%', 'W'].includes(forecastUnit)) throw invalidImport('ค่า Forecast ไม่ถูกต้อง');
-        const breakdown = calculateLoadBreakdown(devices, forecastValue, forecastUnit);
+        if (forecastNumber === null || !forecastFraction || !decimalInputMatchesNumber(rawForecastValue, forecastNumber)
+            || (typeof rawForecastValue === 'number' && Number.isInteger(forecastNumber) && !Number.isSafeInteger(forecastNumber))
+            || forecastFraction.numerator < 0n || !['%', 'W'].includes(forecastUnit)) {
+            throw invalidImport('ค่า Forecast ไม่ถูกต้อง');
+        }
+        const breakdown = calculateLoadBreakdown(devices, rawForecastValue, forecastUnit);
         if (!breakdown.valid) throw invalidImport('โหลดรวมอยู่นอกขอบเขตที่คำนวณได้');
         if (breakdown.totalLoad > 0 && calculateBatteryAh(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency) === null) {
             throw invalidImport('ค่าตั้งค่าแบตเตอรี่ทำให้คำนวณ Ah ไม่ได้');
@@ -281,7 +335,7 @@
         if (settings.runtimeBatteryAh !== null && breakdown.totalLoad > 0 && calculateRuntimeMinutes(settings.runtimeBatteryAh, settings.voltage, settings.efficiency, breakdown.totalLoad) === null) {
             throw invalidImport('ค่าความจุแบตเตอรี่ทำให้คำนวณ Runtime ไม่ได้');
         }
-        return { devices, settings, forecast: { value: forecastValue, unit: forecastUnit }, mode };
+        return { devices, settings, forecast: { value: forecastNumber, unit: forecastUnit }, mode };
     }
 
     function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, runtimeBatteryWasAutoFilled = false, mode = null, exportDate = new Date() }) {
@@ -291,18 +345,22 @@
         const activeCalculationSettings = runtimeBatteryWasAutoFilled
             ? { ...calculationSettings, runtimeBatteryAh: null }
             : calculationSettings;
-        const forecastValue = finiteNumber(calculatedData.forecastValue) ?? 0;
+        const rawForecastValue = calculatedData.forecastValue ?? 0;
+        const forecastValue = canonicalNumericOrRaw(rawForecastValue);
         const forecastUnit = calculatedData.forecastUnit || '%';
         const breakdown = calculateLoadBreakdown(devices, forecastValue, forecastUnit);
-        const activeBackupTime = finiteNumber(activeCalculationSettings.backupTime);
-        const activeVoltage = finiteNumber(activeCalculationSettings.voltage);
-        const activeEfficiency = finiteNumber(activeCalculationSettings.efficiency);
+        const rawBackupTime = activeCalculationSettings.backupTime;
+        const rawVoltage = activeCalculationSettings.voltage;
+        const rawEfficiency = activeCalculationSettings.efficiency;
+        const activeBackupTime = canonicalNumericOrRaw(rawBackupTime);
+        const activeVoltage = canonicalNumericOrRaw(rawVoltage);
+        const activeEfficiency = canonicalNumericOrRaw(rawEfficiency);
         const batteryAh = breakdown.valid && breakdown.totalLoad > 0
-            ? calculateBatteryAh(breakdown.totalLoad, activeBackupTime, activeVoltage, activeEfficiency)
+            ? calculateBatteryAh(breakdown.totalLoad, rawBackupTime, rawVoltage, rawEfficiency)
             : null;
         const runtimeCapacityAh = activeCalculationSettings.runtimeBatteryAh ?? exportSettings.runtimeBatteryAh ?? batteryAh;
         const runtime = breakdown.valid && breakdown.totalLoad > 0
-            ? calculateRuntimeMinutes(runtimeCapacityAh, activeVoltage, activeEfficiency, breakdown.totalLoad)
+            ? calculateRuntimeMinutes(runtimeCapacityAh, rawVoltage, rawEfficiency, breakdown.totalLoad)
             : null;
         const exportCalculatedData = {
             ...calculatedData,
@@ -318,12 +376,18 @@
             efficiency: activeEfficiency,
             runtime,
         };
+        const serializedSettings = { ...exportSettings };
+        for (const key of ['backupTime', 'voltage', 'efficiency', 'runtimeBatteryAh']) {
+            if (serializedSettings[key] !== undefined && serializedSettings[key] !== null) {
+                serializedSettings[key] = canonicalNumericOrRaw(serializedSettings[key]);
+            }
+        }
         return {
             version: '1.4', appName: 'UPS Picker', exportDate: exportDate.toISOString(), mode,
             devices: devices.map(device => ({ ...device })),
             calculatedData: exportCalculatedData,
             forecast: { value: forecastValue, unit: forecastUnit, watt: exportCalculatedData.forecastWatt },
-            settings: { ...exportSettings },
+            settings: serializedSettings,
         };
     }
 

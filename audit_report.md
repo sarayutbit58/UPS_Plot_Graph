@@ -717,3 +717,18 @@ These are presentation/packaging findings; this recheck made no application-code
 - Exact half micro-watt values still round upward; below-half W, VA-converted W, and Forecast values reject with the corresponding input target. UPS VA screening now applies exact PF/headroom ratios before ceiling to 100 VA; boundary probes return 100/200 VA on the appropriate side of the threshold.
 - Outputs that cannot be represented at their declared quantum now return `null` instead of an approximate Ah, Runtime, or VA result. Tests cover extreme finite inputs and this rejection path.
 - Browser check at 768 × 1024 returned the exact boundary results and focus recovery flows with an empty Console. The shared calculation module uses BigInt; WebKit documents BigInt support from Safari 14 ([Safari 14 features](https://webkit.org/blog/11340/new-webkit-features-in-safari-14/)). No minimum mobile browser/WebView version is declared yet; older engines remain unverified.
+
+## Decimal String Input Preservation — 2026-10-12
+
+- Found that parsing HTML/JSON decimal strings through `Number()` first could change values above 2^53 or underflow tiny values to zero before exact arithmetic saw them. Regression cases cover `9007199254740993`, `10000000000000001`, `1e-324`, and `-1e-324` for loads and Forecast, plus imported settings.
+- Calculation entry points now verify that string inputs survive Number conversion before use; HTML forms pass the original time, efficiency, voltage, and Ah strings into the exact-rational functions. JSON normalization checks raw decimal strings before converting to numeric state.
+- Browser probe confirmed the input preserved `9007199254740993` as text and the app rejected it; a backup time of `60.000000000000001` was rejected instead of silently treated as 60, while 60 minutes still returned 11.764706 Ah. Console was empty.
+- Import validation now also rejects decimal strings that Number coercion would alter in device loads, Forecast, backup time, voltage, efficiency, or manual battery Ah.
+- Browser Export check confirmed valid numeric settings remain JSON numbers and a `60.000000000000001` backup time blocks export rather than saving a rounded 60-minute value.
+- Valid numeric strings such as `120.0` and `10.0` are normalized back to numbers only after exact round-trip checks; malformed or precision-losing strings remain rejected.
+
+## Browser Compatibility Guard — 2026-10-12
+
+- The app uses BigInt literals, numeric separators, optional chaining, and logical assignment; the strict syntax floor is Chrome/Chromium 85, Firefox 79, or Safari/WebKit 14 according to [V8 logical-assignment support](https://v8.dev/features/logical-assignment) and [WebKit Safari 14](https://webkit.org/blog/11340/new-webkit-features-in-safari-14/). Android WebView uses a system Chromium engine; device-specific WebViews were not tested.
+- Added an ES5-compatible bootstrap that probes the required syntax/API before app startup. Unsupported engines receive a visible update message instead of an unusable blank app. Chart.js now loads asynchronously; the existing runtime table fallback remains available if it is late or unavailable.
+- Current Chrome passed the feature probe, rendered the app normally, and showed no Console messages. Forcing the unsupported-browser class displayed the update notice and hid the calculator.
