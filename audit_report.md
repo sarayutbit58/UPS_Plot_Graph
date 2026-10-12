@@ -827,3 +827,10 @@ These are presentation/packaging findings; this recheck made no application-code
 - Verified in Chrome by opening Enterprise and importing a v1.2 file with 12 V / 85% defaults and W-only devices: the app switched to Basic, the Basic button reported `aria-pressed=true`, Enterprise reported false, and the imported 100 W load remained intact.
 - Legacy Basic files with saved 24 V / 90% Enterprise preferences are still recognized as Basic when their recorded calculation used 12 V / 85%; the preferences remain available after switching modes. Conversely, non-default active calculation settings infer Enterprise.
 - Verification after this change: `npm test` 37/37; `node --check calculations.js`; inline JavaScript syntax; `git diff --check`.
+
+## Numeric Plug Precision and Export-Size Integrity — 2026-10-12
+
+- Reproduced plug count `1.00000000000000001` being coerced to 1 and accepted by both load breakdown and JSON normalization. Plug counts now use the same exact decimal round-trip check as other numeric inputs; `1.0` remains valid, while the precision-losing value is rejected.
+- Reproduced a 1,000,000-character device name producing a 1,000,523-character JSON export that the 1 MB importer then rejected. Device names are now capped at 160 characters in both UI inputs and import validation. Invalid imported names produce a specific message.
+- Added a maximum-payload regression using 500 devices, 160-character names, and 1,000 manufacturer points plus maximum metadata. Its serialized export remains below 1 MB and successfully imports.
+- Verification: new plug precision test failed before the fix; current `npm test` 39/39; `node --check calculations.js`, inline JavaScript syntax check, and `git diff --check` passed.

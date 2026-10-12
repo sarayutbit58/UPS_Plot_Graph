@@ -7,6 +7,7 @@
 
     const DEFAULT_POWER_FACTOR = 0.8;
     const MAX_DEVICES = 500;
+    const MAX_DEVICE_NAME_LENGTH = 160;
     const MAX_IMPORT_FILE_BYTES = 1_000_000;
 
     function parseImportJson(jsonText) {
@@ -144,9 +145,10 @@
             }
             const wattsNumerator = unit === 'VA' ? loadFraction.numerator * 4n : loadFraction.numerator;
             const wattsDenominator = unit === 'VA' ? loadFraction.denominator * 5n : loadFraction.denominator;
-            const plugsValue = finiteNumber(device.plugs);
-            const plugs = device.plugs === undefined || device.plugs === null || device.plugs === '' ? 1 : plugsValue;
-            if (plugs === null || !Number.isSafeInteger(plugs) || plugs < 1 || !Number.isSafeInteger(totalPlugs + plugs)) {
+            const rawPlugs = device.plugs === undefined || device.plugs === null || device.plugs === '' ? 1 : device.plugs;
+            const plugs = finiteNumber(rawPlugs);
+            if (plugs === null || !decimalInputMatchesNumber(rawPlugs, plugs)
+                || !Number.isSafeInteger(plugs) || plugs < 1 || !Number.isSafeInteger(totalPlugs + plugs)) {
                 inputsValid = false;
                 return;
             }
@@ -515,13 +517,19 @@
         if (runtimeSource === 'manufacturer' && !runtimeCurve) throw invalidImport('ต้องแนบกราฟ Runtime ของผู้ผลิต');
         const devices = data.devices.map(device => {
             if (!device || typeof device !== 'object' || Array.isArray(device)) throw invalidImport('ข้อมูลอุปกรณ์ไม่ถูกต้อง');
+            if (device.name !== undefined && typeof device.name !== 'string') throw invalidImport('ชื่ออุปกรณ์ไม่ถูกต้อง');
+            if (typeof device.name === 'string' && device.name.length > MAX_DEVICE_NAME_LENGTH) {
+                throw invalidImport(`ชื่ออุปกรณ์ยาวเกิน ${MAX_DEVICE_NAME_LENGTH} ตัวอักษร`);
+            }
             const rawLoad = device.load;
             const load = finiteNumber(rawLoad);
             const loadFraction = decimalFraction(rawLoad);
-            const plugs = device.plugs === undefined ? 1 : finiteNumber(device.plugs);
+            const rawPlugs = device.plugs === undefined ? 1 : device.plugs;
+            const plugs = finiteNumber(rawPlugs);
             if (load === null || !loadFraction || !decimalInputMatchesNumber(rawLoad, load)
                 || (typeof rawLoad === 'number' && Number.isInteger(load) && !Number.isSafeInteger(load)) || loadFraction.numerator < 0n
-                || plugs === null || !Number.isSafeInteger(plugs) || plugs < 1 || !['W', 'VA'].includes(device.unit ?? 'W') || (device.name !== undefined && typeof device.name !== 'string')) {
+                || plugs === null || !decimalInputMatchesNumber(rawPlugs, plugs) || !Number.isSafeInteger(plugs)
+                || plugs < 1 || !['W', 'VA'].includes(device.unit ?? 'W')) {
                 throw invalidImport('ข้อมูลโหลดหรือจำนวนปลั๊กไม่ถูกต้อง');
             }
             return { name: String(device.name ?? ''), load, unit: device.unit ?? 'W', plugs };
@@ -686,5 +694,5 @@
         };
     }
 
-    return { calculateLoadBreakdown, calculateBatteryAh, isBelowAhResolution, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, parseImportJson, normalizeImportData, buildExportData, MAX_DEVICES, MAX_IMPORT_FILE_BYTES };
+    return { calculateLoadBreakdown, calculateBatteryAh, isBelowAhResolution, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, parseImportJson, normalizeImportData, buildExportData, MAX_DEVICES, MAX_DEVICE_NAME_LENGTH, MAX_IMPORT_FILE_BYTES };
 }));

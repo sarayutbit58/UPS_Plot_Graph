@@ -201,6 +201,19 @@ test('counts zero-watt device outlets and ignores blank or invalid rows', () => 
     assert.equal(calculations.normalizeImportData(exported).devices[0].load, 0);
 });
 
+test('rejects plug counts whose decimal source is changed by Number conversion', () => {
+    const device = { name: 'Router', load: 100, unit: 'W', plugs: '1.00000000000000001' };
+    assert.equal(calculations.calculateLoadBreakdown([device], 0, '%').valid, false);
+    assert.throws(() => calculations.normalizeImportData({
+        devices: [device], calculatedData: {},
+    }), { name: 'InvalidImportDataError' });
+    const numericJson = calculations.parseImportJson('{"devices":[{"name":"Router","load":100,"unit":"W","plugs":1.00000000000000001}],"calculatedData":{}}');
+    assert.throws(() => calculations.normalizeImportData(numericJson), { name: 'InvalidImportDataError' });
+    assert.equal(calculations.normalizeImportData({
+        devices: [{ ...device, plugs: '1.0' }], calculatedData: {},
+    }).devices[0].plugs, 1);
+});
+
 test('calculates required Ah and rejects invalid sizing inputs', () => {
     assert.equal(calculations.calculateBatteryAh(120, 60, 12, 85), 11.764706);
     assert.equal(calculations.calculateBatteryAh(0.01, 1, 48, 100), 0.000004);
@@ -560,6 +573,31 @@ test('rejects JSON imports above the supported device count', () => {
     assert.throws(() => calculations.normalizeImportData(data), { name: 'InvalidImportDataError' });
     data.devices.pop();
     assert.equal(calculations.normalizeImportData(data).devices.length, calculations.MAX_DEVICES);
+});
+
+test('bounds device names and keeps maximum supported exports importable', () => {
+    const device = { name: 'x'.repeat(calculations.MAX_DEVICE_NAME_LENGTH + 1), load: 1, unit: 'W', plugs: 1 };
+    assert.throws(() => calculations.normalizeImportData({ devices: [device], calculatedData: {} }), {
+        name: 'InvalidImportDataError', message: /ชื่ออุปกรณ์ยาวเกิน/,
+    });
+    device.name = 'x'.repeat(calculations.MAX_DEVICE_NAME_LENGTH);
+    assert.equal(calculations.normalizeImportData({ devices: [device], calculatedData: {} }).devices[0].name.length, calculations.MAX_DEVICE_NAME_LENGTH);
+
+    const curve = {
+        model: 'M'.repeat(160), batteryConfig: 'B'.repeat(240), source: 'S'.repeat(2048), conditions: 'C'.repeat(1024),
+        points: Array.from({ length: 1000 }, (_, index) => ({ loadW: index + 1, runtimeMinutes: 1001 - index })),
+    };
+    const exported = calculations.buildExportData({
+        mode: 'enterprise', runtimeSource: 'manufacturer', runtimeCurve: curve,
+        devices: Array.from({ length: calculations.MAX_DEVICES }, (_, index) => ({
+            name: `D${index}`.padEnd(calculations.MAX_DEVICE_NAME_LENGTH, 'x'), load: 1, unit: 'W', plugs: 1,
+        })),
+        calculatedData: { forecastValue: 0, forecastUnit: '%' },
+        settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    });
+    const serialized = JSON.stringify(exported);
+    assert.ok(serialized.length <= calculations.MAX_IMPORT_FILE_BYTES);
+    assert.equal(calculations.normalizeImportData(calculations.parseImportJson(serialized)).devices.length, calculations.MAX_DEVICES);
 });
 
 test('rejects import schema versions newer than the supported format', () => {

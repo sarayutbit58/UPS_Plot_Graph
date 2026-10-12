@@ -1023,7 +1023,7 @@
                 <div class="device-fields grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                         <div class="md:col-span-4">
                             <label for="device-${deviceIdCounter}-name" class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
-                            <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" placeholder="เช่น PoE Switch, NVR, Router..." class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
+                            <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" maxlength="160" placeholder="เช่น PoE Switch, NVR, Router..." class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                         </div>
                         <div class="md:col-span-2">
                             <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ (W)*</label>
@@ -1895,7 +1895,7 @@
                                     <div class="device-fields grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                                     <div class="md:col-span-4">
                                         <label for="device-${deviceIdCounter}-name" class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
-                                        <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" value="${escapeHtml(device.name)}" class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
+                                        <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" maxlength="160" value="${escapeHtml(device.name)}" class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                                     </div>
                                     <div class="md:col-span-2">
                             <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ*</label>
