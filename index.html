@@ -1815,6 +1815,7 @@
                 String(now.getDate()).padStart(2, '0');
             const filename = 'ups-config-' + dateStr + '.json';
 
+            let writable = null;
             try {
                 // Method 1: File System Access API (Modern Browsers) - Best for saving files
                 if (window.showSaveFilePicker) {
@@ -1825,13 +1826,20 @@
                             accept: { 'application/json': ['.json'] },
                         }],
                     });
-                    const writable = await handle.createWritable();
+                    writable = await handle.createWritable();
                     await writable.write(jsonString);
                     await writable.close();
                     alert('✅ บันทึกไฟล์สำเร็จ!');
                     return;
                 }
             } catch (err) {
+                if (writable) {
+                    try {
+                        await writable.abort();
+                    } catch (_) {
+                        // The failed stream may already be errored or closed.
+                    }
+                }
                 // User cancelled or not supported
                 if (err.name !== 'AbortError') {
                     console.warn('File System Access API rejected, falling back to legacy download', err);
