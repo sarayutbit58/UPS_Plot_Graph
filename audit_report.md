@@ -832,5 +832,12 @@ These are presentation/packaging findings; this recheck made no application-code
 
 - Reproduced plug count `1.00000000000000001` being coerced to 1 and accepted by both load breakdown and JSON normalization. Plug counts now use the same exact decimal round-trip check as other numeric inputs; `1.0` remains valid, while the precision-losing value is rejected.
 - Reproduced a 1,000,000-character device name producing a 1,000,523-character JSON export that the 1 MB importer then rejected. Device names are now capped at 160 characters in both UI inputs and import validation. Invalid imported names produce a specific message.
-- Added a maximum-payload regression using 500 devices, 160-character names, and 1,000 manufacturer points plus maximum metadata. Its serialized export remains below 1 MB and successfully imports.
+- Added a maximum-payload regression using 500 devices with 160 UTF-16-unit emoji names, Thai metadata at its length limits, and 1,000 manufacturer points. Both JSON character length and UTF-8 byte size remain below 1 MB, and the export successfully imports.
 - Verification: new plug precision test failed before the fix; current `npm test` 39/39; `node --check calculations.js`, inline JavaScript syntax check, and `git diff --check` passed.
+
+## Byte Limits and Ah Output-Range Feedback — 2026-10-12
+
+- `parseImportJson()` now measures UTF-8 bytes, matching the browser's `File.size` gate. A regression input with 260,000 emoji has fewer than 1,000,000 UTF-16 units but exceeds the 1 MB UTF-8 limit; the helper now rejects it.
+- Added an exact Ah output-range classifier. Valid but enormous loads that cannot be represented at the app's 0.000001 Ah display precision now receive a specific message instead of a misleading prompt to check voltage or efficiency. The same reason is returned for JSON import rejection.
+- Chrome mobile emulation at 320 × 800 with a 1e12 W load stayed on the battery step, showed the output-range message, had no offscreen elements or horizontal overflow, and had an empty Console.
+- Verification: `npm test` 40/40; `node --check calculations.js`; inline JavaScript syntax check; `git diff --check`.

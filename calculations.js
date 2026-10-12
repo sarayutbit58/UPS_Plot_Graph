@@ -10,8 +10,23 @@
     const MAX_DEVICE_NAME_LENGTH = 160;
     const MAX_IMPORT_FILE_BYTES = 1_000_000;
 
+    function utf8ByteLength(text) {
+        let bytes = 0;
+        for (let index = 0; index < text.length; index++) {
+            const code = text.charCodeAt(index);
+            if (code <= 0x7f) bytes++;
+            else if (code <= 0x7ff) bytes += 2;
+            else if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length
+                && text.charCodeAt(index + 1) >= 0xdc00 && text.charCodeAt(index + 1) <= 0xdfff) {
+                bytes += 4;
+                index++;
+            } else bytes += 3;
+        }
+        return bytes;
+    }
+
     function parseImportJson(jsonText) {
-        if (typeof jsonText !== 'string' || jsonText.length > MAX_IMPORT_FILE_BYTES) {
+        if (typeof jsonText !== 'string' || utf8ByteLength(jsonText) > MAX_IMPORT_FILE_BYTES) {
             throw invalidImport('ไฟล์ JSON ไม่ถูกต้องหรือมีขนาดใหญ่เกินไป');
         }
         JSON.parse(jsonText);
@@ -223,7 +238,7 @@
         };
     }
 
-    function calculateBatteryAh(powerW, minutes, voltage, efficiency) {
+    function requiredBatteryAhFraction(powerW, minutes, voltage, efficiency) {
         const numericInputs = [powerW, minutes, voltage, efficiency].map(finiteNumber);
         if (numericInputs.some(value => value === null)
             || [powerW, minutes, voltage, efficiency].some((value, index) => !decimalInputMatchesNumber(value, numericInputs[index]))) return null;
@@ -231,24 +246,29 @@
         const v = decimalFraction(voltage), e = decimalFraction(efficiency);
         if (!p || !t || !v || !e || p.numerator <= 0n || t.numerator < t.denominator || v.numerator <= 0n
             || e.numerator < 50n * e.denominator || e.numerator > 100n * e.denominator) return null;
-        const numerator = p.numerator * t.numerator * 100n * v.denominator * e.denominator;
-        const denominator = p.denominator * t.denominator * 60n * v.numerator * e.numerator;
-        if (numerator * 1_000_000n < denominator) return null;
-        const scaledAh = (numerator * 1_000_000n + denominator - 1n) / denominator;
+        return {
+            numerator: p.numerator * t.numerator * 100n * v.denominator * e.denominator,
+            denominator: p.denominator * t.denominator * 60n * v.numerator * e.numerator,
+        };
+    }
+
+    function calculateBatteryAh(powerW, minutes, voltage, efficiency) {
+        const requirement = requiredBatteryAhFraction(powerW, minutes, voltage, efficiency);
+        if (!requirement || requirement.numerator * 1_000_000n < requirement.denominator) return null;
+        const scaledAh = (requirement.numerator * 1_000_000n + requirement.denominator - 1n) / requirement.denominator;
         return fromScaledInteger(scaledAh, 6);
     }
 
     function isBelowAhResolution(powerW, minutes, voltage, efficiency) {
-        const numericInputs = [powerW, minutes, voltage, efficiency].map(finiteNumber);
-        if (numericInputs.some(value => value === null)
-            || [powerW, minutes, voltage, efficiency].some((value, index) => !decimalInputMatchesNumber(value, numericInputs[index]))) return false;
-        const p = decimalFraction(powerW), t = decimalFraction(minutes);
-        const v = decimalFraction(voltage), e = decimalFraction(efficiency);
-        if (!p || !t || !v || !e || p.numerator <= 0n || t.numerator < t.denominator || v.numerator <= 0n
-            || e.numerator < 50n * e.denominator || e.numerator > 100n * e.denominator) return false;
-        const numerator = p.numerator * t.numerator * 100n * v.denominator * e.denominator;
-        const denominator = p.denominator * t.denominator * 60n * v.numerator * e.numerator;
-        return numerator * 1_000_000n < denominator;
+        const requirement = requiredBatteryAhFraction(powerW, minutes, voltage, efficiency);
+        return Boolean(requirement && requirement.numerator * 1_000_000n < requirement.denominator);
+    }
+
+    function isAhRequirementBeyondOutputRange(powerW, minutes, voltage, efficiency) {
+        const requirement = requiredBatteryAhFraction(powerW, minutes, voltage, efficiency);
+        if (!requirement || requirement.numerator * 1_000_000n < requirement.denominator) return false;
+        const scaledAh = (requirement.numerator * 1_000_000n + requirement.denominator - 1n) / requirement.denominator;
+        return fromScaledInteger(scaledAh, 6) === null;
     }
 
     function calculateRuntimeMinutes(ampHours, voltage, efficiency, powerW) {
@@ -615,9 +635,12 @@
         }
         if (breakdown.totalLoad > 0 && calculateBatteryAh(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency) === null) {
             const belowResolution = isBelowAhResolution(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency);
+            const beyondOutputRange = isAhRequirementBeyondOutputRange(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency);
             throw invalidImport(belowResolution
                 ? 'ค่าความจุที่ต้องการต่ำกว่า 0.000001 Ah ซึ่งเป็นความละเอียดขั้นต่ำที่รองรับ'
-                : 'ค่าตั้งค่าแบตเตอรี่ทำให้คำนวณ Ah ไม่ได้');
+                : beyondOutputRange
+                    ? 'ค่าความจุ Ah เกินขอบเขตตัวเลขที่แอปรองรับ'
+                    : 'ค่าตั้งค่าแบตเตอรี่ทำให้คำนวณ Ah ไม่ได้');
         }
         if (runtimeSource === 'manufacturer' && breakdown.totalLoad > 0
             && calculateRuntimeFromCurve(runtimeCurve.points, breakdown.totalLoad) === null) {
@@ -694,5 +717,5 @@
         };
     }
 
-    return { calculateLoadBreakdown, calculateBatteryAh, isBelowAhResolution, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, parseImportJson, normalizeImportData, buildExportData, MAX_DEVICES, MAX_DEVICE_NAME_LENGTH, MAX_IMPORT_FILE_BYTES };
+    return { calculateLoadBreakdown, calculateBatteryAh, isBelowAhResolution, isAhRequirementBeyondOutputRange, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, parseImportJson, normalizeImportData, buildExportData, MAX_DEVICES, MAX_DEVICE_NAME_LENGTH, MAX_IMPORT_FILE_BYTES };
 }));

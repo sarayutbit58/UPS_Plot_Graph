@@ -243,6 +243,14 @@ test('identifies Ah requirements below the supported 1 microamp-hour resolution'
     assert.equal(calculations.isBelowAhResolution(120, 0.5, 12, 85), false);
 });
 
+test('identifies valid Ah calculations outside the supported output range', () => {
+    assert.equal(calculations.calculateBatteryAh(1e12, 60, 12, 85), null);
+    assert.equal(calculations.isAhRequirementBeyondOutputRange(1e12, 60, 12, 85), true);
+    assert.equal(calculations.isAhRequirementBeyondOutputRange(0.00001, 1, 12, 100), false);
+    assert.equal(calculations.isAhRequirementBeyondOutputRange(120, 60, 12, 85), false);
+    assert.equal(calculations.isAhRequirementBeyondOutputRange(-1, 60, 12, 85), false);
+});
+
 test('calculates runtime with the inverse formula and handles zero or invalid capacity', () => {
     assert.equal(calculations.calculateRuntimeMinutes(11.76, 12, 85, 120), 59.98);
     assert.equal(calculations.calculateRuntimeMinutes(0, 12, 85, 120), 0);
@@ -563,6 +571,10 @@ test('preserves raw JSON numeric tokens so import can reject precision-losing va
     assert.equal(calculations.parseImportJson('{"name":"1.00000049999999999","value":120}').name, '1.00000049999999999');
     assert.throws(() => calculations.parseImportJson('{"value":01}'), { name: 'SyntaxError' });
     assert.throws(() => calculations.parseImportJson(' '.repeat(calculations.MAX_IMPORT_FILE_BYTES + 1)), { name: 'InvalidImportDataError' });
+    const utf8Oversize = `{"padding":"${'😀'.repeat(260_000)}"}`;
+    assert.ok(utf8Oversize.length < calculations.MAX_IMPORT_FILE_BYTES);
+    assert.ok(Buffer.byteLength(utf8Oversize, 'utf8') > calculations.MAX_IMPORT_FILE_BYTES);
+    assert.throws(() => calculations.parseImportJson(utf8Oversize), { name: 'InvalidImportDataError' });
 });
 
 test('rejects JSON imports above the supported device count', () => {
@@ -584,19 +596,20 @@ test('bounds device names and keeps maximum supported exports importable', () =>
     assert.equal(calculations.normalizeImportData({ devices: [device], calculatedData: {} }).devices[0].name.length, calculations.MAX_DEVICE_NAME_LENGTH);
 
     const curve = {
-        model: 'M'.repeat(160), batteryConfig: 'B'.repeat(240), source: 'S'.repeat(2048), conditions: 'C'.repeat(1024),
+        model: 'ม'.repeat(160), batteryConfig: 'บ'.repeat(240), source: 'แหล่ง'.repeat(409), conditions: '😀'.repeat(512),
         points: Array.from({ length: 1000 }, (_, index) => ({ loadW: index + 1, runtimeMinutes: 1001 - index })),
     };
     const exported = calculations.buildExportData({
         mode: 'enterprise', runtimeSource: 'manufacturer', runtimeCurve: curve,
         devices: Array.from({ length: calculations.MAX_DEVICES }, (_, index) => ({
-            name: `D${index}`.padEnd(calculations.MAX_DEVICE_NAME_LENGTH, 'x'), load: 1, unit: 'W', plugs: 1,
+            name: '😀'.repeat(calculations.MAX_DEVICE_NAME_LENGTH / 2), load: 1, unit: 'W', plugs: 1,
         })),
         calculatedData: { forecastValue: 0, forecastUnit: '%' },
         settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
     });
     const serialized = JSON.stringify(exported);
     assert.ok(serialized.length <= calculations.MAX_IMPORT_FILE_BYTES);
+    assert.ok(Buffer.byteLength(serialized, 'utf8') <= calculations.MAX_IMPORT_FILE_BYTES);
     assert.equal(calculations.normalizeImportData(calculations.parseImportJson(serialized)).devices.length, calculations.MAX_DEVICES);
 });
 

@@ -1196,9 +1196,12 @@
                 calculatedData.batteryAh = null;
                 const batteryResultText = document.getElementById('batteryAhResult');
                 const belowResolution = UPScalculations.isBelowAhResolution(powerW, timeMin, voltage, efficiency);
+                const beyondOutputRange = UPScalculations.isAhRequirementBeyondOutputRange(powerW, timeMin, voltage, efficiency);
                 batteryResultText.textContent = belowResolution
                     ? 'ต่ำกว่าความละเอียดขั้นต่ำ 0.000001 Ah'
-                    : 'ตรวจสอบโหลด เวลา แรงดัน และประสิทธิภาพ';
+                    : beyondOutputRange
+                        ? 'ผล Ah เกินช่วงตัวเลขที่แอปรองรับ ตรวจหน่วยหรือแบ่งโหลดเป็นรายการย่อย'
+                        : 'ตรวจสอบโหลด เวลา แรงดัน และประสิทธิภาพ';
                 batteryResultText.classList.remove('text-4xl');
                 batteryResultText.classList.add('text-base');
                 document.getElementById('batteryResult').classList.remove('hidden');
