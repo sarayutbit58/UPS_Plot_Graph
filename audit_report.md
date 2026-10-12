@@ -853,3 +853,13 @@ These are presentation/packaging findings; this recheck made no application-code
 - Reproduced Summary overflow from an accepted 81-character unbroken manufacturer source URL at 320/390/768 px and from a 150-character unbroken device name at 1366 px. Added `overflow-wrap:anywhere` to Runtime provenance/note text and the summary device-name flex child; 320, 390, 768, 1024, and 1366 px now show no offscreen elements or horizontal overflow with both long values.
 - The Enterprise device unit select previously sat 26–62 px above the adjacent plug-count field because its PF help paragraph was inside the grid item. Moved that help below the input row; across the same viewports the select and plug input now align within 2 px.
 - Verification used Chrome viewport/touch emulation on the local current worktree; physical device/browser matrix remains untested.
+
+## Import Mode State and Runtime Source Disclosure — 2026-10-12
+
+- Reproduced a stale-state defect when importing a Basic snapshot that retained Enterprise preferences (24 V / 90%). The import path initialized active calculation state from the saved preferences and then restored those settings into the form after mode selection, so Basic could show Enterprise values in the form despite using 12 V / 85% as its intended assumptions.
+- Added a failing regression for resolving active Battery settings from the selected mode. The fix keeps Basic calculations and form controls at 12 V / 85% while preserving the imported Enterprise preferences; Enterprise imports restore the saved voltage/efficiency even when Enterprise was already active.
+- Chrome import probes confirmed Basic 12 V / 85% with Enterprise preferences retained at 24 V / 90%, Enterprise switching to 48 V / 92%, and same-mode Enterprise import updating to 48 V / 90%. Each accepted import showed the success alert and active state/form controls matched.
+- Runtime curve UI now calls the file an imported graph and says model, battery setup, conditions, and source are user-provided. It states that the app validates point shape/consistency but does not authenticate the source; dashboard, chart, table, recommendation, and summary labels describe imported data without claiming manufacturer verification.
+- JSON import now accepts a UTF-8 BOM before the JSON object while retaining numeric-token precision validation.
+- Chrome mobile/touch emulation at 320, 390, 768, 1024, and 1366 px kept document width equal to viewport width. This is browser emulation; physical phone/notebook and native wrapper behavior remain untested.
+- Verification after these changes: `npm test` 42/42; `node --check calculations.js`; inline JavaScript parse (2 scripts); `git diff --check`; Chrome Console empty.

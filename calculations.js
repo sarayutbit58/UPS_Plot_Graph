@@ -29,13 +29,14 @@
         if (typeof jsonText !== 'string' || utf8ByteLength(jsonText) > MAX_IMPORT_FILE_BYTES) {
             throw invalidImport('ไฟล์ JSON ไม่ถูกต้องหรือมีขนาดใหญ่เกินไป');
         }
-        JSON.parse(jsonText);
+        const source = jsonText.charCodeAt(0) === 0xfeff ? jsonText.slice(1) : jsonText;
+        JSON.parse(source);
         let preserved = '';
         let inString = false;
         let escaped = false;
         const numberToken = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
-        for (let index = 0; index < jsonText.length; index++) {
-            const character = jsonText[index];
+        for (let index = 0; index < source.length; index++) {
+            const character = source[index];
             if (inString) {
                 preserved += character;
                 if (escaped) escaped = false;
@@ -50,7 +51,7 @@
             }
             if (character === '-' || (character >= '0' && character <= '9')) {
                 numberToken.lastIndex = index;
-                const match = numberToken.exec(jsonText);
+                const match = numberToken.exec(source);
                 if (match) {
                     preserved += JSON.stringify(match[0]);
                     index += match[0].length - 1;
@@ -260,6 +261,12 @@
         if (!requirement || requirement.numerator * 1_000_000n < requirement.denominator) return null;
         const scaledAh = (requirement.numerator * 1_000_000n + requirement.denominator - 1n) / requirement.denominator;
         return fromScaledInteger(scaledAh, 6);
+    }
+
+    function resolveActiveBatterySettings(mode, settings) {
+        return mode === 'basic'
+            ? { voltage: 12, efficiency: 85 }
+            : { voltage: settings.voltage, efficiency: settings.efficiency };
     }
 
     function isBelowAhResolution(powerW, minutes, voltage, efficiency) {
@@ -720,5 +727,5 @@
         };
     }
 
-    return { calculateLoadBreakdown, calculateBatteryAh, isBelowAhResolution, isAhRequirementBeyondOutputRange, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, parseImportJson, normalizeImportData, buildExportData, MAX_DEVICES, MAX_DEVICE_NAME_LENGTH, MAX_IMPORT_FILE_BYTES };
+    return { calculateLoadBreakdown, calculateBatteryAh, resolveActiveBatterySettings, isBelowAhResolution, isAhRequirementBeyondOutputRange, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, parseImportJson, normalizeImportData, buildExportData, MAX_DEVICES, MAX_DEVICE_NAME_LENGTH, MAX_IMPORT_FILE_BYTES };
 }));

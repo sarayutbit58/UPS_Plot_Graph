@@ -578,6 +578,7 @@ test('preserves raw JSON numeric tokens so import can reject precision-losing va
     assert.equal(parsed.devices[0].load, '1.00000049999999999');
     assert.throws(() => calculations.normalizeImportData(parsed), { name: 'InvalidImportDataError' });
     assert.equal(calculations.parseImportJson('{"name":"1.00000049999999999","value":120}').name, '1.00000049999999999');
+    assert.equal(calculations.parseImportJson('\uFEFF{"name":"BOM","value":120}').name, 'BOM');
     assert.throws(() => calculations.parseImportJson('{"value":01}'), { name: 'SyntaxError' });
     assert.throws(() => calculations.parseImportJson(' '.repeat(calculations.MAX_IMPORT_FILE_BYTES + 1)), { name: 'InvalidImportDataError' });
     const utf8Oversize = `{"padding":"${'😀'.repeat(260_000)}"}`;
@@ -854,4 +855,16 @@ test('exports a Basic-mode snapshot with formula Runtime even if an inactive cur
     assert.equal(exported.runtimeSource, 'formula');
     assert.equal(exported.calculatedData.runtime, 60);
     assert.equal(calculations.normalizeImportData(exported).runtimeSource, 'formula');
+});
+
+test('uses Basic calculation assumptions while preserving saved Enterprise preferences', () => {
+    const settings = { voltage: 24, efficiency: 90, backupTime: 60 };
+
+    assert.deepEqual(calculations.resolveActiveBatterySettings('basic', settings), {
+        voltage: 12, efficiency: 85,
+    });
+    assert.deepEqual(calculations.resolveActiveBatterySettings('enterprise', settings), {
+        voltage: 24, efficiency: 90,
+    });
+    assert.deepEqual(settings, { voltage: 24, efficiency: 90, backupTime: 60 });
 });
