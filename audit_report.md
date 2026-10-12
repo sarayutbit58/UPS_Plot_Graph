@@ -652,3 +652,11 @@ These are presentation/packaging findings; this recheck made no application-code
 - Found that a specified 0 W device was discarded before its plugs were counted, and JSON import rejected it. The load remains zero, but explicit device rows now retain their outlet count and round-trip through JSON; blank rows remain ignored.
 - Browser repro: 100 W / 1 plug plus 0 W / 2 plugs produced a 100 W total and 3 plugs in Summary; Export and Import retained both devices and the 3-plug total. At 390 × 844 there was no horizontal overflow or console error.
 - Regression test was observed failing before the fix (expected 3 plugs, got 1). Full `npm test` now passes 15/15; `git diff --check` passes.
+
+## Load Precision Consistency — 2026-10-12
+
+- Found that components were rounded to six decimals while the total was rounded from raw values. For 100.0000004 W with 100% Forecast, the UI showed 100 W + 100 W = 200.000001 W. Totals now sum the displayed components and per-device values use the same six-decimal precision; positive device/Forecast values that round to zero are rejected instead of silently disappearing.
+- Browser check: 100.0000004 W + 100% Forecast shows 100 W + 100 W = 200 W. A 0.001 W device shows 0.001 W in the summary row; a 0.0000004 W input is rejected with a precision message and shown as `— W`. At 390 × 844 there was no horizontal overflow or console error.
+- Precision validation now returns the invalid row/Forecast target; browser navigation focused the second device's load field for an under-precision row and the Forecast field for an under-precision fixed-W Forecast.
+- Regression case: two 0.0000006 W rows each round to 0.000001 W, and the total equals their displayed sum, 0.000002 W.
+- The regression test was observed failing before the fix (200.000001 instead of 200). `npm test` now passes 16/16; `git diff --check` passes.

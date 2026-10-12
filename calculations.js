@@ -26,13 +26,14 @@
 
     function calculateLoadBreakdown(inputDevices, forecastValue, forecastUnit) {
         if (!Array.isArray(inputDevices)) {
-            return { devices: [], deviceLoad: 0, forecastWatt: 0, totalLoad: 0, totalPlugs: 0, valid: false };
+            return { devices: [], deviceLoad: 0, forecastWatt: 0, totalLoad: 0, totalPlugs: 0, precisionInvalidTarget: null, valid: false };
         }
         const devices = [];
         let deviceLoad = 0;
         let totalPlugs = 0;
         let inputsValid = true;
-        inputDevices.forEach(device => {
+        let precisionInvalidTarget = null;
+        inputDevices.forEach((device, index) => {
             const load = finiteNumber(device && device.load);
             if (load === null) {
                 const rawLoad = device && device.load;
@@ -56,13 +57,18 @@
                 return;
             }
             const roundedWatts = round(watts);
-            if (roundedWatts === null || !Number.isFinite(deviceLoad + watts)) {
+            if (roundedWatts === null || !Number.isFinite(deviceLoad + roundedWatts)) {
                 inputsValid = false;
+                return;
+            }
+            if (watts > 0 && roundedWatts === 0) {
+                inputsValid = false;
+                precisionInvalidTarget ??= { type: 'device-load', index };
                 return;
             }
             const normalized = { name: String(device.name ?? ''), load, unit, watts: roundedWatts, plugs };
             devices.push(normalized);
-            deviceLoad += watts;
+            deviceLoad += roundedWatts;
             totalPlugs += plugs;
         });
         const rawForecast = finiteNumber(forecastValue);
@@ -75,14 +81,23 @@
         const forecastWatt = value > 0 ? (unit === '%' ? deviceLoad * value / 100 : value) : 0;
         const roundedDeviceLoad = round(deviceLoad);
         const roundedForecastWatt = round(forecastWatt);
-        const roundedTotalLoad = round(deviceLoad + forecastWatt);
-        const valid = inputsValid && roundedDeviceLoad !== null && roundedForecastWatt !== null && roundedTotalLoad !== null;
+        if (forecastWatt > 0 && roundedForecastWatt === 0) {
+            inputsValid = false;
+            precisionInvalidTarget ??= { type: 'forecast' };
+        }
+        const roundedTotalLoad = roundedDeviceLoad === null || roundedForecastWatt === null
+            ? null : round(roundedDeviceLoad + roundedForecastWatt);
+        const positiveComponentRoundedAway = (deviceLoad > 0 && roundedDeviceLoad === 0)
+            || (forecastWatt > 0 && roundedForecastWatt === 0);
+        const valid = inputsValid && !positiveComponentRoundedAway
+            && roundedDeviceLoad !== null && roundedForecastWatt !== null && roundedTotalLoad !== null;
         return {
             devices,
             deviceLoad: valid ? roundedDeviceLoad : 0,
             forecastWatt: valid ? roundedForecastWatt : 0,
             totalLoad: valid ? roundedTotalLoad : 0,
             totalPlugs,
+            precisionInvalidTarget,
             valid,
         };
     }

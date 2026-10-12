@@ -672,6 +672,7 @@
         let currentStep = 1;
         let currentMode = 'basic';
         let loadInputValid = true;
+        let precisionInvalidTarget = null;
         let runtimeBatteryWasAutoFilled = false;
         let enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
         let devices = [];
@@ -856,6 +857,7 @@
             const forecastValue = document.getElementById('forecastValue').value;
             const forecastUnit = calculatedData.forecastUnit || '%';
             const breakdown = UPScalculations.calculateLoadBreakdown(enteredDevices, forecastValue, forecastUnit);
+            precisionInvalidTarget = breakdown.precisionInvalidTarget;
             if (!breakdown.valid) {
                 loadInputValid = false;
                 devices = [];
@@ -866,7 +868,7 @@
                 calculatedData.totalLoad = 0;
                 calculatedData.batteryAh = null;
                 calculatedData.runtime = null;
-                document.getElementById('loadError').textContent = 'ตรวจสอบค่ากำลังไฟ Forecast และจำนวนรูปลั๊กว่าถูกต้องและอยู่ในขอบเขต';
+                document.getElementById('loadError').textContent = 'ตรวจสอบค่ากำลังไฟ Forecast และจำนวนรูปลั๊กว่าถูกต้องและมีความละเอียดเพียงพอ';
                 document.getElementById('loadError').classList.remove('hidden');
                 document.getElementById('deviceLoadOnly').textContent = '— W';
                 document.getElementById('forecastLoadDisplay').textContent = '— W';
@@ -1164,7 +1166,7 @@
             let deviceListHtml = devices.map(d =>
                 `<div class="flex justify-between py-2 px-3 bg-white rounded-lg">
                     <span class="text-gray-700">${escapeHtml(d.name)}</span>
-                    <span class="font-medium text-gray-800">${escapeHtml(d.load)} ${escapeHtml(d.unit)} (${escapeHtml(d.watts.toFixed(2))} W) - ${escapeHtml(d.plugs || 1)} รู</span>
+                    <span class="font-medium text-gray-800">${escapeHtml(d.load)} ${escapeHtml(d.unit)} (${escapeHtml(String(d.watts))} W) - ${escapeHtml(d.plugs || 1)} รู</span>
                 </div>`
             ).join('');
 
@@ -1339,6 +1341,14 @@
                 forecast.focus();
                 return;
             }
+            if (precisionInvalidTarget?.type === 'device-load') {
+                loadInputs[precisionInvalidTarget.index]?.focus();
+                return;
+            }
+            if (precisionInvalidTarget?.type === 'forecast') {
+                forecast.focus();
+                return;
+            }
             (loadInputs[0] || forecast).focus();
         }
 
@@ -1394,6 +1404,7 @@
         function restart() {
             currentStep = 1;
             loadInputValid = true;
+            precisionInvalidTarget = null;
             runtimeBatteryWasAutoFilled = false;
             enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
             devices = [];

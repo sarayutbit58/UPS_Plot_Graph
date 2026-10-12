@@ -14,6 +14,36 @@ test('converts VA with the existing 0.8 PF assumption and applies Forecast to de
     assert.equal(result.totalPlugs, 3);
 });
 
+test('keeps displayed load, Forecast, and total aligned at six-decimal precision', () => {
+    const roundedComponents = calculations.calculateLoadBreakdown([
+        { name: 'Precise', load: 100.0000004, unit: 'W', plugs: 1 },
+    ], 100, '%');
+    assert.equal(roundedComponents.deviceLoad, 100);
+    assert.equal(roundedComponents.forecastWatt, 100);
+    assert.equal(roundedComponents.totalLoad, 200);
+    assert.equal(calculations.calculateLoadBreakdown([
+        { name: 'Below precision', load: 0.0000004, unit: 'W', plugs: 1 },
+    ], 0, '%').valid, false);
+    const smallDevice = calculations.calculateLoadBreakdown([
+        { name: 'Router', load: 100, unit: 'W', plugs: 1 },
+        { name: 'Below precision', load: 0.0000004, unit: 'W', plugs: 1 },
+    ], 0, '%');
+    assert.equal(smallDevice.valid, false);
+    assert.deepEqual(smallDevice.precisionInvalidTarget, { type: 'device-load', index: 1 });
+    const smallForecast = calculations.calculateLoadBreakdown([
+        { name: 'Router', load: 100, unit: 'W', plugs: 1 },
+    ], 0.0000004, 'W');
+    assert.equal(smallForecast.valid, false);
+    assert.deepEqual(smallForecast.precisionInvalidTarget, { type: 'forecast' });
+
+    const displayableRows = calculations.calculateLoadBreakdown([
+        { name: 'One', load: 0.0000006, unit: 'W', plugs: 1 },
+        { name: 'Two', load: 0.0000006, unit: 'W', plugs: 1 },
+    ], 0, '%');
+    assert.equal(displayableRows.deviceLoad, 0.000002);
+    assert.equal(displayableRows.totalLoad, 0.000002);
+});
+
 test('counts zero-watt device outlets and ignores blank or invalid rows', () => {
     const result = calculations.calculateLoadBreakdown([
         { name: 'Router', load: 100, unit: 'W', plugs: 1 },
