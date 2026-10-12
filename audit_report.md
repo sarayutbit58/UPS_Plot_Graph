@@ -698,3 +698,22 @@ These are presentation/packaging findings; this recheck made no application-code
 
 - At 768 × 1024, “พื้นฐาน” wrapped onto two lines and Enterprise load fields were only 57 px wide. Mode buttons now stay on one line; Enterprise device fields use two columns through 1000 px.
 - Rechecked 320, 360, 390, 480, 600, 760, 761, 768, 800, 1000, 1001, and 1366 px. No element crossed the viewport; mode labels remained one line; fields measured 204 px at 768 px and 96 px at 1001 px.
+
+## Decimal Load Boundaries and VA Screening — 2026-10-12
+
+- An independent exact-decimal probe found the prior EPSILON adjustment could push values just below half a micro-watt upward: 0.0000004999999999 W was accepted as 0.000001 W, and 1.0000004999999998 W became 1.000001 W. Load and VA→W rounding now use exact rational inputs; sub-half values reject, while exact half values round half-up. Forecast percent conversion follows the same exact path.
+- UPS VA screening also used floating-point `ceil` at 100 VA boundaries: 61.53846153846154 W returned 100 VA despite the exact decimal value being slightly above the 100 VA threshold. The helper now quantizes the stated 0.8 PF and 30% margin using rational arithmetic; the boundary case returns 200 VA.
+- Regression tests reproduce the under-half load, VA conversion, Forecast, and UPS VA boundary cases. TDD checks observed the new tests failing before the fixes; current targeted tests pass.
+
+## Keyboard Focus Recovery — 2026-10-12
+
+- Source audit found focus was lost when removing the focused device row or restarting from Summary; with all rows removed, invalid-load recovery attempted to focus the hidden Basic-mode Forecast field.
+- Removing a row now focuses the next/previous row load field or Add Device; an empty-list validation focuses Add Device; Restart returns focus to the new first load field.
+- Browser interaction verified focus targets: after removing a row focus moves to the remaining row, after the last row it moves to Add Device, an empty Next action focuses Add Device, and Restart focuses the first load field.
+
+## Exact Decimal Load Boundaries — 2026-10-12
+
+- A separate boundary audit found the prior EPSILON adjustment could promote a value just below half a micro-watt: 0.0000004999999999 W became 0.000001 W; 1.0000004999999998 W became 1.000001 W. Exact rational arithmetic now rounds load, PF 0.8 VA conversion, and percent Forecast without a blanket epsilon.
+- Exact half micro-watt values still round upward; below-half W, VA-converted W, and Forecast values reject with the corresponding input target. UPS VA screening now applies exact PF/headroom ratios before ceiling to 100 VA; boundary probes return 100/200 VA on the appropriate side of the threshold.
+- Outputs that cannot be represented at their declared quantum now return `null` instead of an approximate Ah, Runtime, or VA result. Tests cover extreme finite inputs and this rejection path.
+- Browser check at 768 × 1024 returned the exact boundary results and focus recovery flows with an empty Console. The shared calculation module uses BigInt; WebKit documents BigInt support from Safari 14 ([Safari 14 features](https://webkit.org/blog/11340/new-webkit-features-in-safari-14/)). No minimum mobile browser/WebView version is declared yet; older engines remain unverified.

@@ -44,6 +44,38 @@ test('keeps displayed load, Forecast, and total aligned at six-decimal precision
     assert.equal(displayableRows.totalLoad, 0.000002);
 });
 
+test('rounds load and VA conversion at exact decimal midpoints', () => {
+    const belowHalfWatt = calculations.calculateLoadBreakdown([
+        { name: 'Below half micro-watt', load: 4.999999999e-7, unit: 'W', plugs: 1 },
+    ], 0, '%');
+    assert.equal(belowHalfWatt.valid, false);
+    assert.deepEqual(belowHalfWatt.precisionInvalidTarget, { type: 'device-load', index: 0 });
+
+    const belowHalfVa = calculations.calculateLoadBreakdown([
+        { name: 'Below half micro-VA conversion', load: 6.249999999e-7, unit: 'VA', plugs: 1 },
+    ], 0, '%');
+    assert.equal(belowHalfVa.valid, false);
+    assert.deepEqual(belowHalfVa.precisionInvalidTarget, { type: 'device-load', index: 0 });
+
+    const belowRoundUp = calculations.calculateLoadBreakdown([
+        { name: 'Below rounding midpoint', load: 1.0000004999999998, unit: 'W', plugs: 1 },
+    ], 0, '%');
+    assert.equal(belowRoundUp.deviceLoad, 1);
+    assert.equal(belowRoundUp.totalLoad, 1);
+
+    const exactHalf = calculations.calculateLoadBreakdown([
+        { name: 'Exact half micro-watt', load: 0.0000005, unit: 'W', plugs: 1 },
+    ], 0, '%');
+    assert.equal(exactHalf.valid, true);
+    assert.equal(exactHalf.totalLoad, 0.000001);
+
+    const belowHalfForecast = calculations.calculateLoadBreakdown([
+        { name: 'Forecast base', load: 1000, unit: 'W', plugs: 1 },
+    ], 0.00000004999999999, '%');
+    assert.equal(belowHalfForecast.valid, false);
+    assert.deepEqual(belowHalfForecast.precisionInvalidTarget, { type: 'forecast' });
+});
+
 test('does not bias whole-number loads by the rounding epsilon at large magnitudes', () => {
     const watts = calculations.calculateLoadBreakdown([
         { name: 'Large load', load: 10_000_000_000, unit: 'W', plugs: 1 },
@@ -144,8 +176,8 @@ test('calculates required Ah and rejects invalid sizing inputs', () => {
     assert.equal(calculations.calculateBatteryAh(3, 63, 12, 60), 0.4375);
     assert.equal(calculations.calculateBatteryAh(1, 162, 12, 96), 0.234375);
     assert.equal(calculations.calculateBatteryAh(Infinity, 60, 12, 85), null);
-    assert.ok(calculations.calculateBatteryAh(1e308, 1e308, 1e308, 100) > 0);
-    assert.ok(calculations.calculateBatteryAh(1e308, 1e-308, 1e-308, 100) > 0);
+    assert.equal(calculations.calculateBatteryAh(1e308, 1e308, 1e308, 100), null);
+    assert.equal(calculations.calculateBatteryAh(1e308, 1e-308, 1e-308, 100), null);
 });
 
 test('calculates runtime with the inverse formula and handles zero or invalid capacity', () => {
@@ -161,9 +193,8 @@ test('calculates runtime with the inverse formula and handles zero or invalid ca
     assert.equal(calculations.calculateRuntimeMinutes(1, 12, 85, 800), 0.77);
     assert.ok(Math.abs(calculations.calculateRuntimeMinutes(1 / 6000, 12, 100, 120) - 0.001) < 1e-12);
     assert.equal(calculations.calculateRuntimeMinutes(Number.MIN_VALUE, 12, 100, Number.MAX_VALUE), Number.MIN_VALUE);
-    assert.equal(calculations.calculateRuntimeMinutes(1e306, 1e308, 50, 1e308), 3e307);
-    const cancellationRuntime = calculations.calculateRuntimeMinutes(1e306, 1e-308, 50, 1e-308);
-    assert.ok(Math.abs(cancellationRuntime / 3e307 - 1) < 1e-12);
+    assert.equal(calculations.calculateRuntimeMinutes(1e306, 1e308, 50, 1e308), null);
+    assert.equal(calculations.calculateRuntimeMinutes(1e306, 1e-308, 50, 1e-308), null);
 });
 
 test('keeps Ah sizing conservative and inverse Runtime within display precision across a supported input grid', () => {
@@ -204,8 +235,12 @@ test('calculates PF-based UPS VA screening and validates outlet boundaries', () 
     assert.equal(calculations.recommendUpsVA(76.92), 200);
     assert.equal(calculations.recommendUpsVA(77), 200);
     assert.equal(calculations.recommendUpsVA(200), 400);
+    assert.equal(calculations.recommendUpsVA(61.53846153846154), 200);
+    assert.equal(calculations.recommendUpsVA(615.3846153846154), 1100);
     assert.equal(calculations.recommendUpsVA(0), 0);
     assert.equal(calculations.recommendUpsVA(1.4e308), null);
+    assert.equal(calculations.recommendUpsVA(1e308), null);
+    assert.equal(calculations.recommendUpsVA(1.001e20), null);
     assert.deepEqual(calculations.planOutlets(4), { requiredUpsCount: 1, outletsPerUps: 4 });
     assert.deepEqual(calculations.planOutlets(5), { requiredUpsCount: 1, outletsPerUps: 6 });
     assert.deepEqual(calculations.planOutlets(12), { requiredUpsCount: 1, outletsPerUps: 12 });

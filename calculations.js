@@ -37,29 +37,13 @@
         return `${negative ? '-' : ''}${whole}${fraction}`;
     }
 
-    function round(value, places = 6) {
-        const factor = 10 ** places;
-        if (!Number.isFinite(value)) return null;
-        const adjusted = value + Number.EPSILON * Math.sign(value);
-        const scaled = adjusted * factor;
-        if (!Number.isFinite(scaled)) return null;
-        if (Math.abs(scaled) > Number.MAX_SAFE_INTEGER) {
-            return Number(value.toFixed(places));
-        }
-        const rounded = Math.round(scaled) / factor;
-        return Number.isFinite(rounded) ? rounded : null;
-    }
-
-    // Sum values at the displayed decimal precision without binary-float drift.
-    function toScaledInteger(value, places) {
-        if (!Number.isFinite(value) || Math.abs(value) >= 1e21) return null;
-        const fixed = value.toFixed(places);
-        const negative = fixed.startsWith('-');
-        const [whole, fraction = ''] = (negative ? fixed.slice(1) : fixed).split('.');
-        const factor = 10n ** BigInt(places);
-        const fractionalUnits = fraction ? BigInt(fraction.padEnd(places, '0')) : 0n;
-        const magnitude = BigInt(whole) * factor + fractionalUnits;
-        return negative ? -magnitude : magnitude;
+    function roundFractionToScaledInteger(numerator, denominator, places) {
+        if (denominator <= 0n) return null;
+        const scaledNumerator = numerator * (10n ** BigInt(places));
+        const negative = scaledNumerator < 0n;
+        const magnitude = negative ? -scaledNumerator : scaledNumerator;
+        const rounded = (magnitude * 2n + denominator) / (denominator * 2n);
+        return negative ? -rounded : rounded;
     }
 
     function fromScaledInteger(value, places) {
@@ -95,24 +79,27 @@
                 inputsValid = false;
                 return;
             }
-            const watts = unit === 'VA' ? load * DEFAULT_POWER_FACTOR : load;
+            const loadFraction = decimalFraction(load);
+            const wattsNumerator = unit === 'VA' ? loadFraction.numerator * 4n : loadFraction.numerator;
+            const wattsDenominator = unit === 'VA' ? loadFraction.denominator * 5n : loadFraction.denominator;
             const plugsValue = finiteNumber(device.plugs);
             const plugs = device.plugs === undefined || device.plugs === null || device.plugs === '' ? 1 : plugsValue;
             if (plugs === null || !Number.isSafeInteger(plugs) || plugs < 1 || !Number.isSafeInteger(totalPlugs + plugs)) {
                 inputsValid = false;
                 return;
             }
-            const roundedWatts = round(watts);
+            const rowMicroWatts = roundFractionToScaledInteger(wattsNumerator, wattsDenominator, 6);
+            const roundedWatts = rowMicroWatts === null ? null : fromScaledInteger(rowMicroWatts, 6);
             if (roundedWatts === null) {
-                inputsValid = false;
-                return;
-            }
-            if (watts > 0 && roundedWatts === 0) {
                 inputsValid = false;
                 precisionInvalidTarget ??= { type: 'device-load', index };
                 return;
             }
-            const rowMicroWatts = toScaledInteger(roundedWatts, 6);
+            if (load > 0 && roundedWatts === 0) {
+                inputsValid = false;
+                precisionInvalidTarget ??= { type: 'device-load', index };
+                return;
+            }
             const nextDeviceLoadMicroWatts = rowMicroWatts === null ? null : deviceLoadMicroWatts + rowMicroWatts;
             const nextDeviceLoad = nextDeviceLoadMicroWatts === null ? null : fromScaledInteger(nextDeviceLoadMicroWatts, 6);
             if (nextDeviceLoad === null) {
@@ -133,16 +120,21 @@
         const resolvedForecastUnit = forecastUnit === undefined || forecastUnit === null || forecastUnit === '' ? '%' : forecastUnit;
         if (!['%', 'W'].includes(resolvedForecastUnit)) inputsValid = false;
         const unit = resolvedForecastUnit === 'W' ? 'W' : '%';
-        const forecastWatt = value > 0 ? (unit === '%' ? deviceLoad * value / 100 : value) : 0;
-        const roundedForecastWatt = round(forecastWatt);
-        if (forecastWatt > 0 && roundedForecastWatt === 0) {
+        const forecastFraction = decimalFraction(value);
+        const forecastNumerator = unit === '%' ? deviceLoadMicroWatts * forecastFraction.numerator : forecastFraction.numerator;
+        const forecastDenominator = unit === '%'
+            ? 1_000_000n * forecastFraction.denominator * 100n
+            : forecastFraction.denominator;
+        const forecastMicroWatts = roundFractionToScaledInteger(forecastNumerator, forecastDenominator, 6);
+        const roundedForecastWatt = forecastMicroWatts === null ? null : fromScaledInteger(forecastMicroWatts, 6);
+        const forecastPositive = value > 0 && (unit === 'W' || deviceLoad > 0);
+        if (roundedForecastWatt === null) {
+            inputsValid = false;
+            if (forecastPositive) precisionInvalidTarget ??= { type: 'forecast' };
+        }
+        if (forecastPositive && roundedForecastWatt === 0) {
             inputsValid = false;
             precisionInvalidTarget ??= { type: 'forecast' };
-        }
-        const forecastMicroWatts = roundedForecastWatt === null ? null : toScaledInteger(roundedForecastWatt, 6);
-        if (forecastMicroWatts === null) {
-            inputsValid = false;
-            if (forecastWatt > 0) precisionInvalidTarget ??= { type: 'forecast' };
         }
         const roundedTotalLoad = forecastMicroWatts === null
             ? null : fromScaledInteger(deviceLoadMicroWatts + forecastMicroWatts, 6);
@@ -152,7 +144,7 @@
         }
         const roundedDeviceLoad = deviceLoad;
         const positiveComponentRoundedAway = (deviceLoad > 0 && roundedDeviceLoad === 0)
-            || (forecastWatt > 0 && roundedForecastWatt === 0);
+            || (forecastPositive && roundedForecastWatt === 0);
         const valid = inputsValid && !positiveComponentRoundedAway
             && roundedDeviceLoad !== null && roundedForecastWatt !== null && roundedTotalLoad !== null;
         return {
@@ -175,8 +167,7 @@
         const numerator = p.numerator * t.numerator * 100n * v.denominator * e.denominator;
         const denominator = p.denominator * t.denominator * 60n * v.numerator * e.numerator;
         const scaledAh = (numerator * 1_000_000n + denominator - 1n) / denominator;
-        const roundedAh = Number(scaledIntegerText(scaledAh > 0n ? scaledAh : 1n, 6));
-        return Number.isFinite(roundedAh) ? roundedAh : null;
+        return fromScaledInteger(scaledAh > 0n ? scaledAh : 1n, 6);
     }
 
     function calculateRuntimeMinutes(ampHours, voltage, efficiency, powerW) {
@@ -196,8 +187,7 @@
             }
             return Number.isFinite(exactMinutes) && exactMinutes > 0 ? exactMinutes : Number.MIN_VALUE;
         }
-        const roundedMinutes = Number(scaledIntegerText(roundedHundredths, 2));
-        return Number.isFinite(roundedMinutes) ? roundedMinutes : null;
+        return fromScaledInteger(roundedHundredths, 2);
     }
 
     function buildRuntimeCurve(ampHours, voltage, efficiency, currentLoadW) {
@@ -214,10 +204,16 @@
     function recommendUpsVA(loadW) {
         const load = finiteNumber(loadW);
         if (load === null || load <= 0) return 0;
-        const requiredVA = (load / DEFAULT_POWER_FACTOR) * 1.3;
-        if (!Number.isFinite(requiredVA)) return null;
-        const recommendation = Math.ceil(requiredVA / 100) * 100;
-        return Number.isFinite(recommendation) ? recommendation : null;
+        const watts = decimalFraction(load);
+        const powerFactor = decimalFraction(DEFAULT_POWER_FACTOR);
+        const headroom = decimalFraction(1.3);
+        const numerator = watts.numerator * powerFactor.denominator * headroom.numerator;
+        const denominator = watts.denominator * powerFactor.numerator * headroom.denominator * 100n;
+        const vaUnits = (numerator + denominator - 1n) / denominator;
+        const recommendationUnits = vaUnits * 100n;
+        const recommendation = Number(recommendationUnits);
+        if (!Number.isFinite(recommendation) || BigInt(recommendation) !== recommendationUnits) return null;
+        return recommendation;
     }
 
     function planOutlets(totalPlugs) {

@@ -381,7 +381,7 @@
                     <!-- Device cards will be added here -->
                 </div>
 
-                <button onclick="addDevice()"
+                <button id="addDeviceBtn" onclick="addDevice()"
                     class="w-full py-3 border-2 border-dashed border-primary-300 text-primary-600 rounded-xl hover:bg-primary-50 transition-all font-medium flex items-center justify-center gap-2">
                     <span class="text-xl">+</span> เพิ่มอุปกรณ์
                 </button>
@@ -838,8 +838,12 @@
         function removeDevice(id) {
             const element = document.getElementById(`device-${id}`);
             if (element) {
+                const cards = [...document.querySelectorAll('.device-card')];
+                const cardIndex = cards.indexOf(element);
+                const nextCard = cards[cardIndex + 1] || cards[cardIndex - 1];
                 element.remove();
                 updateTotalLoad();
+                (nextCard?.querySelector('.device-load') || document.getElementById('addDeviceBtn')).focus();
             }
         }
 
@@ -1326,6 +1330,10 @@
 
         function focusInvalidLoadInput() {
             const loadInputs = [...document.querySelectorAll('.device-load')];
+            if (loadInputs.length === 0) {
+                document.getElementById('addDeviceBtn').focus();
+                return;
+            }
             const invalidLoad = loadInputs.find(input => input.value !== '' && (!Number.isFinite(Number(input.value)) || Number(input.value) < 0));
             if (invalidLoad) {
                 invalidLoad.focus();
@@ -1456,6 +1464,7 @@
             setForecastUnit('%');
 
             showStep(1);
+            document.querySelector('.device-load')?.focus();
         }
 
         // Export to JSON
