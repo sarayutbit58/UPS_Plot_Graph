@@ -520,7 +520,7 @@
                         <input type="number" id="runtimeBatteryAh" name="runtimeBatteryAh" min="0" step="0.01"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
                             oninput="handleRuntimeBatteryInput()">
-                        <p class="text-xs text-gray-400 mt-1">ใส่ค่าจากแบตเตอรี่ที่คุณมีหรือจะซื้อ</p>
+                        <p class="text-xs text-gray-400 mt-1">ใส่ Ah รวมของชุดแบตเตอรี่ตามแรงดันระบบ: ต่ออนุกรมเพิ่ม V แต่ Ah เท่าเดิม; ต่อขนานจึงรวม Ah</p>
                     </div>
                     <div class="enterprise-only">
                         <label for="runtimeVoltage" class="block text-gray-700 font-medium mb-2">แรงดันแบตเตอรี่ (V)</label>
@@ -670,6 +670,7 @@
         // State
         let currentStep = 1;
         let currentMode = 'basic';
+        let loadInputValid = true;
         let runtimeBatteryWasAutoFilled = false;
         let enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
         let devices = [];
@@ -688,7 +689,7 @@
             voltage: 12,
             efficiency: 85,
             backupTime: 60,
-            runtime: 0
+            runtime: null
         };
 
         // Initialize
@@ -758,8 +759,14 @@
             document.getElementById('dashboardLoad').textContent = `${calculatedData.totalLoad} W`;
             document.getElementById('dashboardBattery').textContent = calculatedData.batteryAh > 0
                 ? `${calculatedData.batteryAh} Ah` : '— Ah';
-            document.getElementById('dashboardRuntime').textContent = calculatedData.runtime > 0
-                ? `${calculatedData.runtime} นาที` : '— นาที';
+            document.getElementById('dashboardRuntime').textContent = Number.isFinite(calculatedData.runtime)
+                ? `${formatRuntimeMinutes(calculatedData.runtime)} นาที` : '— นาที';
+        }
+
+        function formatRuntimeMinutes(minutes) {
+            if (!Number.isFinite(minutes)) return '—';
+            if (minutes > 0 && minutes < 0.01) return '<0.01';
+            return String(minutes);
         }
 
         function syncRuntimeBatteryAh() {
@@ -834,6 +841,7 @@
             const forecastUnit = calculatedData.forecastUnit || '%';
             const breakdown = UPScalculations.calculateLoadBreakdown(enteredDevices, forecastValue, forecastUnit);
             if (!breakdown.valid) {
+                loadInputValid = false;
                 devices = [];
                 calculatedData.deviceLoad = 0;
                 calculatedData.totalPlugs = 0;
@@ -848,6 +856,10 @@
                 document.getElementById('forecastLoadDisplay').textContent = '— W';
                 document.getElementById('totalLoad').textContent = '— W';
                 document.getElementById('totalPlugsDisplay').textContent = '0 รู';
+                document.getElementById('forecastRowDisplay').classList.add('hidden');
+                document.getElementById('forecastPreview').classList.add('hidden');
+                document.getElementById('forecastPreviewText').textContent = '';
+                updateBasicContextNote();
                 document.getElementById('batteryResult').classList.add('hidden');
                 document.getElementById('runtimeResult').classList.add('hidden');
                 document.getElementById('chartContainer').classList.add('hidden');
@@ -859,6 +871,7 @@
                 if (currentStep === 4) updateSummary();
                 return;
             }
+            loadInputValid = true;
             devices = breakdown.devices;
             calculatedData.deviceLoad = breakdown.deviceLoad;
             calculatedData.totalPlugs = breakdown.totalPlugs;
@@ -868,14 +881,12 @@
             const deviceTotal = breakdown.deviceLoad;
             const forecastWatt = breakdown.forecastWatt;
             updateBasicContextNote();
-            if (calculatedData.totalLoad > 0) {
-                const loadError = document.getElementById('loadError');
-                loadError.textContent = '';
-                loadError.classList.add('hidden');
-            }
+            const loadError = document.getElementById('loadError');
+            loadError.textContent = '';
+            loadError.classList.add('hidden');
             if (currentStep === 1) {
                 calculatedData.batteryAh = 0;
-                calculatedData.runtime = 0;
+                calculatedData.runtime = null;
                 document.getElementById('batteryResult').classList.add('hidden');
                 document.getElementById('runtimeResult').classList.add('hidden');
                 document.getElementById('chartContainer').classList.add('hidden');
@@ -979,7 +990,7 @@
             calculatedData.runtime = runtimeMinutes;
 
             document.getElementById('runtimeLoadDisplay').textContent = powerW;
-            document.getElementById('runtimeMinutes').textContent = `${runtimeMinutes} นาที`;
+            document.getElementById('runtimeMinutes').textContent = `${formatRuntimeMinutes(runtimeMinutes)} นาที`;
             document.getElementById('runtimeResult').classList.remove('hidden');
             updateDashboardMetrics();
 
@@ -999,7 +1010,7 @@
                 const loadCell = document.createElement('td');
                 const runtimeCell = document.createElement('td');
                 loadCell.textContent = `${power} W`;
-                runtimeCell.textContent = `${dataPoints[index]} นาที`;
+                runtimeCell.textContent = `${formatRuntimeMinutes(dataPoints[index])} นาที`;
                 row.append(loadCell, runtimeCell);
                 tableBody.appendChild(row);
             });
@@ -1062,7 +1073,7 @@
                         tooltip: {
                             callbacks: {
                                 label: function (context) {
-                                    return `${context.parsed.x} W · ${context.parsed.y} นาที`;
+                                    return `${context.parsed.x} W · ${formatRuntimeMinutes(context.parsed.y)} นาที`;
                                 }
                             }
                         }
@@ -1124,7 +1135,7 @@
 
             // Runtime
             document.getElementById('summaryRuntime').textContent = Number.isFinite(calculatedData.runtime)
-                ? `${calculatedData.runtime} นาที` : '— นาที';
+                ? `${formatRuntimeMinutes(calculatedData.runtime)} นาที` : '— นาที';
 
             // Efficiency
             document.getElementById('summaryEfficiency').textContent = `${calculatedData.efficiency}%`;
@@ -1327,6 +1338,7 @@
 
         function restart() {
             currentStep = 1;
+            loadInputValid = true;
             runtimeBatteryWasAutoFilled = false;
             enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
             devices = [];
@@ -1340,7 +1352,7 @@
                 voltage: 12,
                 efficiency: 85,
                 backupTime: 60,
-                runtime: 0
+                runtime: null
             };
 
             // Clear device list
@@ -1381,6 +1393,10 @@
         async function exportToJSON() {
             // Update data before export
             updateTotalLoad();
+            if (!loadInputValid) {
+                alert('❌ ยังส่งออกไม่ได้ กรุณาแก้ค่ากำลังไฟ Forecast หรือจำนวนรูปลั๊กที่ไม่ถูกต้อง');
+                return;
+            }
 
             const exportData = UPScalculations.buildExportData({
                 devices,
@@ -1472,7 +1488,7 @@
                         voltage: normalized.settings.voltage,
                         efficiency: normalized.settings.efficiency,
                         backupTime: normalized.settings.backupTime,
-                        runtime: 0,
+                        runtime: null,
                     };
                     enterpriseBatterySettings = { voltage: normalized.settings.voltage, efficiency: normalized.settings.efficiency };
                     document.getElementById('runtimeBatteryAh').value = normalized.settings.runtimeBatteryAh ?? '';

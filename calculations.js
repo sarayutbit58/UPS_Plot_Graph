@@ -23,11 +23,14 @@
     }
 
     function calculateLoadBreakdown(inputDevices, forecastValue, forecastUnit) {
+        if (!Array.isArray(inputDevices)) {
+            return { devices: [], deviceLoad: 0, forecastWatt: 0, totalLoad: 0, totalPlugs: 0, valid: false };
+        }
         const devices = [];
         let deviceLoad = 0;
         let totalPlugs = 0;
         let inputsValid = true;
-        (Array.isArray(inputDevices) ? inputDevices : []).forEach(device => {
+        inputDevices.forEach(device => {
             const load = finiteNumber(device && device.load);
             if (load === null) {
                 const rawLoad = device && device.load;
@@ -39,7 +42,11 @@
                 inputsValid = false;
                 return;
             }
-            const unit = device.unit === 'VA' ? 'VA' : 'W';
+            const unit = device.unit === undefined || device.unit === null || device.unit === '' ? 'W' : device.unit;
+            if (!['W', 'VA'].includes(unit)) {
+                inputsValid = false;
+                return;
+            }
             const watts = unit === 'VA' ? load * 0.8 : load;
             const plugsValue = finiteNumber(device.plugs);
             const plugs = device.plugs === undefined || device.plugs === null || device.plugs === '' ? 1 : plugsValue;
@@ -61,7 +68,9 @@
         const forecastProvided = forecastValue !== undefined && forecastValue !== null && !(typeof forecastValue === 'string' && forecastValue.trim() === '');
         if ((forecastProvided && rawForecast === null) || rawForecast < 0) inputsValid = false;
         const value = rawForecast !== null && rawForecast > 0 ? rawForecast : 0;
-        const unit = forecastUnit === 'W' ? 'W' : '%';
+        const resolvedForecastUnit = forecastUnit === undefined || forecastUnit === null || forecastUnit === '' ? '%' : forecastUnit;
+        if (!['%', 'W'].includes(resolvedForecastUnit)) inputsValid = false;
+        const unit = resolvedForecastUnit === 'W' ? 'W' : '%';
         const forecastWatt = value > 0 ? (unit === '%' ? deviceLoad * value / 100 : value) : 0;
         const roundedDeviceLoad = round(deviceLoad);
         const roundedForecastWatt = round(forecastWatt);
@@ -81,7 +90,10 @@
         const power = finiteNumber(powerW), time = finiteNumber(minutes);
         const volts = finiteNumber(voltage), percent = finiteNumber(efficiency);
         if (power === null || power <= 0 || time === null || time <= 0 || volts === null || volts <= 0 || percent === null || percent < 50 || percent > 100) return null;
-        const requiredAh = (power / volts) * (time / 60) / (percent / 100);
+        let requiredAh = (power / volts) * (time / 60) / (percent / 100);
+        if (!Number.isFinite(requiredAh) || requiredAh === 0) {
+            requiredAh = Math.exp(Math.log(power) + Math.log(time) - Math.log(60) - Math.log(volts) - Math.log(percent / 100));
+        }
         if (!Number.isFinite(requiredAh)) return null;
         const scaledAh = requiredAh * 1e6;
         const roundedAh = Number.isFinite(scaledAh)
@@ -94,13 +106,17 @@
         const ah = finiteNumber(ampHours), volts = finiteNumber(voltage);
         const percent = finiteNumber(efficiency), power = finiteNumber(powerW);
         if (ah === null || ah < 0 || volts === null || volts <= 0 || percent === null || percent < 50 || percent > 100 || power === null || power <= 0) return null;
-        const exactMinutes = (ah / power) * volts * (percent / 100) * 60;
+        let exactMinutes = (ah / power) * volts * (percent / 100) * 60;
+        if (!Number.isFinite(exactMinutes) || exactMinutes === 0) {
+            exactMinutes = Math.exp(Math.log(ah) - Math.log(power) + Math.log(volts) + Math.log(percent / 100) + Math.log(60));
+        }
         if (!Number.isFinite(exactMinutes)) return null;
         const scaledMinutes = exactMinutes * 100;
         const roundedMinutes = Number.isFinite(scaledMinutes)
             ? Math.round(scaledMinutes) / 100
             : exactMinutes;
-        return ah > 0 && roundedMinutes === 0 ? 0.01 : roundedMinutes;
+        if (ah > 0 && roundedMinutes === 0) return exactMinutes > 0 ? exactMinutes : Number.MIN_VALUE;
+        return roundedMinutes;
     }
 
     function buildRuntimeCurve(ampHours, voltage, efficiency, currentLoadW) {
@@ -176,6 +192,14 @@
         const forecastValue = finiteNumber(forecastSource ? (forecastSource.value ?? 0) : legacyForecast);
         const forecastUnit = forecastSource ? (forecastSource.unit ?? '%') : (legacyForecast ? 'W' : '%');
         if (forecastValue === null || forecastValue < 0 || !['%', 'W'].includes(forecastUnit)) throw invalidImport('ค่า Forecast ไม่ถูกต้อง');
+        const breakdown = calculateLoadBreakdown(devices, forecastValue, forecastUnit);
+        if (!breakdown.valid) throw invalidImport('โหลดรวมอยู่นอกขอบเขตที่คำนวณได้');
+        if (breakdown.totalLoad > 0 && calculateBatteryAh(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency) === null) {
+            throw invalidImport('ค่าตั้งค่าแบตเตอรี่ทำให้คำนวณ Ah ไม่ได้');
+        }
+        if (settings.runtimeBatteryAh !== null && breakdown.totalLoad > 0 && calculateRuntimeMinutes(settings.runtimeBatteryAh, settings.voltage, settings.efficiency, breakdown.totalLoad) === null) {
+            throw invalidImport('ค่าความจุแบตเตอรี่ทำให้คำนวณ Runtime ไม่ได้');
+        }
         return { devices, settings, forecast: { value: forecastValue, unit: forecastUnit } };
     }
 

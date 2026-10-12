@@ -32,6 +32,8 @@ test('adds a fixed-W Forecast and ignores non-finite or non-positive device load
     assert.equal(calculations.calculateLoadBreakdown([{ load: 100, unit: 'W', plugs: Number.MAX_VALUE }], 0, '%').valid, false);
     assert.equal(calculations.calculateLoadBreakdown([{ load: -1, unit: 'W', plugs: 1 }], 0, '%').valid, false);
     assert.equal(calculations.calculateLoadBreakdown([{ load: 100, unit: 'W', plugs: 1 }], -1, '%').valid, false);
+    assert.equal(calculations.calculateLoadBreakdown([{ load: 100, unit: 'watts', plugs: 1 }], 10, 'watts').valid, false);
+    assert.equal(calculations.calculateLoadBreakdown(null, 0, '%').valid, false);
 });
 
 test('calculates required Ah and rejects invalid sizing inputs', () => {
@@ -45,6 +47,7 @@ test('calculates required Ah and rejects invalid sizing inputs', () => {
     assert.equal(calculations.calculateBatteryAh(120, 60, 12, 100), 10);
     assert.equal(calculations.calculateBatteryAh(Infinity, 60, 12, 85), null);
     assert.ok(calculations.calculateBatteryAh(1e308, 1e308, 1e308, 100) > 0);
+    assert.ok(calculations.calculateBatteryAh(1e308, 1e-308, 1e-308, 100) > 0);
 });
 
 test('calculates runtime with the inverse formula and handles zero or invalid capacity', () => {
@@ -56,8 +59,11 @@ test('calculates runtime with the inverse formula and handles zero or invalid ca
     assert.equal(calculations.calculateRuntimeMinutes(11.76, 12, 49, 120), null);
     assert.equal(calculations.calculateRuntimeMinutes(1 / 12, 12, 100, 120), 0.5);
     assert.equal(calculations.calculateRuntimeMinutes(0.25, 12, 100, 120), 1.5);
-    assert.equal(calculations.calculateRuntimeMinutes(Number.MIN_VALUE, 12, 100, Number.MAX_VALUE), 0.01);
+    assert.ok(Math.abs(calculations.calculateRuntimeMinutes(1 / 6000, 12, 100, 120) - 0.001) < 1e-12);
+    assert.equal(calculations.calculateRuntimeMinutes(Number.MIN_VALUE, 12, 100, Number.MAX_VALUE), Number.MIN_VALUE);
     assert.equal(calculations.calculateRuntimeMinutes(1e306, 1e308, 50, 1e308), 3e307);
+    const cancellationRuntime = calculations.calculateRuntimeMinutes(1e306, 1e-308, 50, 1e-308);
+    assert.ok(Math.abs(cancellationRuntime / 3e307 - 1) < 1e-12);
 });
 
 test('builds a unique numeric runtime curve that matches the exact current load', () => {
@@ -130,6 +136,9 @@ test('normalizes valid imports and rejects malformed device/settings data before
         devices: [{ name: 'Server', load: 120, unit: 'W', plugs: 1 }], calculatedData: {},
         settings: { voltage: 13 },
     }));
+    assert.throws(() => calculations.normalizeImportData({
+        devices: [{ name: 'Extreme', load: 1e308, unit: 'W', plugs: 1 }], calculatedData: {},
+    }), { name: 'InvalidImportDataError' });
 });
 
 test('round-trips export settings and Forecast through normalized import', () => {
@@ -145,4 +154,23 @@ test('round-trips export settings and Forecast through normalized import', () =>
     assert.equal(imported.devices[0].unit, 'VA');
     assert.equal(imported.settings.runtimeBatteryAh, 30);
     assert.deepEqual(imported.forecast, { value: 10, unit: '%' });
+});
+
+test('keeps compatibility with the previous v1.2 export shape and legacy Forecast watt fields', () => {
+    const previousExport = calculations.normalizeImportData({
+        version: '1.2',
+        devices: [{ name: 'Switch', load: 100, unit: 'W', watts: 100, plugs: 1 }],
+        calculatedData: { backupTime: 60, voltage: 12, efficiency: 85, forecastWatt: 15 },
+        forecast: { value: 15, unit: 'W', watt: 15 },
+        settings: { backupTime: 60, voltage: 12, efficiency: 85 },
+    });
+    assert.deepEqual(previousExport.forecast, { value: 15, unit: 'W' });
+    assert.equal(calculations.calculateLoadBreakdown(previousExport.devices, previousExport.forecast.value, previousExport.forecast.unit).totalLoad, 115);
+
+    const legacyExport = calculations.normalizeImportData({
+        devices: [{ name: 'Router', load: 100, unit: 'W' }],
+        calculatedData: { forecastWatt: 10 },
+        forecastWatt: 10,
+    });
+    assert.deepEqual(legacyExport.forecast, { value: 10, unit: 'W' });
 });
