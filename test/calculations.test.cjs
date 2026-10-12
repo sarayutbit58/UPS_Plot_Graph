@@ -562,6 +562,14 @@ test('rejects JSON imports above the supported device count', () => {
     assert.equal(calculations.normalizeImportData(data).devices.length, calculations.MAX_DEVICES);
 });
 
+test('rejects import schema versions newer than the supported format', () => {
+    assert.throws(() => calculations.normalizeImportData({
+        version: '99.0',
+        devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+        calculatedData: {},
+    }), { name: 'InvalidImportDataError' });
+});
+
 test('round-trips export settings and Forecast through normalized import', () => {
     const date = new Date('2026-10-12T00:00:00.000Z');
     const exported = calculations.buildExportData({
@@ -714,4 +722,37 @@ test('keeps compatibility with the previous v1.2 export shape and legacy Forecas
         forecastWatt: 10,
     });
     assert.deepEqual(legacyExport.forecast, { value: 10, unit: 'W' });
+
+    const partialLegacyForecast = calculations.normalizeImportData({
+        devices: [{ name: 'Router', load: 100, unit: 'W' }],
+        calculatedData: { forecastWatt: 10 },
+        forecast: { watt: 10 },
+    });
+    assert.deepEqual(partialLegacyForecast.forecast, { value: 10, unit: 'W' });
+    assert.equal(calculations.calculateLoadBreakdown(partialLegacyForecast.devices, partialLegacyForecast.forecast.value, partialLegacyForecast.forecast.unit).totalLoad, 110);
+
+    const legacyEnterpriseSettings = calculations.normalizeImportData({
+        version: '1.2',
+        devices: [{ name: 'Router', load: 120, unit: 'W' }],
+        calculatedData: { backupTime: 60, voltage: 24, efficiency: 90 },
+        settings: { backupTime: 60, voltage: 24, efficiency: 90 },
+    });
+    assert.equal(legacyEnterpriseSettings.mode, 'enterprise');
+});
+
+test('exports a Basic-mode snapshot with formula Runtime even if an inactive curve is supplied', () => {
+    const exported = calculations.buildExportData({
+        mode: 'basic', runtimeSource: 'manufacturer',
+        runtimeCurve: {
+            model: 'UPS-Example', batteryConfig: 'Internal', source: 'test chart', conditions: '',
+            points: [{ loadW: 1, runtimeMinutes: 100 }, { loadW: 200, runtimeMinutes: 1 }],
+        },
+        devices: [{ name: 'Router', load: 100, unit: 'W', plugs: 1 }],
+        calculatedData: { forecastValue: 0, forecastUnit: '%' },
+        settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+        calculationSettings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    });
+    assert.equal(exported.runtimeSource, 'formula');
+    assert.equal(exported.calculatedData.runtime, 60);
+    assert.equal(calculations.normalizeImportData(exported).runtimeSource, 'formula');
 });

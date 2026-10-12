@@ -811,3 +811,11 @@ These are presentation/packaging findings; this recheck made no application-code
 - Named the linear interpolation method in the CSV instructions, Runtime basis, and Summary so a between-point value is not mistaken for a published measurement.
 - Chrome browser check at 320 × 800 confirmed the Runtime basis, manufacturer-only recommendation, and CSV instructions identify linear interpolation; no horizontal overflow was observed.
 - Independent review found no arithmetic mismatch in the sampled formula/interpolation/VA cases and confirmed empty backup time and efficiency above 100% are blocked with inline validation. This remains sampled verification, not proof of bug-free operation or physical UPS runtime accuracy.
+
+## Legacy Schema and Round-Trip Integrity Audit — 2026-10-12
+
+- Reproduced legacy mode-less imports with saved 24 V / 90% settings opening in Basic, which recalculated Ah with 12 V / 85%. Mode-less data now infers Enterprise when it carries Enterprise markers (non-default voltage/efficiency, VA or multi-outlet device records, nonzero Forecast, or manufacturer Runtime). A browser import of 120 W / 60 min / 24 V / 90% selected Enterprise and produced 5.555556 Ah.
+- Fixed partial legacy Forecast migration: when `forecast.value` is absent, `forecast.watt` or legacy `forecastWatt` fields are restored as W instead of silently defaulting to 0%. A browser import of 100 W plus legacy Forecast 10 W restored 110 W total.
+- Basic-mode export now records Formula Runtime even if an inactive manufacturer curve was passed to the export builder; the inactive curve remains available for later use. The exported payload round-trips successfully.
+- Import now rejects schema versions newer than 1.5 rather than interpreting an unknown future format as the current schema. Legacy unversioned data and supported 1.2 / 1.5 formats remain accepted.
+- Verification: the partial-Forecast, Basic-export, and future-version regression cases failed before their fixes; the mode-less Enterprise mismatch was reproduced separately by importing a 24 V / 90% legacy payload into Basic. `npm test` 36/36; 1,000 deterministic Basic/Enterprise JSON export→parse→import combinations passed; `node --check calculations.js`, inline JavaScript syntax check, and `git diff --check` passed.

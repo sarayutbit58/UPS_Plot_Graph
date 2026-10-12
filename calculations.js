@@ -497,7 +497,12 @@
             throw invalidImport('รูปแบบไฟล์ไม่ถูกต้อง');
         }
         if (data.devices.length > MAX_DEVICES) throw invalidImport(`ไฟล์มีอุปกรณ์เกินขีดจำกัด ${MAX_DEVICES} รายการ`);
-        const mode = data.mode === undefined || data.mode === null ? null : data.mode;
+        if (data.version !== undefined && data.version !== null) {
+            if (typeof data.version !== 'string' || !/^1\.[0-5]$/.test(data.version)) {
+                throw invalidImport(`ไม่รองรับเวอร์ชันไฟล์ ${String(data.version)}`);
+            }
+        }
+        let mode = data.mode === undefined || data.mode === null ? null : data.mode;
         if (mode !== null && !['basic', 'enterprise'].includes(mode)) throw invalidImport('โหมดการใช้งานไม่ถูกต้อง');
         const runtimeSource = data.runtimeSource === undefined || data.runtimeSource === null ? 'formula' : data.runtimeSource;
         if (!['formula', 'manufacturer'].includes(runtimeSource)) throw invalidImport('แหล่งข้อมูล Runtime ไม่ถูกต้อง');
@@ -507,9 +512,7 @@
         } catch (error) {
             throw invalidImport('ข้อมูลกราฟ Runtime ไม่ถูกต้อง');
         }
-        if (runtimeSource === 'manufacturer' && (!runtimeCurve || mode !== 'enterprise')) {
-            throw invalidImport('ต้องเลือกโหมด Enterprise และแนบกราฟ Runtime ของผู้ผลิต');
-        }
+        if (runtimeSource === 'manufacturer' && !runtimeCurve) throw invalidImport('ต้องแนบกราฟ Runtime ของผู้ผลิต');
         const devices = data.devices.map(device => {
             if (!device || typeof device !== 'object' || Array.isArray(device)) throw invalidImport('ข้อมูลอุปกรณ์ไม่ถูกต้อง');
             const rawLoad = device.load;
@@ -555,10 +558,18 @@
         }
         const forecastSource = data.forecast && typeof data.forecast === 'object' ? data.forecast : null;
         const legacyForecast = data.forecastWatt ?? data.calculatedData.forecastWatt ?? 0;
-        const rawForecastValue = forecastSource ? (forecastSource.value ?? 0) : legacyForecast;
+        const hasForecastValue = Boolean(forecastSource && forecastSource.value !== undefined && forecastSource.value !== null);
+        const hasForecastWatt = Boolean(forecastSource && forecastSource.watt !== undefined && forecastSource.watt !== null);
+        const rawForecastValue = hasForecastValue
+            ? forecastSource.value
+            : hasForecastWatt ? forecastSource.watt : legacyForecast;
         const forecastNumber = finiteNumber(rawForecastValue);
         const forecastFraction = decimalFraction(rawForecastValue);
-        const forecastUnit = forecastSource ? (forecastSource.unit ?? '%') : (legacyForecast ? 'W' : '%');
+        const forecastUnit = hasForecastValue
+            ? forecastSource.unit ?? '%'
+            : hasForecastWatt || legacyForecast !== 0
+                ? 'W'
+                : forecastSource?.unit ?? '%';
         if (forecastNumber === null || !forecastFraction || !decimalInputMatchesNumber(rawForecastValue, forecastNumber)
             || (typeof rawForecastValue === 'number' && Number.isInteger(forecastNumber) && !Number.isSafeInteger(forecastNumber))
             || forecastFraction.numerator < 0n || !['%', 'W'].includes(forecastUnit)) {
@@ -566,6 +577,15 @@
         }
         const breakdown = calculateLoadBreakdown(devices, rawForecastValue, forecastUnit);
         if (!breakdown.valid) throw invalidImport('โหลดรวมอยู่นอกขอบเขตที่คำนวณได้');
+        if (mode === null && (runtimeSource === 'manufacturer'
+            || settings.voltage !== 12 || settings.efficiency !== 85
+            || devices.some(device => device.unit === 'VA' || device.plugs !== 1)
+            || forecastNumber > 0)) {
+            mode = 'enterprise';
+        }
+        if (runtimeSource === 'manufacturer' && mode !== 'enterprise') {
+            throw invalidImport('ต้องใช้โหมด Enterprise กับกราฟ Runtime ของผู้ผลิต');
+        }
         if (breakdown.totalLoad > 0 && calculateBatteryAh(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency) === null) {
             const belowResolution = isBelowAhResolution(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency);
             throw invalidImport(belowResolution
@@ -584,6 +604,8 @@
     }
 
     function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, runtimeBatteryWasAutoFilled = false, mode = null, runtimeSource = 'formula', runtimeCurve = null, exportDate = new Date() }) {
+        const exportMode = mode ?? (runtimeSource === 'manufacturer' ? 'enterprise' : null);
+        const exportRuntimeSource = exportMode === 'basic' ? 'formula' : runtimeSource;
         const exportSettings = runtimeBatteryWasAutoFilled
             ? { ...settings, runtimeBatteryAh: null }
             : settings;
@@ -606,7 +628,7 @@
             : null;
         const runtimeCapacityAh = activeCalculationSettings.runtimeBatteryAh ?? exportSettings.runtimeBatteryAh ?? batteryAh;
         const runtime = breakdown.valid && breakdown.totalLoad > 0
-            ? runtimeSource === 'manufacturer'
+            ? exportRuntimeSource === 'manufacturer'
                 ? normalizedRuntimeCurve ? calculateRuntimeFromCurve(normalizedRuntimeCurve.points, breakdown.totalLoad) : null
                 : calculateRuntimeMinutes(runtimeCapacityAh, rawVoltage, rawEfficiency, breakdown.totalLoad)
             : null;
@@ -632,7 +654,7 @@
         }
         return {
             version: '1.5', appName: 'UPS Picker', exportDate: exportDate.toISOString(),
-            mode: mode ?? (runtimeSource === 'manufacturer' ? 'enterprise' : null), runtimeSource,
+            mode: exportMode, runtimeSource: exportRuntimeSource,
             devices: devices.map(device => ({ ...device })),
             calculatedData: exportCalculatedData,
             forecast: { value: forecastValue, unit: forecastUnit, watt: exportCalculatedData.forecastWatt },
