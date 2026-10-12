@@ -673,3 +673,10 @@ These are presentation/packaging findings; this recheck made no application-code
 - At 390 × 844, the Basic and Enterprise buttons stay on one line with 44 px height. A 100 W total stays on one line, and the document has no horizontal overflow.
 - Startup now calls `showStep(currentStep)`, so step visibility and the first “ถัดไป: ขนาดแบตเตอรี่ →” label are initialized through the same path as later steps.
 - Confirmed the favicon uses an inline data URL and the page loads local `styles/tailwind.css`, avoiding the earlier `/favicon.ico` 404 and Tailwind CDN warning. At this browser run, console was empty and all 13 network requests succeeded.
+
+## Precision Aggregation and Responsive Audit — 2026-10-12
+
+- A stress case with 100,000,000 W plus 1,000 rows of 0.000001 W reproduced a floating-point total that was 0.0000019967556 W low. Load components now sum as integer micro-watts; totals that cannot be represented to six decimal places are rejected and focus the contributing input.
+- Regression coverage confirms the exact 100,000,000.001 W result and rejects 1,000,000,000,000 W plus 0.000001 W rather than silently dropping the micro-watt. The test failed before the fix and passed after it.
+- Browser audit on the preceding commit exercised 320 × 640, 390 × 844, and 1366 × 768 through Basic load, battery, Runtime, Summary, and Enterprise mode; no overflow or console errors were observed. A broken replacement glyph on the Export JSON button was found and replaced with an inline download SVG in this revision.
+- Rechecked this revision in Chrome at 320 × 640: Enterprise Summary shows a legible Export JSON button with the SVG, step 4 is visible, and page width remains 320 px. The browser calculation returns 100,000,000.001 W for the 1,001-row case and rejects the unrepresentable 1,000,000,000,000 W + 0.000001 W case; console remains empty and all 13 requests return 200.

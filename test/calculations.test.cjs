@@ -70,6 +70,28 @@ test('preserves six-decimal precision when scaled loads exceed the safe integer 
     }
 });
 
+test('sums displayed micro-watt loads exactly or rejects totals outside numeric precision', () => {
+    const loads = [
+        { name: 'Large device', load: 100_000_000, unit: 'W', plugs: 1 },
+        ...Array.from({ length: 1000 }, (_, index) => ({
+            name: `Small device ${index + 1}`,
+            load: 0.000001,
+            unit: 'W',
+            plugs: 1,
+        })),
+    ];
+    const sum = calculations.calculateLoadBreakdown(loads, 0, '%');
+    assert.equal(sum.valid, true);
+    assert.equal(sum.totalLoad, 100_000_000.001);
+
+    const unrepresentable = calculations.calculateLoadBreakdown([
+        { name: 'Large device', load: 1_000_000_000_000, unit: 'W', plugs: 1 },
+        { name: 'One micro-watt', load: 0.000001, unit: 'W', plugs: 1 },
+    ], 0, '%');
+    assert.equal(unrepresentable.valid, false);
+    assert.deepEqual(unrepresentable.precisionInvalidTarget, { type: 'device-load', index: 1 });
+});
+
 test('counts zero-watt device outlets and ignores blank or invalid rows', () => {
     const result = calculations.calculateLoadBreakdown([
         { name: 'Router', load: 100, unit: 'W', plugs: 1 },

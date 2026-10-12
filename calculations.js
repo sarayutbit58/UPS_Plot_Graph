@@ -28,12 +28,36 @@
         return Number.isFinite(rounded) ? rounded : null;
     }
 
+    // Sum values at the displayed decimal precision without binary-float drift.
+    function toScaledInteger(value, places) {
+        if (!Number.isFinite(value) || Math.abs(value) >= 1e21) return null;
+        const fixed = value.toFixed(places);
+        const negative = fixed.startsWith('-');
+        const [whole, fraction = ''] = (negative ? fixed.slice(1) : fixed).split('.');
+        const factor = 10n ** BigInt(places);
+        const fractionalUnits = fraction ? BigInt(fraction.padEnd(places, '0')) : 0n;
+        const magnitude = BigInt(whole) * factor + fractionalUnits;
+        return negative ? -magnitude : magnitude;
+    }
+
+    function fromScaledInteger(value, places) {
+        const negative = value < 0n;
+        const digits = (negative ? -value : value).toString().padStart(places + 1, '0');
+        const whole = places ? digits.slice(0, -places) : digits;
+        const fraction = places ? `.${digits.slice(-places)}` : '';
+        const text = `${negative ? '-' : ''}${whole}${fraction}`;
+        const number = Number(text);
+        if (!Number.isFinite(number) || Math.abs(number) >= 1e21 || number.toFixed(places) !== text) return null;
+        return number;
+    }
+
     function calculateLoadBreakdown(inputDevices, forecastValue, forecastUnit) {
         if (!Array.isArray(inputDevices)) {
             return { devices: [], deviceLoad: 0, forecastWatt: 0, totalLoad: 0, totalPlugs: 0, precisionInvalidTarget: null, valid: false };
         }
         const devices = [];
         let deviceLoad = 0;
+        let deviceLoadMicroWatts = 0n;
         let totalPlugs = 0;
         let inputsValid = true;
         let precisionInvalidTarget = null;
@@ -61,7 +85,7 @@
                 return;
             }
             const roundedWatts = round(watts);
-            if (roundedWatts === null || !Number.isFinite(deviceLoad + roundedWatts)) {
+            if (roundedWatts === null) {
                 inputsValid = false;
                 return;
             }
@@ -70,9 +94,18 @@
                 precisionInvalidTarget ??= { type: 'device-load', index };
                 return;
             }
+            const rowMicroWatts = toScaledInteger(roundedWatts, 6);
+            const nextDeviceLoadMicroWatts = rowMicroWatts === null ? null : deviceLoadMicroWatts + rowMicroWatts;
+            const nextDeviceLoad = nextDeviceLoadMicroWatts === null ? null : fromScaledInteger(nextDeviceLoadMicroWatts, 6);
+            if (nextDeviceLoad === null) {
+                inputsValid = false;
+                precisionInvalidTarget ??= { type: 'device-load', index };
+                return;
+            }
             const normalized = { name: String(device.name ?? ''), load, unit, watts: roundedWatts, plugs };
             devices.push(normalized);
-            deviceLoad += roundedWatts;
+            deviceLoadMicroWatts = nextDeviceLoadMicroWatts;
+            deviceLoad = nextDeviceLoad;
             totalPlugs += plugs;
         });
         const rawForecast = finiteNumber(forecastValue);
@@ -83,14 +116,23 @@
         if (!['%', 'W'].includes(resolvedForecastUnit)) inputsValid = false;
         const unit = resolvedForecastUnit === 'W' ? 'W' : '%';
         const forecastWatt = value > 0 ? (unit === '%' ? deviceLoad * value / 100 : value) : 0;
-        const roundedDeviceLoad = round(deviceLoad);
         const roundedForecastWatt = round(forecastWatt);
         if (forecastWatt > 0 && roundedForecastWatt === 0) {
             inputsValid = false;
             precisionInvalidTarget ??= { type: 'forecast' };
         }
-        const roundedTotalLoad = roundedDeviceLoad === null || roundedForecastWatt === null
-            ? null : round(roundedDeviceLoad + roundedForecastWatt);
+        const forecastMicroWatts = roundedForecastWatt === null ? null : toScaledInteger(roundedForecastWatt, 6);
+        if (forecastMicroWatts === null) {
+            inputsValid = false;
+            if (forecastWatt > 0) precisionInvalidTarget ??= { type: 'forecast' };
+        }
+        const roundedTotalLoad = forecastMicroWatts === null
+            ? null : fromScaledInteger(deviceLoadMicroWatts + forecastMicroWatts, 6);
+        if (roundedTotalLoad === null) {
+            inputsValid = false;
+            precisionInvalidTarget ??= { type: 'forecast' };
+        }
+        const roundedDeviceLoad = deviceLoad;
         const positiveComponentRoundedAway = (deviceLoad > 0 && roundedDeviceLoad === 0)
             || (forecastWatt > 0 && roundedForecastWatt === 0);
         const valid = inputsValid && !positiveComponentRoundedAway
