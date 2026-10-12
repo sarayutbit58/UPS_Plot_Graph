@@ -841,3 +841,9 @@ These are presentation/packaging findings; this recheck made no application-code
 - Added an exact Ah output-range classifier. Valid but enormous loads that cannot be represented at the app's 0.000001 Ah display precision now receive a specific message instead of a misleading prompt to check voltage or efficiency. The same reason is returned for JSON import rejection.
 - Chrome mobile emulation at 320 × 800 with a 1e12 W load stayed on the battery step, showed the output-range message, had no offscreen elements or horizontal overflow, and had an empty Console.
 - Verification: `npm test` 40/40; `node --check calculations.js`; inline JavaScript syntax check; `git diff --check`.
+
+## Plug Error Focus and CSV UTF-8 Limit Consistency — 2026-10-12
+
+- Invalid plug counts now retain their device-row index in the load-breakdown result. When Next is blocked by a plug count that loses decimal precision, focus moves to that row's plug field instead of the load field. Chrome mobile emulation at 320 × 800 confirmed `1.00000000000000001` focuses the offending plug control and does not overflow the viewport.
+- `parseRuntimeCurveCsv()` now enforces the 256 KB limit by UTF-8 bytes, matching the browser `File.size` check. A CSV with 90,000 ideographic spaces in a quoted numeric cell had fewer than 256,000 JavaScript string units but exceeded 256 KB in UTF-8; it failed before the fix and is rejected now.
+- Verification: `npm test` 41/41; syntax checks and `git diff --check` passed.

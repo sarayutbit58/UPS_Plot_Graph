@@ -747,6 +747,7 @@
         let jsonImportVersion = 0;
         let loadInputValid = true;
         let precisionInvalidTarget = null;
+        let invalidPlugIndex = null;
         let runtimeBatteryWasAutoFilled = false;
         let enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
         let devices = [];
@@ -1085,6 +1086,7 @@
             const forecastUnit = calculatedData.forecastUnit || '%';
             const breakdown = UPScalculations.calculateLoadBreakdown(enteredDevices, forecastValue, forecastUnit);
             precisionInvalidTarget = breakdown.precisionInvalidTarget;
+            invalidPlugIndex = breakdown.invalidPlugIndex;
             if (!breakdown.valid) {
                 loadInputValid = false;
                 devices = [];
@@ -1607,6 +1609,10 @@
                 invalidLoad.focus();
                 return;
             }
+            if (invalidPlugIndex !== null) {
+                document.querySelectorAll('.device-plugs')[invalidPlugIndex]?.focus();
+                return;
+            }
             const invalidPlugs = [...document.querySelectorAll('.device-plugs')].find(input => {
                 if (input.value === '') return false;
                 const value = Number(input.value);
@@ -1688,6 +1694,7 @@
             currentStep = 1;
             loadInputValid = true;
             precisionInvalidTarget = null;
+            invalidPlugIndex = null;
             runtimeBatteryWasAutoFilled = false;
             runtimeSource = 'formula';
             runtimeCurve = null;

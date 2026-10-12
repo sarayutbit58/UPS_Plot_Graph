@@ -203,7 +203,9 @@ test('counts zero-watt device outlets and ignores blank or invalid rows', () => 
 
 test('rejects plug counts whose decimal source is changed by Number conversion', () => {
     const device = { name: 'Router', load: 100, unit: 'W', plugs: '1.00000000000000001' };
-    assert.equal(calculations.calculateLoadBreakdown([device], 0, '%').valid, false);
+    const invalidBreakdown = calculations.calculateLoadBreakdown([device], 0, '%');
+    assert.equal(invalidBreakdown.valid, false);
+    assert.equal(invalidBreakdown.invalidPlugIndex, 0);
     assert.throws(() => calculations.normalizeImportData({
         devices: [device], calculatedData: {},
     }), { name: 'InvalidImportDataError' });
@@ -386,6 +388,13 @@ test('accepts quoted numeric values in manufacturer Runtime CSV files', () => {
         { loadW: 100, runtimeMinutes: 60 },
         { loadW: 200, runtimeMinutes: 30 },
     ]);
+});
+
+test('enforces the Runtime CSV limit in UTF-8 bytes, not JavaScript string units', () => {
+    const csv = `load_w,runtime_minutes\n"100${'　'.repeat(90_000)}","60"\n"200","30"`;
+    assert.ok(csv.length < 256_000);
+    assert.ok(Buffer.byteLength(csv, 'utf8') > 256_000);
+    assert.throws(() => calculations.parseRuntimeCurveCsv(csv), { name: 'InvalidRuntimeCurveError' });
 });
 
 test('detects edits that no longer match an imported Runtime curve provenance', () => {

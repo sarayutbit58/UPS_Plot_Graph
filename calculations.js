@@ -128,7 +128,7 @@
 
     function calculateLoadBreakdown(inputDevices, forecastValue, forecastUnit) {
         if (!Array.isArray(inputDevices)) {
-            return { devices: [], deviceLoad: 0, forecastWatt: 0, totalLoad: 0, totalPlugs: 0, precisionInvalidTarget: null, valid: false };
+            return { devices: [], deviceLoad: 0, forecastWatt: 0, totalLoad: 0, totalPlugs: 0, precisionInvalidTarget: null, invalidPlugIndex: null, valid: false };
         }
         const devices = [];
         let deviceLoad = 0;
@@ -136,6 +136,7 @@
         let totalPlugs = 0;
         let inputsValid = true;
         let precisionInvalidTarget = null;
+        let invalidPlugIndex = null;
         inputDevices.forEach((device, index) => {
             const rawLoad = device && device.load;
             const load = finiteNumber(rawLoad);
@@ -165,6 +166,7 @@
             if (plugs === null || !decimalInputMatchesNumber(rawPlugs, plugs)
                 || !Number.isSafeInteger(plugs) || plugs < 1 || !Number.isSafeInteger(totalPlugs + plugs)) {
                 inputsValid = false;
+                invalidPlugIndex ??= index;
                 return;
             }
             const rowMicroWatts = roundFractionToScaledInteger(wattsNumerator, wattsDenominator, 6);
@@ -234,6 +236,7 @@
             totalLoad: valid ? roundedTotalLoad : 0,
             totalPlugs,
             precisionInvalidTarget,
+            invalidPlugIndex,
             valid,
         };
     }
@@ -381,7 +384,7 @@
     }
 
     function parseRuntimeCurveCsv(csvText) {
-        if (typeof csvText !== 'string' || csvText.length > 256_000) throw invalidRuntimeCurve('ไฟล์ CSV ไม่ถูกต้องหรือมีขนาดใหญ่เกินไป');
+        if (typeof csvText !== 'string' || utf8ByteLength(csvText) > 256_000) throw invalidRuntimeCurve('ไฟล์ CSV ไม่ถูกต้องหรือมีขนาดใหญ่เกินไป');
         const records = [];
         let row = [];
         let field = '';
