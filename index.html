@@ -539,7 +539,7 @@
                         <label class="block text-gray-700 font-medium mb-2">ความจุแบตเตอรี่ (Ah)</label>
                         <input type="number" id="runtimeBatteryAh"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            oninput="calculateRuntime()">
+                            oninput="handleRuntimeBatteryInput()">
                         <p class="text-xs text-gray-400 mt-1">ใส่ค่าจากแบตเตอรี่ที่คุณมีหรือจะซื้อ</p>
                     </div>
                     <div class="enterprise-only">
@@ -688,6 +688,7 @@
         // State
         let currentStep = 1;
         let currentMode = 'basic';
+        let runtimeBatteryWasAutoFilled = false;
         let devices = [];
         let deviceIdCounter = 0;
         let runtimeChart = null;
@@ -734,6 +735,9 @@
             if (devices.some(device => device.unit === 'VA')) {
                 notes.push('มีโหลด VA ที่แปลงเป็น W ด้วย PF 0.8');
             }
+            if (calculatedData.totalPlugs > 0) {
+                notes.push(`นับจำนวนปลั๊ก ${calculatedData.totalPlugs} รู; Enterprise แสดงการคัดกรองจำนวนช่อง UPS`);
+            }
             const note = document.getElementById('basicContextNote');
             note.textContent = notes.length
                 ? `${notes.join(' และ ')} — เปิด Enterprise เพื่อดูหรือแก้ไขรายละเอียด`
@@ -747,6 +751,19 @@
                 ? `${calculatedData.batteryAh} Ah` : '— Ah';
             document.getElementById('dashboardRuntime').textContent = calculatedData.runtime > 0
                 ? `${calculatedData.runtime} นาที` : '— นาที';
+        }
+
+        function syncRuntimeBatteryAh() {
+            const runtimeBattery = document.getElementById('runtimeBatteryAh');
+            if (runtimeBatteryWasAutoFilled || !runtimeBattery.value) {
+                runtimeBattery.value = calculatedData.batteryAh > 0 ? calculatedData.batteryAh : '';
+                runtimeBatteryWasAutoFilled = Boolean(runtimeBattery.value);
+            }
+        }
+
+        function handleRuntimeBatteryInput() {
+            runtimeBatteryWasAutoFilled = false;
+            calculateRuntime();
         }
 
         // Device Management
@@ -1207,8 +1224,7 @@
                 calculateBatteryAh();
             }
             if (step === 4) {
-                const runtimeBattery = document.getElementById('runtimeBatteryAh');
-                if (!runtimeBattery.value) runtimeBattery.value = calculatedData.batteryAh;
+                syncRuntimeBatteryAh();
                 document.getElementById('runtimeVoltage').value = calculatedData.voltage;
                 document.getElementById('runtimeEfficiency').value = calculatedData.efficiency;
                 document.getElementById('runtimePowerW').value = calculatedData.totalLoad;
@@ -1252,8 +1268,7 @@
                 document.getElementById('batteryResult').classList.remove('hidden');
             } else if (step === 3) {
                 // Pre-fill and auto-calculate runtime
-                const runtimeBattery = document.getElementById('runtimeBatteryAh');
-                if (!runtimeBattery.value) runtimeBattery.value = calculatedData.batteryAh;
+                syncRuntimeBatteryAh();
                 document.getElementById('runtimeVoltage').value = calculatedData.voltage;
                 document.getElementById('runtimeEfficiency').value = calculatedData.efficiency;
                 document.getElementById('runtimePowerW').value = calculatedData.totalLoad;
@@ -1277,6 +1292,7 @@
 
         function restart() {
             currentStep = 1;
+            runtimeBatteryWasAutoFilled = false;
             devices = [];
             calculatedData = {
                 totalLoad: 0,
@@ -1419,6 +1435,8 @@
                     // Restore devices
                     devices = importData.devices;
                     calculatedData = importData.calculatedData;
+                    document.getElementById('runtimeBatteryAh').value = '';
+                    runtimeBatteryWasAutoFilled = false;
 
                     // Clear and rebuild device list
                     document.getElementById('deviceList').innerHTML = '';
