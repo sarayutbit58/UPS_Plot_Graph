@@ -96,3 +96,22 @@ test('download fallback preserves Thai text and an importable JSON payload', asy
     assert.equal(restored.devices[0].load, 120);
     assert.match(fixture.alerts[0], /กำลังดาวน์โหลด/);
 });
+
+test('post-selection AbortError reports native save failure without a fallback download', async () => {
+    for (const stage of ['createWritable', 'write', 'close']) {
+        const abort = () => { throw Object.assign(new Error('browser aborted save'), { name: 'AbortError' }); };
+        const fixture = exportFixture(async () => ({ createWritable: async () => {
+            if (stage === 'createWritable') abort();
+            return {
+                async write() { if (stage === 'write') abort(); },
+                async close() { if (stage === 'close') abort(); },
+                async abort() { fixture.events.push('abort'); },
+            };
+        } }));
+        await fixture.run();
+        assert.ok(!fixture.events.includes('download'), stage);
+        assert.equal(fixture.alerts.length, 1, stage);
+        assert.match(fixture.alerts[0], /บันทึกไฟล์ไม่สำเร็จ/, stage);
+        assert.ok(!fixture.alerts[0].includes('✅'), stage);
+    }
+});
