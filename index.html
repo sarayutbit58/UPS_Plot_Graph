@@ -489,11 +489,11 @@
                         </select>
                     </div>
                     <div class="enterprise-only">
-                        <label for="upsEfficiency" class="block text-gray-700 font-medium mb-2">ประสิทธิภาพ UPS (%)</label>
+                        <label for="upsEfficiency" class="block text-gray-700 font-medium mb-2">สมมติฐานประสิทธิภาพ UPS (%)</label>
                         <input type="number" id="upsEfficiency" name="upsEfficiency" value="85" min="50" max="100"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
                             oninput="calculateBatteryAh()">
-                        <p class="text-xs text-gray-400 mt-1">ค่าทั่วไป: 80-90%</p>
+                        <p class="field-help mt-1">ค่าเริ่มต้น 85% เป็นสมมติฐานของสูตร ไม่ใช่ค่าทั่วไปของทุก UPS; ประสิทธิภาพจริงขึ้นกับรุ่นและระดับโหลด</p>
                     </div>
                 </div>
 
@@ -530,7 +530,7 @@
                             readonly>
                     </div>
                     <div class="enterprise-only">
-                        <label for="runtimeEfficiency" class="block text-gray-700 font-medium mb-2">ประสิทธิภาพ UPS (%)</label>
+                        <label for="runtimeEfficiency" class="block text-gray-700 font-medium mb-2">สมมติฐานประสิทธิภาพ UPS (%)</label>
                         <input type="number" id="runtimeEfficiency" name="runtimeEfficiency" value="85"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
                             readonly>
@@ -604,7 +604,7 @@
                             <p id="summaryRuntime" class="text-2xl font-bold text-amber-600">0 นาที</p>
                         </div>
                         <div class="bg-white p-4 rounded-lg shadow-sm">
-                            <p class="text-gray-500 text-sm">ประสิทธิภาพ UPS</p>
+                            <p class="text-gray-500 text-sm">สมมติฐานประสิทธิภาพ UPS</p>
                             <p id="summaryEfficiency" class="text-2xl font-bold text-gray-800">85%</p>
                         </div>
                         <!-- Total Plugs -->
@@ -1465,6 +1465,12 @@
                     backupTime: Number(document.getElementById('backupTimeMin').value),
                     voltage: currentMode === 'basic' ? enterpriseBatterySettings.voltage : Number(document.getElementById('batteryVoltage').value),
                     efficiency: currentMode === 'basic' ? enterpriseBatterySettings.efficiency : Number(document.getElementById('upsEfficiency').value),
+                    runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : Number(document.getElementById('runtimeBatteryAh').value),
+                },
+                calculationSettings: {
+                    backupTime: Number(document.getElementById('backupTimeMin').value),
+                    voltage: currentMode === 'basic' ? 12 : Number(document.getElementById('batteryVoltage').value),
+                    efficiency: currentMode === 'basic' ? 85 : Number(document.getElementById('upsEfficiency').value),
                     runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : Number(document.getElementById('runtimeBatteryAh').value),
                 },
             });

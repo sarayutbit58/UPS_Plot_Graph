@@ -182,6 +182,36 @@ test('round-trips export settings and Forecast through normalized import', () =>
     assert.deepEqual(imported.forecast, { value: 10, unit: '%' });
 });
 
+test('exports battery sizing and Runtime recalculated from the latest form settings', () => {
+    const exported = calculations.buildExportData({
+        devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+        calculatedData: {
+            deviceLoad: 120, totalLoad: 120, totalPlugs: 1,
+            forecastValue: 0, forecastUnit: '%', forecastWatt: 0,
+            batteryAh: 11.764706, backupTime: 60, voltage: 12, efficiency: 85, runtime: 60,
+        },
+        settings: { backupTime: 30, voltage: 24, efficiency: 90, runtimeBatteryAh: null },
+        calculationSettings: { backupTime: 30, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    });
+
+    assert.equal(exported.calculatedData.batteryAh, 5.882353);
+    assert.equal(exported.calculatedData.backupTime, 30);
+    assert.equal(exported.calculatedData.voltage, 12);
+    assert.equal(exported.calculatedData.efficiency, 85);
+    assert.equal(exported.calculatedData.runtime, 30);
+    assert.equal(exported.settings.voltage, 24);
+    assert.equal(exported.settings.efficiency, 90);
+
+    const manualCapacityExport = calculations.buildExportData({
+        devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+        calculatedData: exported.calculatedData,
+        settings: { backupTime: 30, voltage: 24, efficiency: 90, runtimeBatteryAh: 11.76 },
+        calculationSettings: { backupTime: 30, voltage: 12, efficiency: 85, runtimeBatteryAh: 11.76 },
+    });
+    assert.equal(manualCapacityExport.calculatedData.batteryAh, 5.882353);
+    assert.equal(manualCapacityExport.calculatedData.runtime, 59.98);
+});
+
 test('keeps compatibility with the previous v1.2 export shape and legacy Forecast watt fields', () => {
     const previousExport = calculations.normalizeImportData({
         version: '1.2',

@@ -209,12 +209,39 @@
         return { devices, settings, forecast: { value: forecastValue, unit: forecastUnit } };
     }
 
-    function buildExportData({ devices, calculatedData, settings, exportDate = new Date() }) {
+    function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, exportDate = new Date() }) {
+        const forecastValue = finiteNumber(calculatedData.forecastValue) ?? 0;
+        const forecastUnit = calculatedData.forecastUnit || '%';
+        const breakdown = calculateLoadBreakdown(devices, forecastValue, forecastUnit);
+        const activeBackupTime = finiteNumber(calculationSettings.backupTime);
+        const activeVoltage = finiteNumber(calculationSettings.voltage);
+        const activeEfficiency = finiteNumber(calculationSettings.efficiency);
+        const batteryAh = breakdown.valid && breakdown.totalLoad > 0
+            ? calculateBatteryAh(breakdown.totalLoad, activeBackupTime, activeVoltage, activeEfficiency)
+            : null;
+        const runtimeCapacityAh = calculationSettings.runtimeBatteryAh ?? settings.runtimeBatteryAh ?? batteryAh;
+        const runtime = breakdown.valid && breakdown.totalLoad > 0
+            ? calculateRuntimeMinutes(runtimeCapacityAh, activeVoltage, activeEfficiency, breakdown.totalLoad)
+            : null;
+        const exportCalculatedData = {
+            ...calculatedData,
+            deviceLoad: breakdown.valid ? breakdown.deviceLoad : 0,
+            totalLoad: breakdown.valid ? breakdown.totalLoad : 0,
+            totalPlugs: breakdown.valid ? breakdown.totalPlugs : 0,
+            forecastValue,
+            forecastUnit,
+            forecastWatt: breakdown.valid ? breakdown.forecastWatt : 0,
+            batteryAh,
+            backupTime: activeBackupTime,
+            voltage: activeVoltage,
+            efficiency: activeEfficiency,
+            runtime,
+        };
         return {
             version: '1.3', appName: 'UPS Picker', exportDate: exportDate.toISOString(),
             devices: devices.map(device => ({ ...device })),
-            calculatedData: { ...calculatedData },
-            forecast: { value: calculatedData.forecastValue, unit: calculatedData.forecastUnit, watt: calculatedData.forecastWatt },
+            calculatedData: exportCalculatedData,
+            forecast: { value: forecastValue, unit: forecastUnit, watt: exportCalculatedData.forecastWatt },
             settings: { ...settings },
         };
     }
