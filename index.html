@@ -506,6 +506,7 @@
                     <p class="text-gray-700 mb-2">ขนาดแบตเตอรี่ที่ต้องการโดยประมาณ</p>
                     <p id="batteryAhResult" class="text-4xl font-bold text-amber-600" aria-live="polite" aria-atomic="true">0 Ah</p>
                     <p class="basic-only field-help mt-2">ใช้สมมติฐานเริ่มต้น 12 V และประสิทธิภาพ 85% — โหมด Enterprise ปรับค่าเหล่านี้ได้</p>
+                    <p class="field-help mt-2">เป็นค่าประมาณจากสูตรพลังงาน ไม่แทนการเลือกแบตเตอรี่จริง; Runtime ยังขึ้นกับอัตราคายประจุ จุดตัดแรงดัน อายุ และอุณหภูมิ</p>
                 </div>
             </div>
 
@@ -1567,6 +1568,9 @@
                         console.error('Unexpected import failure:', error);
                     }
                 }
+            };
+            reader.onerror = function () {
+                alert('❌ อ่านไฟล์ไม่ได้ กรุณาเลือกไฟล์ JSON อีกครั้ง');
             };
             reader.readAsText(file);
 
