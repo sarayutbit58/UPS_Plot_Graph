@@ -548,7 +548,7 @@
 
                 <div id="manufacturerCurvePanel" class="enterprise-only hidden mb-5 p-4 rounded-xl border border-indigo-200 bg-indigo-50">
                     <h3 class="font-semibold text-indigo-900 mb-2">ข้อมูลรุ่นและเส้นโค้งผู้ผลิต</h3>
-                    <p class="field-help mb-4">นำเข้า CSV แบบ comma-separated ที่มีหัวตาราง <code>load_w,runtime_minutes</code> และใช้จุดทศนิยม (.) ระบบจะแทรกค่าระหว่างจุดเท่านั้น และไม่คาดคะเนนอกช่วงข้อมูล</p>
+                    <p class="field-help mb-4">นำเข้า CSV แบบ comma-separated ที่มีหัวตาราง <code>load_w,runtime_minutes</code> และใช้จุดทศนิยม (.) ระบบประมาณด้วยการแทรกเชิงเส้นระหว่างจุดเท่านั้น และไม่คาดคะเนนอกช่วงข้อมูล</p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label for="runtimeCurveModel" class="field-label">รุ่น UPS</label>
@@ -824,12 +824,12 @@
             if (curvePanel) curvePanel.classList.toggle('hidden', !useManufacturerCurve);
             const basis = useManufacturerCurve
                 ? runtimeCurve
-                    ? `เส้นโค้งผู้ผลิต · ${runtimeCurve.model} · ${runtimeCurve.batteryConfig}`
+                    ? `เส้นโค้งผู้ผลิต (แทรกเชิงเส้น) · ${runtimeCurve.model} · ${runtimeCurve.batteryConfig}`
                     : 'เลือกเส้นโค้งผู้ผลิต แต่ยังไม่ได้โหลดข้อมูล'
                 : 'ค่าประมาณจากสูตร Ah เชิงเส้น';
             const resultBasis = document.getElementById('runtimeBasisLabel');
             if (resultBasis) resultBasis.textContent = useManufacturerCurve && runtimeCurve
-                ? `${basis} — แทรกค่าเฉพาะระหว่างจุดข้อมูล; ไม่มีการคาดคะเนนอกช่วง`
+                ? `${basis} — แทรกเชิงเส้นระหว่างจุดข้อมูล; ไม่มีการคาดคะเนนอกช่วง`
                 : basis;
             const summaryBasis = document.getElementById('summaryRuntimeBasis');
             if (summaryBasis) summaryBasis.textContent = useManufacturerCurve && runtimeCurve
@@ -1238,7 +1238,7 @@
                             ? `โหลด ${powerW} W อยู่นอกช่วง ${runtimeCurve.points[0].loadW}–${runtimeCurve.points[runtimeCurve.points.length - 1].loadW} W ของเส้นโค้งนี้`
                             : 'ตรวจสอบความจุแบตเตอรี่ แรงดัน และประสิทธิภาพ';
                 document.getElementById('runtimeBasisLabel').textContent = useManufacturerCurve
-                    ? 'ใช้เฉพาะจุดและช่วงที่มีข้อมูลผู้ผลิต; ไม่มีการคาดคะเนนอกช่วง'
+                    ? 'ใช้เฉพาะจุดและแทรกเชิงเส้นระหว่างจุดที่มีข้อมูลผู้ผลิต; ไม่มีการคาดคะเนนอกช่วง'
                     : 'ค่าประมาณจากสูตร Ah เชิงเส้น';
                 document.getElementById('runtimeResult').classList.remove('hidden');
                 document.getElementById('chartContainer').classList.add('hidden');
@@ -1255,7 +1255,7 @@
             document.getElementById('runtimeLoadDisplay').textContent = powerW;
             document.getElementById('runtimeMinutes').textContent = `${formatRuntimeMinutes(runtimeMinutes)} นาที`;
             document.getElementById('runtimeBasisLabel').textContent = useManufacturerCurve && runtimeCurve
-                ? `ข้อมูล ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · แทรกค่าระหว่างจุดผู้ผลิตเท่านั้น`
+                ? `ข้อมูล ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · แทรกเชิงเส้นระหว่างจุดผู้ผลิตเท่านั้น`
                 : 'ค่าประมาณจากสูตร Ah เชิงเส้น';
             document.getElementById('runtimeResult').classList.remove('hidden');
             updateDashboardMetrics();
@@ -1284,7 +1284,7 @@
             });
 
             const sourceNote = useManufacturerCurve && runtimeCurve
-                ? `กราฟผู้ผลิต ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · ${runtimeCurve.source}${runtimeCurve.conditions ? ` · เงื่อนไข: ${runtimeCurve.conditions}` : ''} (แทรกค่าเฉพาะระหว่างจุด)`
+                ? `กราฟผู้ผลิต ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · ${runtimeCurve.source}${runtimeCurve.conditions ? ` · เงื่อนไข: ${runtimeCurve.conditions}` : ''} (แทรกเชิงเส้นเฉพาะระหว่างจุด)`
                 : 'กราฟนี้เป็นค่าประมาณจากสูตร Ah แบบเชิงเส้น ไม่ใช่กราฟทดสอบของ UPS รุ่นใดรุ่นหนึ่ง โหมดพื้นฐานใช้ค่าเริ่มต้น 12 V และประสิทธิภาพ 85% สำหรับยืนยันการใช้งานจริงให้เทียบกราฟ Runtime จากผู้ผลิตตามรุ่นและชุดแบตเตอรี่';
             document.getElementById('runtimeEstimateNote').textContent = sourceNote;
             document.getElementById('runtimeChart').setAttribute('aria-label', useManufacturerCurve
@@ -1454,7 +1454,9 @@
             }
 
             if (Number.isFinite(calculatedData.runtime) && calculatedData.runtime < 30) {
-                recommendations.push('Runtime ต่ำกว่า 30 นาทีตามค่าประมาณนี้ — พิจารณาเพิ่มความจุแบตเตอรี่');
+                recommendations.push(currentMode === 'enterprise' && runtimeSource === 'manufacturer' && runtimeCurve
+                    ? 'Runtime จากกราฟผู้ผลิตนี้ต่ำกว่า 30 นาที — ตรวจรุ่นหรือชุดแบตเตอรี่ทางเลือกจากกราฟผู้ผลิตที่ตรงกัน'
+                    : 'Runtime ต่ำกว่า 30 นาทีตามค่าประมาณนี้ — พิจารณาเพิ่มความจุแบตเตอรี่');
             }
 
             if (currentMode === 'enterprise') {

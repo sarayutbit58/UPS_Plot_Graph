@@ -804,3 +804,10 @@ These are presentation/packaging findings; this recheck made no application-code
 - Independent exact-rational audit reported zero mismatches across a 504-case ordinary Runtime formula grid, 500 generated interpolation segments, and 20,000 VA-screening inputs. These sampled checks do not prove accuracy outside the validated input domains.
 - Current verification: `npm test` 34/34; `node --check calculations.js`; inline JavaScript syntax check; `git diff --check`. Chrome mobile/touch browser checks covered 320, 390, 768, 1024, and 1366 px with no horizontal overflow observed. Basic and Enterprise flow values matched their formulas; Console showed no messages and app requests returned HTTP 200.
 - Remaining evidence limits: no physical phone/notebook, iOS Safari/Android WebView matrix, or screen-reader certification was available. Formula Runtime and Ah remain clearly labelled estimates; model-specific Runtime depends on the user importing the correct manufacturer curve/configuration and its actual source. A mathematically exact computation cannot guarantee UPS behavior when those source assumptions are wrong.
+
+## Runtime Recommendation and Interpolation Disclosure — 2026-10-12
+
+- In manufacturer-curve mode, a Runtime below 30 minutes now recommends checking an alternative UPS model/battery configuration and its matching manufacturer curve. It no longer suggests increasing Ah using a separate formula when the displayed Runtime came from a fixed manufacturer curve.
+- Named the linear interpolation method in the CSV instructions, Runtime basis, and Summary so a between-point value is not mistaken for a published measurement.
+- Chrome browser check at 320 × 800 confirmed the Runtime basis, manufacturer-only recommendation, and CSV instructions identify linear interpolation; no horizontal overflow was observed.
+- Independent review found no arithmetic mismatch in the sampled formula/interpolation/VA cases and confirmed empty backup time and efficiency above 100% are blocked with inline validation. This remains sampled verification, not proof of bug-free operation or physical UPS runtime accuracy.
