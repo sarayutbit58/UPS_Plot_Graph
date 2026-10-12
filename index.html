@@ -248,6 +248,8 @@
             font-size: 12px;
             line-height: 1.6;
         }
+        #runtimeBasisLabel, #runtimeEstimateNote, #summaryRuntimeBasis { overflow-wrap: anywhere; }
+        #summaryDeviceList > div > span:first-child { min-width: 0; overflow-wrap: anywhere; }
         .data-table-wrap { overflow-x: auto; }
         .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
         .data-table th, .data-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
@@ -1036,7 +1038,6 @@
                                 <option value="W">W</option>
                                 <option value="VA">VA</option>
                             </select>
-                            <p class="field-help">เลือก VA ระบบใช้ PF 0.8 แปลงเป็น W</p>
                         </div>
                         <div class="enterprise-only md:col-span-2">
                             <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
@@ -1048,6 +1049,7 @@
                             </button>
                         </div>
                     </div>
+                    <p class="enterprise-only field-help mt-2">ค่า VA จะแปลงเป็น W ด้วยสมมติฐาน PF 0.8</p>
                 </div>
             `;
             document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);
@@ -1917,7 +1919,6 @@
                                             <option value="W" ${device.unit === 'W' ? 'selected' : ''}>W</option>
                                             <option value="VA" ${device.unit === 'VA' ? 'selected' : ''}>VA</option>
                                         </select>
-                                        <p class="field-help">เลือก VA ระบบใช้ PF 0.8 แปลงเป็น W</p>
                                     </div>
                                     <div class="enterprise-only md:col-span-2">
                                         <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
@@ -1929,6 +1930,7 @@
                                         </button>
                                     </div>
                                 </div>
+                                <p class="enterprise-only field-help mt-2">ค่า VA จะแปลงเป็น W ด้วยสมมติฐาน PF 0.8</p>
                             </div>
                         `;
                         document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);

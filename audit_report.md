@@ -847,3 +847,9 @@ These are presentation/packaging findings; this recheck made no application-code
 - Invalid plug counts now retain their device-row index in the load-breakdown result. When Next is blocked by a plug count that loses decimal precision, focus moves to that row's plug field instead of the load field. Chrome mobile emulation at 320 × 800 confirmed `1.00000000000000001` focuses the offending plug control and does not overflow the viewport.
 - `parseRuntimeCurveCsv()` now enforces the 256 KB limit by UTF-8 bytes, matching the browser `File.size` check. A CSV with 90,000 ideographic spaces in a quoted numeric cell had fewer than 256,000 JavaScript string units but exceeded 256 KB in UTF-8; it failed before the fix and is rejected now.
 - Verification: `npm test` 41/41; syntax checks and `git diff --check` passed.
+
+## Long Metadata and Enterprise Row Alignment — 2026-10-12
+
+- Reproduced Summary overflow from an accepted 81-character unbroken manufacturer source URL at 320/390/768 px and from a 150-character unbroken device name at 1366 px. Added `overflow-wrap:anywhere` to Runtime provenance/note text and the summary device-name flex child; 320, 390, 768, 1024, and 1366 px now show no offscreen elements or horizontal overflow with both long values.
+- The Enterprise device unit select previously sat 26–62 px above the adjacent plug-count field because its PF help paragraph was inside the grid item. Moved that help below the input row; across the same viewports the select and plug input now align within 2 px.
+- Verification used Chrome viewport/touch emulation on the local current worktree; physical device/browser matrix remains untested.
