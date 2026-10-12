@@ -904,3 +904,26 @@ test('exports Basic results with 12 V and 85 percent while retaining Enterprise 
         assert.equal(calculations.normalizeImportData(exported).mode, 'basic');
     }
 });
+
+test('keeps imported chart interpolation on the source segment before display rounding', () => {
+    for (const [lower, upper, midpoint] of [
+        [1.004, 1.003, 1.0035],
+        [0.009, 0.006, 0.0075],
+        [1e-320, 5e-324, 5.005e-321],
+        [1e20, 1e-320, 5e19],
+    ]) {
+        const points = [{ loadW: 100, runtimeMinutes: lower }, { loadW: 200, runtimeMinutes: upper }];
+        const curve = calculations.buildManufacturerRuntimeCurve(points, 150);
+        assert.equal(curve[1].runtimeMinutes, midpoint);
+        assert.ok(curve[0].runtimeMinutes >= curve[1].runtimeMinutes);
+        assert.ok(curve[1].runtimeMinutes >= curve[2].runtimeMinutes);
+        assert.equal(curve[0].runtimeMinutes, lower);
+        assert.equal(curve[2].runtimeMinutes, upper);
+    }
+});
+
+test('retains valid imported Runtime when exact hundredths exceed Number precision', () => {
+    const points = [{ loadW: 1, runtimeMinutes: 1e20 }, { loadW: 2, runtimeMinutes: 1.003 }];
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 1.5), 5e19);
+    assert.equal(calculations.buildManufacturerRuntimeCurve(points, 1.5)[1].runtimeMinutes, 5e19);
+});

@@ -1292,7 +1292,7 @@
             });
 
             const sourceNote = useManufacturerCurve && runtimeCurve
-                ? `กราฟที่นำเข้า ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · อ้างอิงที่ผู้ใช้ระบุ: ${runtimeCurve.source}${runtimeCurve.conditions ? ` · เงื่อนไข: ${runtimeCurve.conditions}` : ''} (แทรกเชิงเส้นเฉพาะระหว่างจุด)`
+                ? `กราฟที่นำเข้า ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · อ้างอิงที่ผู้ใช้ระบุ: ${runtimeCurve.source}${runtimeCurve.conditions ? ` · เงื่อนไข: ${runtimeCurve.conditions}` : ''} (แทรกเชิงเส้นเฉพาะระหว่างจุด; กราฟใช้ค่าก่อนปัด จึงอาจละเอียดกว่าตัวเลขสรุป)`
                 : 'กราฟนี้เป็นค่าประมาณจากสูตร Ah แบบเชิงเส้น ไม่ใช่กราฟทดสอบของ UPS รุ่นใดรุ่นหนึ่ง โหมดพื้นฐานใช้ค่าเริ่มต้น 12 V และประสิทธิภาพ 85% สำหรับยืนยันการใช้งานจริงให้เทียบกราฟ Runtime จากผู้ผลิตตามรุ่นและชุดแบตเตอรี่';
             document.getElementById('runtimeEstimateNote').textContent = sourceNote;
             document.getElementById('runtimeChart').setAttribute('aria-label', useManufacturerCurve

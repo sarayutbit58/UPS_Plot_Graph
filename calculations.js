@@ -477,7 +477,7 @@
         );
     }
 
-    function calculateRuntimeFromCurve(inputPoints, currentLoadW) {
+    function calculateRuntimeFromCurve(inputPoints, currentLoadW, preservePrecision = false) {
         const points = normalizeRuntimeCurvePoints(inputPoints);
         const load = finiteNumber(currentLoadW);
         if (!points || load === null || !decimalInputMatchesNumber(currentLoadW, load) || load < points[0].loadW
@@ -499,12 +499,23 @@
         const resultNumerator = lowerRuntime.numerator * runtimeDropDenominator * spanNumerator * distanceDenominator
             - runtimeDropNumerator * distanceNumerator * lowerRuntime.denominator * spanDenominator;
         const resultDenominator = lowerRuntime.denominator * runtimeDropDenominator * spanNumerator * distanceDenominator;
+        const preciseRuntime = () => {
+            // Convert the exact fraction with 17 significant decimal digits, including subnormal times.
+            let exponent = resultNumerator.toString().length - resultDenominator.toString().length;
+            const belowPower = exponent >= 0
+                ? resultNumerator < resultDenominator * (10n ** BigInt(exponent))
+                : resultNumerator * (10n ** BigInt(-exponent)) < resultDenominator;
+            if (belowPower) exponent--;
+            const places = Math.max(0, 16 - exponent);
+            const preciseScaled = roundFractionToScaledInteger(resultNumerator, resultDenominator, places);
+            const precise = Number(scaledIntegerText(preciseScaled, places));
+            return Number.isFinite(precise) && precise > 0 ? precise : null;
+        };
+        if (preservePrecision) return preciseRuntime();
         const scaled = roundFractionToScaledInteger(resultNumerator, resultDenominator, 2);
         if (scaled === null) return null;
-        if (scaled > 0n) return fromScaledInteger(scaled, 2);
-        const loadRatio = (load - lower.loadW) / (upper.loadW - lower.loadW);
-        const unrounded = lower.runtimeMinutes + loadRatio * (upper.runtimeMinutes - lower.runtimeMinutes);
-        return Number.isFinite(unrounded) && unrounded > 0 ? unrounded : null;
+        if (scaled > 0n) return fromScaledInteger(scaled, 2) ?? preciseRuntime();
+        return preciseRuntime();
     }
 
     function buildManufacturerRuntimeCurve(inputPoints, currentLoadW) {
@@ -516,7 +527,7 @@
         if (!curve.some(point => point.currentLoad)) {
             curve.push({
                 loadW: current,
-                runtimeMinutes: calculateRuntimeFromCurve(points, current),
+                runtimeMinutes: calculateRuntimeFromCurve(points, current, true),
                 currentLoad: true,
             });
             curve.sort((a, b) => a.loadW - b.loadW);
