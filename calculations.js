@@ -224,13 +224,14 @@
 
     function buildRuntimeCurve(ampHours, voltage, efficiency, currentLoadW) {
         const current = finiteNumber(currentLoadW);
-        if (current === null || current <= 0) return [];
+        if (current === null || !decimalInputMatchesNumber(currentLoadW, current) || current <= 0
+            || calculateRuntimeMinutes(ampHours, voltage, efficiency, current) === null) return [];
         const loads = [...new Set([50, 100, 150, 200, 250, 300, current])].sort((a, b) => a - b);
         return loads.map(loadW => ({
             loadW,
             runtimeMinutes: calculateRuntimeMinutes(ampHours, voltage, efficiency, loadW),
             currentLoad: loadW === current,
-        }));
+        })).filter(point => Number.isFinite(point.runtimeMinutes));
     }
 
     function recommendUpsVA(loadW) {

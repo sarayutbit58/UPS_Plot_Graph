@@ -393,8 +393,8 @@
             <div class="workspace-card">
 
             <!-- Step 1: Device List -->
-            <div id="step1" class="step-content">
-                <h2 class="text-2xl font-bold text-primary-700 mb-2">โหลดอุปกรณ์</h2>
+            <div id="step1" class="step-content" role="region" aria-labelledby="step1-heading">
+                <h2 id="step1-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">โหลดอุปกรณ์</h2>
                 <p class="text-gray-500 mb-6">เพิ่มอุปกรณ์และระบุกำลังไฟที่ต้องการสำรอง</p>
                 <p class="basic-only field-help mb-4">กรอกกำลังไฟ (W) ของอุปกรณ์แต่ละรายการ หากมีโหลด VA จากข้อมูลเดิม ระบบใช้สมมติฐาน PF 0.8 แปลงเป็น W</p>
 
@@ -482,8 +482,8 @@
             </div>
 
             <!-- Step 2: Battery Calculator -->
-            <div id="step2" class="step-content hidden">
-                <h2 class="text-2xl font-bold text-primary-700 mb-2">ขนาดแบตเตอรี่ที่ต้องการ</h2>
+            <div id="step2" class="step-content hidden" role="region" aria-labelledby="step2-heading">
+                <h2 id="step2-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">ขนาดแบตเตอรี่ที่ต้องการ</h2>
                 <p class="text-gray-500 mb-6">ระบุเวลาสำรองที่ต้องการ แล้วดูความจุแบตเตอรี่ประมาณการ</p>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -533,8 +533,8 @@
             </div>
 
             <!-- Step 3: Runtime Calculator -->
-            <div id="step3" class="step-content hidden">
-                <h2 class="text-2xl font-bold text-primary-700 mb-2">เวลาสำรองไฟ</h2>
+            <div id="step3" class="step-content hidden" role="region" aria-labelledby="step3-heading">
+                <h2 id="step3-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">เวลาสำรองไฟ</h2>
                 <p class="text-gray-500 mb-6">ใส่ความจุแบตเตอรี่ที่มี เพื่อประมาณ Runtime ตามโหลด</p>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -598,8 +598,8 @@
             </div>
 
             <!-- Step 4: Summary -->
-            <div id="step4" class="step-content hidden">
-                <h2 class="text-2xl font-bold text-primary-700 mb-2">สรุปผล</h2>
+            <div id="step4" class="step-content hidden" role="region" aria-labelledby="step4-heading">
+                <h2 id="step4-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">สรุปผล</h2>
                 <p class="text-gray-500 mb-6">ทบทวนโหลด ความจุแบตเตอรี่ และข้อเสนอแนะก่อนเลือก UPS</p>
 
                 <div class="summary-card p-6 rounded-xl mb-6">
@@ -845,7 +845,7 @@
                             <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" placeholder="จำนวนรู" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" value="1" oninput="updateTotalLoad()">
                         </div>
                         <div class="md:col-span-2">
-                            <button onclick="removeDevice(${deviceIdCounter})" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
+                            <button onclick="removeDevice(${deviceIdCounter})" aria-label="ลบรายการอุปกรณ์ ${deviceIdCounter}" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
                                 ลบ
                             </button>
                         </div>
@@ -1284,14 +1284,14 @@
 
             if (currentStep < 4) {
                 currentStep++;
-                showStep(currentStep);
+                showStep(currentStep, true);
             }
         }
 
         function prevStep() {
             if (currentStep > 1) {
                 currentStep--;
-                showStep(currentStep);
+                showStep(currentStep, true);
             }
         }
 
@@ -1339,7 +1339,7 @@
                 }
             }
             currentStep = step;
-            showStep(step);
+            showStep(step, true);
         }
 
         function validateCurrentStep() {
@@ -1385,7 +1385,7 @@
             (loadInputs[0] || forecast).focus();
         }
 
-        function showStep(step) {
+        function showStep(step, moveFocus = false) {
             // Hide all steps
             document.querySelectorAll('.step-content').forEach(el => el.classList.add('hidden'));
 
@@ -1423,6 +1423,7 @@
             }
 
             updateStepIndicators();
+            if (moveFocus) document.getElementById(`step${step}-heading`).focus();
         }
 
         function updateStepIndicators() {
@@ -1634,7 +1635,7 @@
                                         <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" value="${escapeHtml(device.plugs)}" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="updateTotalLoad()">
                                     </div>
                                     <div class="md:col-span-2">
-                                        <button onclick="removeDevice(${deviceIdCounter})" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
+                                        <button onclick="removeDevice(${deviceIdCounter})" aria-label="ลบรายการอุปกรณ์ ${deviceIdCounter}" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
                                             ลบ
                                         </button>
                                     </div>
@@ -1664,7 +1665,7 @@
 
                     // Go to step 1 to review
                     currentStep = 1;
-                    showStep(1);
+                    showStep(1, true);
 
                 } catch (error) {
                     alert('❌ ไม่สามารถโหลดไฟล์ได้ กรุณาตรวจสอบไฟล์ JSON');

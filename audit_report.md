@@ -739,3 +739,12 @@ These are presentation/packaging findings; this recheck made no application-code
 - Import previously accepted backup times below the UI minimum of one minute. A `1e-320` minute request could also be rounded up to 0.000001 Ah despite an exact requirement near 1.96e-321 Ah.
 - Ah sizing and JSON import now reject backup times below one minute. Ah requirements below 1 µAh return `null` instead of an exaggerated minimum; the exact 1 µAh boundary remains valid.
 - Regression probes confirm 0.5 minute and `1e-320` minute imports fail, while 0.006 W / 1 min / 100 V / 100% returns exactly 0.000001 Ah and a smaller load returns `null`.
+
+## Runtime Curve Guard and Phone Accessibility — 2026-10-12
+
+- Reproduced `buildRuntimeCurve(11.76, 12, 85, '9007199254740993')` returning a plotted load of 9007199254740992 W after JavaScript rounded the original string. The helper now rejects current-load inputs that do not exactly survive numeric conversion and returns no curve when Ah/voltage/efficiency cannot calculate the current point.
+- Reproduced an extreme Ah input where one lower-load curve point had `runtimeMinutes: null` beside numeric points. Curve output now omits unrepresentable points, so every returned chart/table value is finite and the current-load point remains required.
+- Regression tests for unsafe current load, unsafe Ah, invalid efficiency, and out-of-domain curve points failed before the guards and pass after. Full Node suite: 21/21 passing.
+- Added row-specific accessible names to dynamic device delete buttons and labelled the four steps as regions. Successful Next, Back, direct-step, and import navigation now moves focus to the new step heading; invalid input still receives focus on the offending field.
+- Mobile touch emulation in Chrome 154 at 390 × 844 accepted `.5` W and advanced to the battery step with 0.04902 Ah; focus moved to that step heading. At 320 × 800 in Enterprise mode, mode controls stayed on one line, document width matched the viewport, and two delete buttons had distinct accessible names. Notebook viewport at 1366 × 768 also had no horizontal overflow and retained the sidebar plus main workspace.
+- These are Chromium viewport/touch emulation checks, not physical phone, iOS Safari, Android WebView, notebook hardware, or screen-reader certification. The repo still has no native wrapper or installable PWA manifest/service worker. Runtime remains a linear Ah estimate; a specific UPS requires its manufacturer curve for model-level accuracy.

@@ -274,6 +274,15 @@ test('builds a unique numeric runtime curve that matches the exact current load'
 
     const fractional = calculations.buildRuntimeCurve(11.76, 12, 85, 105.6);
     assert.ok(fractional.some(point => point.loadW === 105.6 && point.currentLoad));
+
+    assert.deepEqual(calculations.buildRuntimeCurve(11.76, 12, 85, '9007199254740993'), []);
+    assert.deepEqual(calculations.buildRuntimeCurve('9007199254740993', 12, 85, 100), []);
+    assert.deepEqual(calculations.buildRuntimeCurve(11.76, 12, 150, 100), []);
+
+    const boundedCurve = calculations.buildRuntimeCurve('1e20', 12, 85, 100_000_000);
+    assert.ok(boundedCurve.length > 0);
+    assert.ok(boundedCurve.every(point => Number.isFinite(point.runtimeMinutes)));
+    assert.ok(!boundedCurve.some(point => point.loadW === 50));
 });
 
 test('calculates PF-based UPS VA screening and validates outlet boundaries', () => {
