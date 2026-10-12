@@ -755,6 +755,10 @@ These are presentation/packaging findings; this recheck made no application-code
 - These manufacturer sources confirm that a generic Ah/efficiency equation cannot promise model-level Runtime accuracy. A future exact-by-model path needs the UPS model, battery/cabinet configuration, load basis, and published curve conditions together. Recommended behavior is to calculate from sourced manufacturer points, interpolate only inside the covered load range, and mark other loads/configurations unsupported; retain the current formula as a clearly labelled estimate.
 - Sources reviewed 2026-10-12: [Eaton UPS runtime graphs](https://www.eaton.com/us/en-us/products/backup-power-ups-surge-it-power-distribution/backup-power-ups/ups-runtime-graphs.html), [Schneider Electric runtime table guidance](https://www.se.com/jp/ja/faqs/FAQ000243339/), [Eaton 9395P Runtime Charts](https://www.eaton.com/content/dam/eaton/products/backup-power-ups-surge-it-power-distribution/backup-power-ups/power-xpert-9395/power-xpert-9395p-ups-250-600-kva-runtime-charts-en.pdf).
 
+## Repeat JSON Import Recovery — 2026-10-12
+
+- Repeated the same JSON file selection twice through the browser file input. Both `change` events fired, both imports completed, the app applied the same 120 W data, and the input value was empty after each read. This confirms the handler's immediate input reset allows a corrected or repeated file with the same path to be selected again.
+
 ## Latest Mobile Flow and Lighthouse Recheck — 2026-10-12
 
 - Rechecked the current pushed application in Chrome 154 at 390 × 844 with mobile/touch emulation. Entering `.5` W and advancing through all steps produced 0.04902 Ah, 60 minutes, and the same values in Summary; focus moved to each new step heading and document width stayed 390 px.
