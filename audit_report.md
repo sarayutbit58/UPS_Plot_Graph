@@ -646,3 +646,9 @@ These are presentation/packaging findings; this recheck made no application-code
 
 - Traced `planOutlets()` through Enterprise Summary: configurations up to 12 outlets select one screening unit; 13–24 produce two, and 25 produces three. When more than 12 outlets are required, the UI says the count exceeds a single UPS and labels the unit count approximate rather than showing `0` outlets as a valid per-unit capacity.
 - Regression checks cover 4, 5, 12, 13, 24, and 25 plugs. No new outlet-count defect found; actual outlet availability remains model-specific.
+
+## Zero-Watt Device Outlet Handling — 2026-10-12
+
+- Found that a specified 0 W device was discarded before its plugs were counted, and JSON import rejected it. The load remains zero, but explicit device rows now retain their outlet count and round-trip through JSON; blank rows remain ignored.
+- Browser repro: 100 W / 1 plug plus 0 W / 2 plugs produced a 100 W total and 3 plugs in Summary; Export and Import retained both devices and the 3-plug total. At 390 × 844 there was no horizontal overflow or console error.
+- Regression test was observed failing before the fix (expected 3 plugs, got 1). Full `npm test` now passes 15/15; `git diff --check` passes.

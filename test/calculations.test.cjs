@@ -14,17 +14,18 @@ test('converts VA with the existing 0.8 PF assumption and applies Forecast to de
     assert.equal(result.totalPlugs, 3);
 });
 
-test('adds a fixed-W Forecast and ignores non-finite or non-positive device loads', () => {
+test('counts zero-watt device outlets and ignores blank or invalid rows', () => {
     const result = calculations.calculateLoadBreakdown([
         { name: 'Router', load: 100, unit: 'W', plugs: 1 },
-        { name: 'Zero', load: 0, unit: 'W', plugs: 1 },
+        { name: 'Idle', load: 0, unit: 'W', plugs: 2 },
+        { name: 'Blank', load: '', unit: 'W', plugs: 4 },
     ], 25, 'W');
 
     assert.equal(result.deviceLoad, 100);
     assert.equal(result.forecastWatt, 25);
     assert.equal(result.totalLoad, 125);
-    assert.equal(result.totalPlugs, 1);
-    assert.equal(result.devices.length, 1);
+    assert.equal(result.totalPlugs, 3);
+    assert.equal(result.devices.length, 2);
     assert.equal(calculations.calculateLoadBreakdown([{ load: Infinity, unit: 'W', plugs: 1 }], 0, '%').valid, false);
     assert.equal(calculations.calculateLoadBreakdown([{ load: 0.001, unit: 'W', plugs: 1 }], 0, '%').totalLoad, 0.001);
     assert.equal(calculations.calculateLoadBreakdown([{ load: 1e308, unit: 'W', plugs: 1 }], 0, '%').valid, false);
@@ -34,6 +35,23 @@ test('adds a fixed-W Forecast and ignores non-finite or non-positive device load
     assert.equal(calculations.calculateLoadBreakdown([{ load: 100, unit: 'W', plugs: 1 }], -1, '%').valid, false);
     assert.equal(calculations.calculateLoadBreakdown([{ load: 100, unit: 'watts', plugs: 1 }], 10, 'watts').valid, false);
     assert.equal(calculations.calculateLoadBreakdown(null, 0, '%').valid, false);
+
+    const imported = calculations.normalizeImportData({
+        devices: [
+            { name: 'Idle', load: 0, unit: 'W', plugs: 2 },
+            { name: 'Router', load: 100, unit: 'W', plugs: 1 },
+        ],
+        calculatedData: {},
+    });
+    assert.equal(imported.devices.length, 2);
+    assert.equal(calculations.calculateLoadBreakdown(imported.devices, 0, '%').totalPlugs, 3);
+    const exported = calculations.buildExportData({
+        mode: 'enterprise',
+        devices: imported.devices,
+        calculatedData: { forecastValue: 0, forecastUnit: '%', totalLoad: 100 },
+        settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    });
+    assert.equal(calculations.normalizeImportData(exported).devices[0].load, 0);
 });
 
 test('calculates required Ah and rejects invalid sizing inputs', () => {

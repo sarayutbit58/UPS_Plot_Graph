@@ -39,7 +39,6 @@
                 if (rawLoad !== undefined && rawLoad !== null && !(typeof rawLoad === 'string' && rawLoad.trim() === '')) inputsValid = false;
                 return;
             }
-            if (load === 0) return;
             if (load < 0) {
                 inputsValid = false;
                 return;
@@ -171,7 +170,7 @@
             if (!device || typeof device !== 'object' || Array.isArray(device)) throw invalidImport('ข้อมูลอุปกรณ์ไม่ถูกต้อง');
             const load = finiteNumber(device.load);
             const plugs = device.plugs === undefined ? 1 : finiteNumber(device.plugs);
-            if (load === null || load <= 0 || plugs === null || !Number.isSafeInteger(plugs) || plugs < 1 || !['W', 'VA'].includes(device.unit ?? 'W') || (device.name !== undefined && typeof device.name !== 'string')) {
+            if (load === null || load < 0 || plugs === null || !Number.isSafeInteger(plugs) || plugs < 1 || !['W', 'VA'].includes(device.unit ?? 'W') || (device.name !== undefined && typeof device.name !== 'string')) {
                 throw invalidImport('ข้อมูลโหลดหรือจำนวนปลั๊กไม่ถูกต้อง');
             }
             return { name: String(device.name ?? ''), load, unit: device.unit ?? 'W', plugs };
