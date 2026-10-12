@@ -577,11 +577,16 @@
         }
         const breakdown = calculateLoadBreakdown(devices, rawForecastValue, forecastUnit);
         if (!breakdown.valid) throw invalidImport('โหลดรวมอยู่นอกขอบเขตที่คำนวณได้');
-        if (mode === null && (runtimeSource === 'manufacturer'
-            || settings.voltage !== 12 || settings.efficiency !== 85
-            || devices.some(device => device.unit === 'VA' || device.plugs !== 1)
-            || forecastNumber > 0)) {
-            mode = 'enterprise';
+        if (mode === null) {
+            const hasEnterpriseMarkers = runtimeSource === 'manufacturer'
+                || devices.some(device => device.unit === 'VA' || device.plugs !== 1)
+                || forecastNumber > 0;
+            const hasSavedEnterpriseSettings = settings.voltage !== 12 || settings.efficiency !== 85;
+            const hasBasicCalculatedSettings = decimalInputMatchesNumber(data.calculatedData.voltage, 12)
+                && decimalInputMatchesNumber(data.calculatedData.efficiency, 85);
+            if (hasEnterpriseMarkers) mode = 'enterprise';
+            else if (hasSavedEnterpriseSettings && hasBasicCalculatedSettings) mode = 'basic';
+            else if (hasSavedEnterpriseSettings) mode = 'enterprise';
         }
         if (runtimeSource === 'manufacturer' && mode !== 'enterprise') {
             throw invalidImport('ต้องใช้โหมด Enterprise กับกราฟ Runtime ของผู้ผลิต');

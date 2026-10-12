@@ -738,6 +738,16 @@ test('keeps compatibility with the previous v1.2 export shape and legacy Forecas
         settings: { backupTime: 60, voltage: 24, efficiency: 90 },
     });
     assert.equal(legacyEnterpriseSettings.mode, 'enterprise');
+
+    const legacyBasicWithSavedEnterprisePreferences = calculations.normalizeImportData({
+        version: '1.2',
+        devices: [{ name: 'Router', load: 120, unit: 'W' }],
+        calculatedData: { backupTime: 60, voltage: 12, efficiency: 85 },
+        settings: { backupTime: 60, voltage: 24, efficiency: 90 },
+    });
+    assert.equal(legacyBasicWithSavedEnterprisePreferences.mode, 'basic');
+    assert.equal(legacyBasicWithSavedEnterprisePreferences.settings.voltage, 24);
+    assert.equal(legacyBasicWithSavedEnterprisePreferences.settings.efficiency, 90);
 });
 
 test('exports a Basic-mode snapshot with formula Runtime even if an inactive curve is supplied', () => {
