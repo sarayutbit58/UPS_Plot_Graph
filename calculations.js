@@ -6,6 +6,45 @@
     'use strict';
 
     const DEFAULT_POWER_FACTOR = 0.8;
+    const MAX_DEVICES = 500;
+    const MAX_IMPORT_FILE_BYTES = 1_000_000;
+
+    function parseImportJson(jsonText) {
+        if (typeof jsonText !== 'string' || jsonText.length > MAX_IMPORT_FILE_BYTES) {
+            throw invalidImport('ไฟล์ JSON ไม่ถูกต้องหรือมีขนาดใหญ่เกินไป');
+        }
+        JSON.parse(jsonText);
+        let preserved = '';
+        let inString = false;
+        let escaped = false;
+        const numberToken = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+        for (let index = 0; index < jsonText.length; index++) {
+            const character = jsonText[index];
+            if (inString) {
+                preserved += character;
+                if (escaped) escaped = false;
+                else if (character === '\\') escaped = true;
+                else if (character === '"') inString = false;
+                continue;
+            }
+            if (character === '"') {
+                inString = true;
+                preserved += character;
+                continue;
+            }
+            if (character === '-' || (character >= '0' && character <= '9')) {
+                numberToken.lastIndex = index;
+                const match = numberToken.exec(jsonText);
+                if (match) {
+                    preserved += JSON.stringify(match[0]);
+                    index += match[0].length - 1;
+                    continue;
+                }
+            }
+            preserved += character;
+        }
+        return JSON.parse(preserved);
+    }
 
     function finiteNumber(value) {
         if (value === null || value === undefined || typeof value === 'boolean') return null;
@@ -192,10 +231,22 @@
             || e.numerator < 50n * e.denominator || e.numerator > 100n * e.denominator) return null;
         const numerator = p.numerator * t.numerator * 100n * v.denominator * e.denominator;
         const denominator = p.denominator * t.denominator * 60n * v.numerator * e.numerator;
-        const scaledNumerator = numerator * 1_000_000n;
-        if (scaledNumerator < denominator) return null;
-        const scaledAh = (scaledNumerator + denominator - 1n) / denominator;
+        if (numerator * 1_000_000n < denominator) return null;
+        const scaledAh = (numerator * 1_000_000n + denominator - 1n) / denominator;
         return fromScaledInteger(scaledAh, 6);
+    }
+
+    function isBelowAhResolution(powerW, minutes, voltage, efficiency) {
+        const numericInputs = [powerW, minutes, voltage, efficiency].map(finiteNumber);
+        if (numericInputs.some(value => value === null)
+            || [powerW, minutes, voltage, efficiency].some((value, index) => !decimalInputMatchesNumber(value, numericInputs[index]))) return false;
+        const p = decimalFraction(powerW), t = decimalFraction(minutes);
+        const v = decimalFraction(voltage), e = decimalFraction(efficiency);
+        if (!p || !t || !v || !e || p.numerator <= 0n || t.numerator < t.denominator || v.numerator <= 0n
+            || e.numerator < 50n * e.denominator || e.numerator > 100n * e.denominator) return false;
+        const numerator = p.numerator * t.numerator * 100n * v.denominator * e.denominator;
+        const denominator = p.denominator * t.denominator * 60n * v.numerator * e.numerator;
+        return numerator * 1_000_000n < denominator;
     }
 
     function calculateRuntimeMinutes(ampHours, voltage, efficiency, powerW) {
@@ -445,6 +496,7 @@
         if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.devices) || !data.calculatedData || typeof data.calculatedData !== 'object' || Array.isArray(data.calculatedData)) {
             throw invalidImport('รูปแบบไฟล์ไม่ถูกต้อง');
         }
+        if (data.devices.length > MAX_DEVICES) throw invalidImport(`ไฟล์มีอุปกรณ์เกินขีดจำกัด ${MAX_DEVICES} รายการ`);
         const mode = data.mode === undefined || data.mode === null ? null : data.mode;
         if (mode !== null && !['basic', 'enterprise'].includes(mode)) throw invalidImport('โหมดการใช้งานไม่ถูกต้อง');
         const runtimeSource = data.runtimeSource === undefined || data.runtimeSource === null ? 'formula' : data.runtimeSource;
@@ -515,7 +567,10 @@
         const breakdown = calculateLoadBreakdown(devices, rawForecastValue, forecastUnit);
         if (!breakdown.valid) throw invalidImport('โหลดรวมอยู่นอกขอบเขตที่คำนวณได้');
         if (breakdown.totalLoad > 0 && calculateBatteryAh(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency) === null) {
-            throw invalidImport('ค่าตั้งค่าแบตเตอรี่ทำให้คำนวณ Ah ไม่ได้');
+            const belowResolution = isBelowAhResolution(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency);
+            throw invalidImport(belowResolution
+                ? 'ค่าความจุที่ต้องการต่ำกว่า 0.000001 Ah ซึ่งเป็นความละเอียดขั้นต่ำที่รองรับ'
+                : 'ค่าตั้งค่าแบตเตอรี่ทำให้คำนวณ Ah ไม่ได้');
         }
         if (runtimeSource === 'manufacturer' && breakdown.totalLoad > 0
             && calculateRuntimeFromCurve(runtimeCurve.points, breakdown.totalLoad) === null) {
@@ -586,5 +641,5 @@
         };
     }
 
-    return { calculateLoadBreakdown, calculateBatteryAh, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, normalizeImportData, buildExportData };
+    return { calculateLoadBreakdown, calculateBatteryAh, isBelowAhResolution, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, parseImportJson, normalizeImportData, buildExportData, MAX_DEVICES, MAX_IMPORT_FILE_BYTES };
 }));

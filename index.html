@@ -406,6 +406,7 @@
                     class="w-full py-3 border-2 border-dashed border-primary-300 text-primary-600 rounded-xl hover:bg-primary-50 transition-all font-medium flex items-center justify-center gap-2">
                     <span class="text-xl">+</span> เพิ่มอุปกรณ์
                 </button>
+                <p id="deviceLimitNotice" class="field-help mt-2 text-amber-700 hidden" role="status" aria-live="polite"></p>
 
                 <!-- Forecast Watt Section -->
                 <div class="enterprise-only mt-6 p-4 bg-amber-50 rounded-xl border border-amber-200">
@@ -918,7 +919,7 @@
                     runtimeCurvePoints = points;
                     runtimeCurve = candidate;
                     document.getElementById('runtimeCurveStatus').textContent = `โหลดแล้ว ${points.length} จุด (${points[0].loadW}–${points[points.length - 1].loadW} W)`;
-                    setRuntimeSource('manufacturer');
+                    setRuntimeSource(runtimeSource);
                 } catch (error) {
                     document.getElementById('runtimeCurveStatus').textContent = UPScalculations.runtimeCurveImportFailureMessage(error, runtimeCurve && runtimeCurve.model);
                 } finally {
@@ -1009,6 +1010,13 @@
 
         // Device Management
         function addDevice() {
+            if (document.querySelectorAll('.device-card').length >= UPScalculations.MAX_DEVICES) {
+                const notice = document.getElementById('deviceLimitNotice');
+                notice.textContent = `เพิ่มได้สูงสุด ${UPScalculations.MAX_DEVICES} รายการ เพื่อให้หน้าจอยังตอบสนองได้ดี`;
+                notice.classList.remove('hidden');
+                return;
+            }
+            document.getElementById('deviceLimitNotice').classList.add('hidden');
             deviceIdCounter++;
             const deviceHtml = `
                 <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200" data-converted-from-va="false">
@@ -1052,6 +1060,7 @@
                 const cardIndex = cards.indexOf(element);
                 const nextCard = cards[cardIndex + 1] || cards[cardIndex - 1];
                 element.remove();
+                document.getElementById('deviceLimitNotice').classList.add('hidden');
                 updateTotalLoad();
                 (nextCard?.querySelector('.device-load') || document.getElementById('addDeviceBtn')).focus();
             }
@@ -1185,12 +1194,20 @@
             const batteryAh = UPScalculations.calculateBatteryAh(powerW, timeMin, voltage, efficiency);
             if (batteryAh === null) {
                 calculatedData.batteryAh = null;
-                document.getElementById('batteryAhResult').textContent = 'ตรวจสอบโหลด เวลา แรงดัน และประสิทธิภาพ';
+                const batteryResultText = document.getElementById('batteryAhResult');
+                const belowResolution = UPScalculations.isBelowAhResolution(powerW, timeMin, voltage, efficiency);
+                batteryResultText.textContent = belowResolution
+                    ? 'ต่ำกว่าความละเอียดขั้นต่ำ 0.000001 Ah'
+                    : 'ตรวจสอบโหลด เวลา แรงดัน และประสิทธิภาพ';
+                batteryResultText.classList.remove('text-4xl');
+                batteryResultText.classList.add('text-base');
                 document.getElementById('batteryResult').classList.remove('hidden');
                 updateDashboardMetrics();
                 return;
             }
             calculatedData.batteryAh = batteryAh;
+            document.getElementById('batteryAhResult').classList.remove('text-base');
+            document.getElementById('batteryAhResult').classList.add('text-4xl');
             calculatedData.voltage = voltage;
             calculatedData.efficiency = efficiency;
             calculatedData.backupTime = Number(timeMin);
@@ -1661,6 +1678,8 @@
         }
 
         function restart() {
+            runtimeCurveImportVersion++;
+            jsonImportVersion++;
             currentStep = 1;
             loadInputValid = true;
             precisionInvalidTarget = null;
@@ -1819,12 +1838,17 @@
             const requestVersion = ++jsonImportVersion;
             const file = event.target.files[0];
             if (!file) return;
+            if (file.size > UPScalculations.MAX_IMPORT_FILE_BYTES) {
+                alert('❌ ไฟล์ JSON ต้องมีขนาดไม่เกิน 1 MB');
+                event.target.value = '';
+                return;
+            }
 
             const reader = new FileReader();
             reader.onload = function (e) {
                 if (requestVersion !== jsonImportVersion) return;
                 try {
-                    const importData = JSON.parse(e.target.result);
+                    const importData = UPScalculations.parseImportJson(String(e.target.result || ''));
                     // Validate the complete payload before changing application state or DOM.
                     const normalized = UPScalculations.normalizeImportData(importData);
                     runtimeCurveImportVersion++;
@@ -1859,6 +1883,7 @@
 
                     // Clear and rebuild device list
                     document.getElementById('deviceList').innerHTML = '';
+                    document.getElementById('deviceLimitNotice').classList.add('hidden');
                     deviceIdCounter = 0;
 
                     devices.forEach(device => {
@@ -1920,7 +1945,10 @@
                     showStep(1, true);
 
                 } catch (error) {
-                    alert('❌ ไม่สามารถโหลดไฟล์ได้ กรุณาตรวจสอบไฟล์ JSON');
+                    const reason = error instanceof SyntaxError
+                        ? 'รูปแบบ JSON ไม่ถูกต้อง'
+                        : error.name === 'InvalidImportDataError' ? error.message : 'ตรวจสอบไฟล์ JSON';
+                    alert(`❌ ไม่สามารถโหลดไฟล์ได้: ${reason}`);
                     if (!(error instanceof SyntaxError) && error.name !== 'InvalidImportDataError') {
                         console.error('Unexpected import failure:', error);
                     }

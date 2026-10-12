@@ -223,6 +223,13 @@ test('calculates required Ah and rejects invalid sizing inputs', () => {
     assert.equal(calculations.calculateBatteryAh(1e308, 1e-308, 1e-308, 100), null);
 });
 
+test('identifies Ah requirements below the supported 1 microamp-hour resolution', () => {
+    assert.equal(calculations.isBelowAhResolution(0.00001, 1, 12, 100), true);
+    assert.equal(calculations.isBelowAhResolution(0.006, 1, 100, 100), false);
+    assert.equal(calculations.isBelowAhResolution(0.003, 1, 100, 100), true);
+    assert.equal(calculations.isBelowAhResolution(120, 0.5, 12, 85), false);
+});
+
 test('calculates runtime with the inverse formula and handles zero or invalid capacity', () => {
     assert.equal(calculations.calculateRuntimeMinutes(11.76, 12, 85, 120), 59.98);
     assert.equal(calculations.calculateRuntimeMinutes(0, 12, 85, 120), 0);
@@ -532,6 +539,29 @@ test('normalizes valid imports and rejects malformed device/settings data before
     }
 });
 
+test('preserves raw JSON numeric tokens so import can reject precision-losing values', () => {
+    const parsed = calculations.parseImportJson(`{
+        "devices": [{"name":"Boundary","load":1.00000049999999999,"unit":"W","plugs":1}],
+        "calculatedData": {},
+        "forecast": {"value": 0, "unit": "%"}
+    }`);
+    assert.equal(parsed.devices[0].load, '1.00000049999999999');
+    assert.throws(() => calculations.normalizeImportData(parsed), { name: 'InvalidImportDataError' });
+    assert.equal(calculations.parseImportJson('{"name":"1.00000049999999999","value":120}').name, '1.00000049999999999');
+    assert.throws(() => calculations.parseImportJson('{"value":01}'), { name: 'SyntaxError' });
+    assert.throws(() => calculations.parseImportJson(' '.repeat(calculations.MAX_IMPORT_FILE_BYTES + 1)), { name: 'InvalidImportDataError' });
+});
+
+test('rejects JSON imports above the supported device count', () => {
+    const data = {
+        devices: Array.from({ length: 501 }, (_, index) => ({ name: `Device ${index}`, load: 1, unit: 'W', plugs: 1 })),
+        calculatedData: {},
+    };
+    assert.throws(() => calculations.normalizeImportData(data), { name: 'InvalidImportDataError' });
+    data.devices.pop();
+    assert.equal(calculations.normalizeImportData(data).devices.length, calculations.MAX_DEVICES);
+});
+
 test('round-trips export settings and Forecast through normalized import', () => {
     const date = new Date('2026-10-12T00:00:00.000Z');
     const exported = calculations.buildExportData({
@@ -540,7 +570,7 @@ test('round-trips export settings and Forecast through normalized import', () =>
         settings: { backupTime: 45, voltage: 24, efficiency: 90, runtimeBatteryAh: 30 },
         exportDate: date,
     });
-    const imported = calculations.normalizeImportData(exported);
+    const imported = calculations.normalizeImportData(calculations.parseImportJson(JSON.stringify(exported)));
     assert.equal(exported.exportDate, date.toISOString());
     assert.equal(imported.devices[0].unit, 'VA');
     assert.equal(imported.settings.runtimeBatteryAh, 30);
