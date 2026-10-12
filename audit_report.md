@@ -788,3 +788,8 @@ These are presentation/packaging findings; this recheck made no application-code
 - `buildExportData()` now infers Enterprise mode when manufacturer Runtime is selected and the caller omits mode, allowing its output to round-trip through JSON import. Explicit Basic mode remains subject to existing validation.
 - Added regression coverage for quoted CSV, metadata matching, manufacturer export/import round-trip, and the published Vertiv curve table. Confirmed each of the three new Node regressions failed before implementation, then passed after the changes.
 - Verification: `npm test` 31/31; `node --check calculations.js`; inline JavaScript syntax check; `git diff --check`. Chrome mobile/touch emulation at 320 × 800 verified changed-model invalidation stays visible, quoted CSV parsing succeeds, changed metadata during a pending CSV read is rejected, and stale JSON and CSV completions cannot overwrite the latest import. Document width remained 320 px and Chrome Console was empty. This is viewport emulation, not physical device testing.
+
+## Annotated Mobile and Startup Findings Recheck — 2026-10-12
+
+- Rechecked at 320 × 800 in Chrome mobile/touch emulation: Basic and Enterprise buttons each stayed 44 px tall with `white-space: nowrap`; a 100 W KPI rendered on one line; the first-step button already displayed “ถัดไป: ขนาดแบตเตอรี่ →”; document width equalled the 320 px viewport.
+- Confirmed the page uses the checked-in Tailwind stylesheet rather than the Tailwind CDN, and `data:,` favicon prevents the prior `/favicon.ico` 404. Console had no messages. These annotation findings were already addressed in the current branch before this follow-up; no extra code change was needed.
