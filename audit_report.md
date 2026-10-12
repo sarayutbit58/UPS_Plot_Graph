@@ -863,3 +863,9 @@ These are presentation/packaging findings; this recheck made no application-code
 - JSON import now accepts a UTF-8 BOM before the JSON object while retaining numeric-token precision validation.
 - Chrome mobile/touch emulation at 320, 390, 768, 1024, and 1366 px kept document width equal to viewport width. This is browser emulation; physical phone/notebook and native wrapper behavior remain untested.
 - Verification after these changes: `npm test` 42/42; `node --check calculations.js`; inline JavaScript parse (2 scripts); `git diff --check`; Chrome Console empty.
+
+## Basic Import Validation and Export Assumption Consistency — 2026-10-12
+
+- Confirmed import validation checked saved Enterprise preferences instead of active Basic assumptions. A 0.00002 W / 60-minute Basic snapshot retaining 48 V / 100% was wrongly rejected, while a 0.000007 W snapshot retaining 12 V / 50% was accepted despite falling below the active Basic Ah resolution. Validation now uses 12 V / 85% for Basic sizing and formula Runtime, preserving saved preferences separately.
+- A read-only subagent probe confirmed `buildExportData()` with explicit Basic mode and omitted `calculationSettings` exported 24 V / 90% results from saved preferences. For 100 W / 15 minutes / 10 Ah, it emitted 1.157408 Ah and 129.6 minutes instead of the Basic 2.450981 Ah and 61.2 minutes. The builder now resolves active assumptions from the exported mode for both default and explicitly supplied calculation settings.
+- Both new regression tests failed before their fixes and passed afterward. Full `npm test` passed 44/44; `node --check calculations.js` and `git diff --check` passed. These changes affect shared calculation/import/export logic; no UI layout changed in this pass. Physical device and native browser coverage remain unverified.

@@ -643,9 +643,10 @@
         if (runtimeSource === 'manufacturer' && mode !== 'enterprise') {
             throw invalidImport('ต้องใช้โหมด Enterprise กับกราฟ Runtime ของผู้ผลิต');
         }
-        if (breakdown.totalLoad > 0 && calculateBatteryAh(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency) === null) {
-            const belowResolution = isBelowAhResolution(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency);
-            const beyondOutputRange = isAhRequirementBeyondOutputRange(breakdown.totalLoad, settings.backupTime, settings.voltage, settings.efficiency);
+        const activeSettings = resolveActiveBatterySettings(mode, settings);
+        if (breakdown.totalLoad > 0 && calculateBatteryAh(breakdown.totalLoad, settings.backupTime, activeSettings.voltage, activeSettings.efficiency) === null) {
+            const belowResolution = isBelowAhResolution(breakdown.totalLoad, settings.backupTime, activeSettings.voltage, activeSettings.efficiency);
+            const beyondOutputRange = isAhRequirementBeyondOutputRange(breakdown.totalLoad, settings.backupTime, activeSettings.voltage, activeSettings.efficiency);
             throw invalidImport(belowResolution
                 ? 'ค่าความจุที่ต้องการต่ำกว่า 0.000001 Ah ซึ่งเป็นความละเอียดขั้นต่ำที่รองรับ'
                 : beyondOutputRange
@@ -657,7 +658,7 @@
             throw invalidImport('โหลดอยู่นอกช่วงกราฟ Runtime ของผู้ผลิต');
         }
         if (runtimeSource === 'formula' && settings.runtimeBatteryAh !== null && breakdown.totalLoad > 0
-            && calculateRuntimeMinutes(settings.runtimeBatteryAh, settings.voltage, settings.efficiency, breakdown.totalLoad) === null) {
+            && calculateRuntimeMinutes(settings.runtimeBatteryAh, activeSettings.voltage, activeSettings.efficiency, breakdown.totalLoad) === null) {
             throw invalidImport('ค่าความจุแบตเตอรี่ทำให้คำนวณ Runtime ไม่ได้');
         }
         return { devices, settings, forecast: { value: forecastNumber, unit: forecastUnit }, mode, runtimeSource, runtimeCurve };
@@ -676,13 +677,14 @@
         const activeCalculationSettings = runtimeBatteryWasAutoFilled
             ? { ...calculationSettings, runtimeBatteryAh: null }
             : calculationSettings;
+        const activeBatterySettings = resolveActiveBatterySettings(exportMode, activeCalculationSettings);
         const rawForecastValue = calculatedData.forecastValue ?? 0;
         const forecastValue = canonicalNumericOrRaw(rawForecastValue);
         const forecastUnit = calculatedData.forecastUnit || '%';
         const breakdown = calculateLoadBreakdown(devices, forecastValue, forecastUnit);
         const rawBackupTime = activeCalculationSettings.backupTime;
-        const rawVoltage = activeCalculationSettings.voltage;
-        const rawEfficiency = activeCalculationSettings.efficiency;
+        const rawVoltage = activeBatterySettings.voltage;
+        const rawEfficiency = activeBatterySettings.efficiency;
         const activeBackupTime = canonicalNumericOrRaw(rawBackupTime);
         const activeVoltage = canonicalNumericOrRaw(rawVoltage);
         const activeEfficiency = canonicalNumericOrRaw(rawEfficiency);

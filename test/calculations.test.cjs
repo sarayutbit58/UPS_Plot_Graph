@@ -868,3 +868,39 @@ test('uses Basic calculation assumptions while preserving saved Enterprise prefe
     });
     assert.deepEqual(settings, { voltage: 24, efficiency: 90, backupTime: 60 });
 });
+
+test('validates imported Basic Ah using active assumptions instead of saved Enterprise preferences', () => {
+    const payload = (load, voltage, efficiency) => ({
+        mode: 'basic',
+        devices: [{ name: 'Resolution boundary', load, unit: 'W', plugs: 1 }],
+        calculatedData: { voltage: 12, efficiency: 85 },
+        settings: { backupTime: 60, voltage, efficiency },
+        forecast: { value: 0, unit: '%' },
+    });
+    const accepted = calculations.normalizeImportData(payload(0.00002, 48, 100));
+    assert.equal(accepted.mode, 'basic');
+    assert.equal(accepted.settings.voltage, 48);
+    assert.throws(() => calculations.normalizeImportData(payload(0.000007, 12, 50)), {
+        name: 'InvalidImportDataError',
+        message: 'ค่าความจุที่ต้องการต่ำกว่า 0.000001 Ah ซึ่งเป็นความละเอียดขั้นต่ำที่รองรับ',
+    });
+});
+
+test('exports Basic results with 12 V and 85 percent while retaining Enterprise settings', () => {
+    const payload = {
+        mode: 'basic',
+        devices: [{ name: 'Load', load: 100, unit: 'W', plugs: 1 }],
+        calculatedData: { forecastValue: 0, forecastUnit: '%' },
+        settings: { backupTime: 15, voltage: 24, efficiency: 90, runtimeBatteryAh: 10 },
+    };
+    for (const extra of [{}, { calculationSettings: payload.settings }]) {
+        const exported = calculations.buildExportData({ ...payload, ...extra });
+        assert.equal(exported.calculatedData.voltage, 12);
+        assert.equal(exported.calculatedData.efficiency, 85);
+        assert.equal(exported.calculatedData.batteryAh, 2.450981);
+        assert.equal(exported.calculatedData.runtime, 61.2);
+        assert.equal(exported.settings.voltage, 24);
+        assert.equal(exported.settings.efficiency, 90);
+        assert.equal(calculations.normalizeImportData(exported).mode, 'basic');
+    }
+});
