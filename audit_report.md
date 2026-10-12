@@ -884,3 +884,11 @@ These are presentation/packaging findings; this recheck made no application-code
 - The original browser reproduction now shows null Runtime / unavailable KPI / no chart after both valid and invalid edits, then recovers to 30 minutes. Chrome mobile/touch emulation at 320 px verified Basic auto-capacity time edits, Enterprise manual 10 Ah voltage edits (102 minutes at 24 V), efficiency edits (30 minutes at 50%), and imported-curve time edits (54 minutes retained from the same synthetic curve). Manual Ah and selected Runtime source were preserved; document width matched viewport and Console was empty.
 - Browser fixtures are synthetic. Physical phone/native browser validation remains unverified.
 - Verification for this pass: `npm test` 46/46, inline JavaScript parse (2 scripts), and `git diff --check` passed.
+
+## Actual Notebook Edge Journey — 2026-10-12
+
+- Revalidated clean HEAD `1dd7b24` and opened a separate test tab in the user's connected Edge browser on this Windows notebook, using local server `http://127.0.0.1:8125/`. This expands notebook evidence beyond the Chrome viewport emulation previously recorded. The host had approximately 248 MB available physical memory; testing used the already-running browser and one short-lived tab, with no installation or downloads.
+- Exercised controls through visible UI locators: Basic 120 W / 60 minutes produced 11.764706 Ah and 60-minute Runtime. Returning to battery sizing and editing time to 30 cleared the Runtime KPI; proceeding to Summary showed 5.882353 Ah, 12 V / 85%, and 30 minutes.
+- Switched to Enterprise, entered 150 VA, two plugs, and 10% Forecast, then selected 24 V / 90%. Summary showed device load 120 W plus 12 W Forecast = 132 W, 3.055556 Ah, 30-minute Runtime, two plugs, and 300 VA screening. The rendered summary and screenshot agreed with the UI values.
+- Read-only DOM measurement found viewport/document width both 1114 px; Edge captured no warning/error console entries. No new defect was reproduced in these journeys. Source/calculation code was unchanged in this pass, so the prior 46/46 Node result is historical rather than a new test run.
+- Remaining evidence gaps include physical mobile browsers, native Save File Picker operation, and screen readers. A question about the user's main phone/browser is pending; that answer alone does not constitute device validation.
