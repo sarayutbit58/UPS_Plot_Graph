@@ -588,3 +588,4 @@ These are presentation/packaging findings; this recheck made no application-code
 - Positive sub-0.01-minute Runtime display was exercised in Chrome: underlying result `0.0009999978` remained available to the chart, while the main result, KPI, summary, and table all displayed `<0.01 นาที` rather than overstating it as 0.01 minute.
 - Zero-Ah is an accepted capacity input and yields a valid `0 นาที`; the dashboard, main result, and summary now show the same value. An uncalculated Runtime remains `— นาที`.
 - Live 320 × 640 check confirmed initial Runtime `— นาที` and then 0 Ah consistently shows `0 นาที` in the result, dashboard, summary, and table; no browser console messages.
+- Keyboard error handling: invalid backup time keeps Step 2 active, focuses `backupTimeMin`, and announces the inline message through a polite live region; invalid Runtime Ah keeps Step 3 active, focuses `runtimeBatteryAh`, and announces its message. Chrome console remained empty.

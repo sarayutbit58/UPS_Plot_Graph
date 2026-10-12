@@ -504,7 +504,7 @@
 
                 <div id="batteryResult" class="hidden mt-6 p-6 result-highlight rounded-xl">
                     <p class="text-gray-700 mb-2">ขนาดแบตเตอรี่ที่ต้องการโดยประมาณ</p>
-                    <p id="batteryAhResult" class="text-4xl font-bold text-amber-600">0 Ah</p>
+                    <p id="batteryAhResult" class="text-4xl font-bold text-amber-600" aria-live="polite" aria-atomic="true">0 Ah</p>
                     <p class="basic-only field-help mt-2">ใช้สมมติฐานเริ่มต้น 12 V และประสิทธิภาพ 85% — โหมด Enterprise ปรับค่าเหล่านี้ได้</p>
                 </div>
             </div>
@@ -550,7 +550,7 @@
                 <div id="runtimeResult" class="hidden mt-6 p-6 result-highlight rounded-xl">
                     <p class="text-gray-700 text-center mb-2">ระยะเวลาสำรองไฟโดยประมาณสำหรับโหลด <span
                             id="runtimeLoadDisplay">0</span> W:</p>
-                    <p id="runtimeMinutes" class="text-4xl font-bold text-amber-600 text-center">0 นาที</p>
+                    <p id="runtimeMinutes" class="text-4xl font-bold text-amber-600 text-center" aria-live="polite" aria-atomic="true">0 นาที</p>
                 </div>
 
                 <div id="chartContainer" class="hidden mt-8">
@@ -1219,11 +1219,17 @@
             }
             if (currentStep === 2) {
                 calculateBatteryAh();
-                if (!Number.isFinite(calculatedData.batteryAh)) return;
+                if (!Number.isFinite(calculatedData.batteryAh)) {
+                    document.getElementById('backupTimeMin').focus();
+                    return;
+                }
             }
             if (currentStep === 3) {
                 calculateRuntime();
-                if (!Number.isFinite(calculatedData.runtime)) return;
+                if (!Number.isFinite(calculatedData.runtime)) {
+                    document.getElementById('runtimeBatteryAh').focus();
+                    return;
+                }
             }
             // Note: Pre-filling and calculations now handled in showStep()
 
