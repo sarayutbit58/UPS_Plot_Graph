@@ -494,3 +494,12 @@ const CONFIG = {
 
 *Report Generated: Automated Static Analysis*
 *File Audited: /workspace/index.html (1129 lines)*
+
+---
+
+## UX Refactor Update — 2026-10-12
+
+- Replaced the top progress strip with a labeled left navigation rail, a persistent load/battery/runtime summary, and a Basic / Enterprise mode switch.
+- Basic mode keeps the core W input and calculations visible. Enterprise mode reveals the existing VA conversion, outlet counts, Forecast, editable assumptions, and JSON import/export controls.
+- Kept the existing calculation expressions and defaults; added a visible estimate limitation and a table alternative for chart values.
+- The previously reported unsanitized device-name rendering in the summary and JSON import paths remains outside this UX refactor.
