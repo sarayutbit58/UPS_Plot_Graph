@@ -620,7 +620,7 @@
                     <p class="field-help mb-3">ใช้เป็นแนวทางคัดกรองเบื้องต้น โปรดตรวจสอบกำลัง W/VA และ Runtime กับข้อมูลผู้ผลิต</p>
                     <ul id="recommendations" class="text-blue-600 text-sm space-y-1">
                         <li>• คัดกรอง VA ด้วยสมมติฐาน PF 0.8 และเผื่อ 30%; ยืนยันพิกัด W/VA กับรุ่นจริง</li>
-                        <li>• พิจารณา UPS แบบ Online สำหรับอุปกรณ์ที่ต้องการความเสถียรสูง</li>
+                        <li>• เลือก topology ตามความสำคัญ/ความไวของโหลด สภาพไฟ สภาพแวดล้อม และงบประมาณ; ตรวจเวลาถ่ายโอนกับรูปคลื่นตามรุ่นจริง</li>
                         <li>• ตรวจสอบจำนวน Outlet ให้เพียงพอกับอุปกรณ์</li>
                     </ul>
                 </div>
@@ -1193,12 +1193,7 @@
             }
 
             if (currentMode === 'enterprise') {
-                const upsType = UPScalculations.recommendUpsType(calculatedData.totalLoad);
-                if (upsType === 'online') {
-                    recommendations.push('พิจารณา UPS แบบ Online Double Conversion สำหรับอุปกรณ์สำคัญ');
-                } else if (upsType === 'line-interactive') {
-                    recommendations.push('ค่าโหลดนี้เข้าเกณฑ์คัดกรองเดิมสำหรับ UPS แบบ Line Interactive');
-                }
+                recommendations.push('ยังไม่มีข้อมูลความสำคัญของโหลดหรือคุณภาพไฟ จึงไม่เลือก Online หรือ Line-interactive จาก W อย่างเดียว');
                 if (calculatedData.forecastWatt > 0) {
                     recommendations.push(`รวม Forecast ${calculatedData.forecastWatt} W สำหรับการขยายในอนาคตแล้ว`);
                     recommendations.push('Forecast เพิ่มเฉพาะกำลังไฟ; จำนวนรูปลั๊กนับจากอุปกรณ์ที่ระบุเท่านั้น');
