@@ -1193,9 +1193,10 @@
             }
 
             if (currentMode === 'enterprise') {
-                if (calculatedData.totalLoad > 500) {
+                const upsType = UPScalculations.recommendUpsType(calculatedData.totalLoad);
+                if (upsType === 'online') {
                     recommendations.push('พิจารณา UPS แบบ Online Double Conversion สำหรับอุปกรณ์สำคัญ');
-                } else {
+                } else if (upsType === 'line-interactive') {
                     recommendations.push('ค่าโหลดนี้เข้าเกณฑ์คัดกรองเดิมสำหรับ UPS แบบ Line Interactive');
                 }
                 if (calculatedData.forecastWatt > 0) {

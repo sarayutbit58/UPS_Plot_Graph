@@ -105,6 +105,9 @@ test('keeps existing UPS sizing and outlet screening rules at their boundaries',
     assert.equal(calculations.recommendUpsVA(77), 200);
     assert.equal(calculations.recommendUpsVA(0), 0);
     assert.equal(calculations.recommendUpsVA(1.4e308), null);
+    assert.equal(calculations.recommendUpsType(0), null);
+    assert.equal(calculations.recommendUpsType(500), 'line-interactive');
+    assert.equal(calculations.recommendUpsType(500.01), 'online');
     assert.deepEqual(calculations.planOutlets(4), { requiredUpsCount: 1, outletsPerUps: 4 });
     assert.deepEqual(calculations.planOutlets(5), { requiredUpsCount: 1, outletsPerUps: 6 });
     assert.deepEqual(calculations.planOutlets(12), { requiredUpsCount: 1, outletsPerUps: 12 });

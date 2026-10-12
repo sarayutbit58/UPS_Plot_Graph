@@ -137,6 +137,12 @@
         return Number.isFinite(recommendation) ? recommendation : null;
     }
 
+    function recommendUpsType(loadW) {
+        const load = finiteNumber(loadW);
+        if (load === null || load <= 0) return null;
+        return load > 500 ? 'online' : 'line-interactive';
+    }
+
     function planOutlets(totalPlugs) {
         const count = finiteNumber(totalPlugs);
         if (count === null || !Number.isSafeInteger(count) || count <= 0) return { requiredUpsCount: 0, outletsPerUps: 0 };
@@ -213,5 +219,5 @@
         };
     }
 
-    return { calculateLoadBreakdown, calculateBatteryAh, calculateRuntimeMinutes, buildRuntimeCurve, recommendUpsVA, planOutlets, escapeHtml, normalizeImportData, buildExportData };
+    return { calculateLoadBreakdown, calculateBatteryAh, calculateRuntimeMinutes, buildRuntimeCurve, recommendUpsVA, recommendUpsType, planOutlets, escapeHtml, normalizeImportData, buildExportData };
 }));
