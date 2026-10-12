@@ -228,6 +228,38 @@ test('preserves auto-filled Runtime capacity as automatic across export and impo
     assert.equal(calculations.normalizeImportData(exported).settings.runtimeBatteryAh, null);
 });
 
+test('preserves Basic or Enterprise mode across export and import', () => {
+    for (const mode of ['basic', 'enterprise']) {
+        const exported = calculations.buildExportData({
+            mode,
+            devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+            calculatedData: { forecastValue: 0, forecastUnit: '%', totalLoad: 120 },
+            settings: { backupTime: 30, voltage: 24, efficiency: 90, runtimeBatteryAh: null },
+            calculationSettings: {
+                backupTime: 30,
+                voltage: mode === 'basic' ? 12 : 24,
+                efficiency: mode === 'basic' ? 85 : 90,
+                runtimeBatteryAh: null,
+            },
+        });
+
+        assert.equal(exported.version, '1.4');
+        assert.equal(exported.mode, mode);
+        assert.equal(calculations.normalizeImportData(exported).mode, mode);
+    }
+
+    assert.equal(calculations.normalizeImportData({
+        devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+        calculatedData: {},
+    }).mode, null);
+
+    assert.throws(() => calculations.normalizeImportData({
+        mode: 'workstation',
+        devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+        calculatedData: {},
+    }), { name: 'InvalidImportDataError' });
+});
+
 test('keeps compatibility with the previous v1.2 export shape and legacy Forecast watt fields', () => {
     const previousExport = calculations.normalizeImportData({
         version: '1.2',

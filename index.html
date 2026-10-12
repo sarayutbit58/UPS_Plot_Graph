@@ -393,7 +393,7 @@
                             <label for="forecastValue" class="block text-amber-700 font-medium mb-2">Forecast (เผื่อการขยายในอนาคต)</label>
                                 <div class="flex items-center gap-2">
                                     <input type="number" id="forecastValue" name="forecastValue" placeholder="เช่น 20 หรือ 100" min="0"
-                                        step="1"
+                                        step="any"
                                         class="flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl input-focus transition-all bg-white"
                                         oninput="updateTotalLoad()">
                                     <!-- Unit Toggle -->
@@ -469,7 +469,7 @@
                         <label for="batteryPowerW" class="block text-gray-700 font-medium mb-2">กำลังไฟที่ใช้ (W)</label>
                         <input type="number" id="batteryPowerW" name="batteryPowerW"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            readonly>
+                            step="any" readonly>
                         <p class="text-xs text-gray-400 mt-1">ดึงจากโหลดรวมในขั้นตอนที่ 1</p>
                     </div>
                     <div>
@@ -490,7 +490,7 @@
                     </div>
                     <div class="enterprise-only">
                         <label for="upsEfficiency" class="block text-gray-700 font-medium mb-2">สมมติฐานประสิทธิภาพ UPS (%)</label>
-                        <input type="number" id="upsEfficiency" name="upsEfficiency" value="85" min="50" max="100"
+                        <input type="number" id="upsEfficiency" name="upsEfficiency" value="85" min="50" max="100" step="any"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
                             oninput="calculateBatteryAh()">
                         <p class="field-help mt-1">ค่าเริ่มต้น 85% เป็นสมมติฐานของสูตร ไม่ใช่ค่าทั่วไปของทุก UPS; ประสิทธิภาพจริงขึ้นกับรุ่นและระดับโหลด</p>
@@ -518,7 +518,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label for="runtimeBatteryAh" class="block text-gray-700 font-medium mb-2">ความจุแบตเตอรี่ (Ah)</label>
-                        <input type="number" id="runtimeBatteryAh" name="runtimeBatteryAh" min="0" step="0.01"
+                        <input type="number" id="runtimeBatteryAh" name="runtimeBatteryAh" min="0" step="any"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
                             oninput="handleRuntimeBatteryInput()">
                         <p class="text-xs text-gray-400 mt-1">ใส่ Ah รวมของชุดแบตเตอรี่ตามแรงดันระบบ: ต่ออนุกรมเพิ่ม V แต่ Ah เท่าเดิม; ต่อขนานจึงรวม Ah</p>
@@ -527,19 +527,19 @@
                         <label for="runtimeVoltage" class="block text-gray-700 font-medium mb-2">แรงดันแบตเตอรี่ (V)</label>
                         <input type="number" id="runtimeVoltage" name="runtimeVoltage" value="12"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            readonly>
+                            step="any" readonly>
                     </div>
                     <div class="enterprise-only">
                         <label for="runtimeEfficiency" class="block text-gray-700 font-medium mb-2">สมมติฐานประสิทธิภาพ UPS (%)</label>
                         <input type="number" id="runtimeEfficiency" name="runtimeEfficiency" value="85"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            readonly>
+                            step="any" readonly>
                     </div>
                     <div>
                         <label for="runtimePowerW" class="block text-gray-700 font-medium mb-2">กำลังไฟที่ใช้ (W)</label>
                         <input type="number" id="runtimePowerW" name="runtimePowerW"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            readonly>
+                            step="any" readonly>
                     </div>
                 </div>
 
@@ -700,9 +700,9 @@
             updateStepIndicators();
         });
 
-        function setMode(mode) {
+        function setMode(mode, preserveEnterpriseSettings = false) {
             const nextMode = mode === 'enterprise' ? 'enterprise' : 'basic';
-            if (currentMode === 'enterprise' && nextMode === 'basic') {
+            if (currentMode === 'enterprise' && nextMode === 'basic' && !preserveEnterpriseSettings) {
                 enterpriseBatterySettings = {
                     voltage: Number(document.getElementById('batteryVoltage').value),
                     efficiency: Number(document.getElementById('upsEfficiency').value),
@@ -804,7 +804,7 @@
                         </div>
                         <div class="md:col-span-2">
                             <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ (W)*</label>
-                            <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" placeholder="เช่น 120" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
+                            <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" placeholder="เช่น 120" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="any" oninput="updateTotalLoad()">
                         </div>
                         <div class="enterprise-only md:col-span-2">
                             <label for="device-${deviceIdCounter}-unit" class="block text-gray-600 text-sm mb-1">หน่วย*</label>
@@ -1454,6 +1454,7 @@
             }
 
             const exportData = UPScalculations.buildExportData({
+                mode: currentMode,
                 devices,
                 calculatedData,
                 settings: {
@@ -1541,6 +1542,7 @@
                     const importData = JSON.parse(e.target.result);
                     // Validate the complete payload before changing application state or DOM.
                     const normalized = UPScalculations.normalizeImportData(importData);
+                    currentStep = 1;
                     devices = normalized.devices;
                     calculatedData = {
                         totalLoad: 0, deviceLoad: 0, totalPlugs: 0,
@@ -1553,6 +1555,7 @@
                         runtime: null,
                     };
                     enterpriseBatterySettings = { voltage: normalized.settings.voltage, efficiency: normalized.settings.efficiency };
+                    if (normalized.mode && normalized.mode !== currentMode) setMode(normalized.mode, true);
                     document.getElementById('runtimeBatteryAh').value = normalized.settings.runtimeBatteryAh ?? '';
                     runtimeBatteryWasAutoFilled = false;
 
@@ -1571,7 +1574,7 @@
                                     </div>
                                     <div class="md:col-span-2">
                             <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ*</label>
-                                    <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" value="${escapeHtml(device.load)}" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
+                                    <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" value="${escapeHtml(device.load)}" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="any" oninput="updateTotalLoad()">
                                     </div>
                                     <div class="enterprise-only md:col-span-2">
                                         <label for="device-${deviceIdCounter}-unit" class="block text-gray-600 text-sm mb-1">หน่วย*</label>

@@ -165,6 +165,8 @@
         if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.devices) || !data.calculatedData || typeof data.calculatedData !== 'object' || Array.isArray(data.calculatedData)) {
             throw invalidImport('รูปแบบไฟล์ไม่ถูกต้อง');
         }
+        const mode = data.mode === undefined || data.mode === null ? null : data.mode;
+        if (mode !== null && !['basic', 'enterprise'].includes(mode)) throw invalidImport('โหมดการใช้งานไม่ถูกต้อง');
         const devices = data.devices.map(device => {
             if (!device || typeof device !== 'object' || Array.isArray(device)) throw invalidImport('ข้อมูลอุปกรณ์ไม่ถูกต้อง');
             const load = finiteNumber(device.load);
@@ -204,10 +206,10 @@
         if (settings.runtimeBatteryAh !== null && breakdown.totalLoad > 0 && calculateRuntimeMinutes(settings.runtimeBatteryAh, settings.voltage, settings.efficiency, breakdown.totalLoad) === null) {
             throw invalidImport('ค่าความจุแบตเตอรี่ทำให้คำนวณ Runtime ไม่ได้');
         }
-        return { devices, settings, forecast: { value: forecastValue, unit: forecastUnit } };
+        return { devices, settings, forecast: { value: forecastValue, unit: forecastUnit }, mode };
     }
 
-    function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, runtimeBatteryWasAutoFilled = false, exportDate = new Date() }) {
+    function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, runtimeBatteryWasAutoFilled = false, mode = null, exportDate = new Date() }) {
         const exportSettings = runtimeBatteryWasAutoFilled
             ? { ...settings, runtimeBatteryAh: null }
             : settings;
@@ -242,7 +244,7 @@
             runtime,
         };
         return {
-            version: '1.3', appName: 'UPS Picker', exportDate: exportDate.toISOString(),
+            version: '1.4', appName: 'UPS Picker', exportDate: exportDate.toISOString(), mode,
             devices: devices.map(device => ({ ...device })),
             calculatedData: exportCalculatedData,
             forecast: { value: forecastValue, unit: forecastUnit, watt: exportCalculatedData.forecastWatt },
