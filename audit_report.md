@@ -681,3 +681,9 @@ These are presentation/packaging findings; this recheck made no application-code
 - Browser audit on the preceding commit exercised 320 × 640, 390 × 844, and 1366 × 768 through Basic load, battery, Runtime, Summary, and Enterprise mode; no overflow or console errors were observed. A broken replacement glyph on the Export JSON button was found and replaced with an inline download SVG in this revision.
 - Rechecked this revision in Chrome at 320 × 640: Enterprise Summary shows a legible Export JSON button with the SVG, step 4 is visible, and page width remains 320 px. The browser calculation returns 100,000,000.001 W for the 1,001-row case and rejects the unrepresentable 1,000,000,000,000 W + 0.000001 W case; console remains empty and all 13 requests return 200.
 - Simulated the browser's Save File Picker and imported that JSON through the app's actual FileReader handler: an Enterprise 120 W setup exported and restored as Enterprise with 120 W; the import success alert appeared.
+
+## Forecast Toggle Mobile Overflow — 2026-10-12
+
+- A breakpoint sweep found the Enterprise Forecast unit toggle was clipped at 320–390 px although the document itself did not scroll. At 320 px the toggle wrapper measured only 3.2 px while its two buttons extended to x=399 px.
+- The Forecast number input now has `min-w-0` and the unit toggle has `shrink-0`; rebuilt the checked-in Tailwind CSS.
+- Rechecked 320, 360, 390, 414, 480, 600, 760, 761, 800, 1000, 1001, and 1366 px: both toggle buttons fit their wrapper, no element crosses the viewport edge, and no document horizontal overflow was observed.

@@ -394,10 +394,10 @@
                                 <div class="flex items-center gap-2">
                                     <input type="number" id="forecastValue" name="forecastValue" placeholder="เช่น 20 หรือ 100" min="0"
                                         step="any"
-                                        class="flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl input-focus transition-all bg-white"
+                                        class="min-w-0 flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl input-focus transition-all bg-white"
                                         oninput="updateTotalLoad()">
                                     <!-- Unit Toggle -->
-                                    <div class="flex rounded-xl overflow-hidden border-2 border-amber-300">
+                                    <div class="flex shrink-0 rounded-xl overflow-hidden border-2 border-amber-300">
                                         <button type="button" id="forecastUnitPercent" aria-pressed="true" onclick="setForecastUnit('%')"
                                             class="px-4 py-3 font-medium transition-all bg-amber-500 text-white">%</button>
                                         <button type="button" id="forecastUnitWatt" aria-pressed="false" onclick="setForecastUnit('W')"
