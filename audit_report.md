@@ -600,3 +600,11 @@ These are presentation/packaging findings; this recheck made no application-code
 - Enterprise summary now clarifies that Forecast adds watts but cannot add outlet counts without specified future devices.
 - Current HEAD responsive rerun: 320 × 640 and 390 × 844 phone views both stayed within viewport width; 1366 × 768 notebook view had 1351 px document width (vertical scrollbar) and aligned sidebar/workspace. Enterprise controls remained visible on phone, and the console was empty.
 - Full Enterprise flow at 320 × 640: 120 W + 80 VA (2 plugs) + 10% Forecast produced 184 W device load, 18.4 W Forecast, and 202.4 W total; at 24 V / 90%, required capacity was 9.370371 Ah. Runtime calculated 60 min from that capacity and 75.3 min from a manual 11.76 Ah. Summary showed 300 VA and 3 plugs; export preserved both devices, Forecast, 24 V/90%, and manual Ah. The graph had seven unique numeric load points including x=202.4 W; no overflow or console messages.
+
+## Fix and Debug Follow-up — 2026-10-12
+
+- Rechecked the annotated phone UI issues on the current branch. At 320 × 640 and 390 × 844, Basic/Enterprise buttons stayed on one line, a populated `100 W` KPI stayed on one line, the initial CTA named the next step, and the document had no horizontal overflow. The 1366 × 768 notebook viewport also had no horizontal overflow.
+- The current page emitted no browser console warnings or errors during the responsive check.
+- Independent calculation review reran all 11 Node tests and found no rounding mismatches in the scanned recommendation range (0.01–20,000 W) or Forecast checks. Independent state/I/O review found no defect in restart, chart cleanup, failed import, or export-abort/fallback flows.
+- Final validation: `npm test` — 11/11 passed. Local HEAD `66a575588b925ed9a6ed16fdb7a8f141a990aa86` matches `origin/feat/dashboard-basic-enterprise-ux`; the working tree was clean before this audit note. No code change was needed from this follow-up.
+- Runtime remains an idealized estimate without manufacturer-specific discharge curves; these checks establish the tested formulas and flows, not universal accuracy across every UPS, battery, or browser.
