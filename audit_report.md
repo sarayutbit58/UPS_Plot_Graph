@@ -534,3 +534,20 @@ Target: commit `c5f3654`, local static page on `127.0.0.1:8124`, Playwright Chro
 - **Console:** Reproduced one Tailwind CDN production warning and one `/favicon.ico` 404; no app JavaScript exception was observed.
 
 These are presentation/packaging findings; this recheck made no application-code changes.
+
+## Mobile, Startup, and CDN Fix — 2026-10-12 10:15 ICT
+
+- Stacked the mobile mode caption and selector, kept both mode labels on one line, and prevented the total-load value from splitting its number and unit.
+- Set the first-step Next label in the HTML so it is descriptive before any navigation occurs.
+- Replaced Tailwind Play CDN with generated local CSS (`npm run build:css`, Tailwind 3.4.17) and declared an inline empty favicon to avoid the default `/favicon.ico` request.
+- Rechecked at 390 × 844: mode labels and `100 W` each occupy one line; document width stays within the viewport. Enterprise unit/Forecast controls remain visible.
+- Playwright console after a cache-busted reload: 0 errors, 0 warnings; the local Tailwind CSS request returned 200 and no favicon request occurred.
+
+## UI Findings Fix — 2026-10-12 10:18 ICT
+
+- Mobile mode controls now stack below their caption, keep both labels on one line, and keep the total-load number and unit together.
+- The first-step Next button now has its descriptive label in the initial HTML.
+- Tailwind utilities are compiled to `styles/tailwind.css` by `npm run build:css`; the page no longer loads Tailwind Play CDN. An inline empty favicon declaration prevents the default missing-favicon request.
+- Rechecked at 390 × 844: both mode labels and `100 W` occupy one line, document width stays within the viewport, and Enterprise-only controls remain visible after switching modes.
+- Browser console after a cache-busted reload: 0 errors and 0 warnings; `styles/tailwind.css` returned HTTP 200, with no Tailwind CDN or favicon request.
+- `npm run build:css` exits successfully. It still prints the separate Browserslist `caniuse-lite is outdated` advisory during the build; this warning is not emitted by the running page.

@@ -6,34 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UPS Picker - เครื่องคำนวณเลือก UPS</title>
     <meta name="description" content="เครื่องมือคำนวณขนาด UPS ที่เหมาะสมสำหรับอุปกรณ์ของคุณ">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="data:,">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        'prompt': ['Prompt', 'sans-serif'],
-                    },
-                    colors: {
-                        primary: {
-                            50: '#eef2ff',
-                            100: '#e0e7ff',
-                            200: '#c7d2fe',
-                            300: '#a5b4fc',
-                            400: '#818cf8',
-                            500: '#6366f1',
-                            600: '#4f46e5',
-                            700: '#4338ca',
-                            800: '#3730a3',
-                            900: '#312e81',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <link rel="stylesheet" href="./styles/tailwind.css">
     <style>
         :root {
             color-scheme: light;
@@ -284,8 +260,10 @@
         }
         @media (max-width: 760px) {
             .header-inner { align-items: flex-start; flex-direction: column; gap: 12px; padding: 14px 16px; }
-            .mode-area { width: 100%; justify-content: space-between; }
+            .mode-area { width: 100%; align-items: stretch; flex-direction: column; justify-content: flex-start; gap: 8px; }
             .mode-caption { text-align: left; }
+            .mode-switch { width: 100%; }
+            .mode-button { flex: 1; padding: 8px 12px; white-space: nowrap; }
             .dashboard-shell { display: block; padding: 12px; }
             .app-sidebar { position: static; margin-bottom: 14px; padding: 8px; }
             .sidebar-label, .sidebar-note { display: none; }
@@ -301,6 +279,7 @@
             .metric-card { min-height: 82px; padding: 12px; }
             .metric-card:last-child { grid-column: 1 / -1; }
             .metric-value { font-size: 20px; }
+            #totalLoad { flex-shrink: 0; font-size: clamp(1.25rem, 5vw, 1.875rem); white-space: nowrap; }
             .workspace-card { padding: 16px 13px; }
             .app-footer { padding: 0 12px 18px; text-align: center; }
         }
@@ -671,7 +650,7 @@
                 </button>
                 <button id="nextBtn" onclick="nextStep()"
                     class="px-8 py-3 btn-primary text-white rounded-xl font-medium ml-auto">
-                    ถัดไป →
+                    ถัดไป: ขนาดแบตเตอรี่ →
                 </button>
                 <button id="restartBtn" onclick="restart()"
                     class="px-8 py-3 btn-primary text-white rounded-xl font-medium hidden">
