@@ -297,6 +297,7 @@ test('parses manufacturer runtime CSV into validated load/runtime points', () =>
     assert.throws(() => calculations.parseRuntimeCurveCsv('load_w,runtime_minutes\n100,60\n100,30\n200,15'), { name: 'InvalidRuntimeCurveError' });
     assert.throws(() => calculations.parseRuntimeCurveCsv('load_w,runtime_minutes\n100,30\n200,60'), { name: 'InvalidRuntimeCurveError' });
     assert.throws(() => calculations.parseRuntimeCurveCsv('load_w,runtime_minutes\n9007199254740993,60\n200,30'), { name: 'InvalidRuntimeCurveError' });
+    assert.throws(() => calculations.parseRuntimeCurveCsv('load_w,runtime_minutes\n1,2e21\n2,1e21'), { name: 'InvalidRuntimeCurveError' });
 });
 
 test('interpolates manufacturer runtime only within published load points', () => {
@@ -309,6 +310,14 @@ test('interpolates manufacturer runtime only within published load points', () =
     assert.equal(calculations.calculateRuntimeFromCurve(points, 100), 60);
     assert.equal(calculations.calculateRuntimeFromCurve(points, 150), 45);
     assert.equal(calculations.calculateRuntimeFromCurve(points, 250), 26.25);
+    assert.equal(calculations.calculateRuntimeFromCurve([
+        { loadW: 5041, runtimeMinutes: 5312 },
+        { loadW: 5065, runtimeMinutes: 1826 },
+    ], 5042.1), 5152.23);
+    assert.equal(calculations.calculateRuntimeFromCurve([
+        { loadW: 1, runtimeMinutes: 2e21 },
+        { loadW: 2, runtimeMinutes: 1e21 },
+    ], 1.5), null);
     assert.equal(calculations.calculateRuntimeFromCurve(points, 99.999), null);
     assert.equal(calculations.calculateRuntimeFromCurve(points, 400.001), null);
     assert.equal(calculations.calculateRuntimeFromCurve(points, '9007199254740993'), null);

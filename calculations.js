@@ -287,7 +287,8 @@
             if (loadW === null || runtimeMinutes === null
                 || !decimalInputMatchesNumber(point.loadW, loadW)
                 || !decimalInputMatchesNumber(point.runtimeMinutes, runtimeMinutes)
-                || loadW <= 0 || runtimeMinutes <= 0) return null;
+                || loadW <= 0 || runtimeMinutes <= 0
+                || loadW >= 1e21 || runtimeMinutes >= 1e21) return null;
             normalized.push({ loadW, runtimeMinutes });
         }
         normalized.sort((a, b) => a.loadW - b.loadW);
