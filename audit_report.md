@@ -523,3 +523,14 @@ Target: local static build at commit `68f1abd`, served on `127.0.0.1:8123`; Play
 - **Informational — Static-host console:** The tested page emitted a 404 for `/favicon.ico` and Tailwind's production-CDN warning. The page and its Chart.js/Prompt/Tailwind assets loaded; no application JavaScript exception was observed.
 
 Not tested: export/download behavior, offline/CDN failure, screen-reader hardware/software combinations, malformed JSON types beyond the escaped-name payload, and production hosting.
+
+## Focused Recheck — 2026-10-12 10:06 ICT
+
+Target: commit `c5f3654`, local static page on `127.0.0.1:8124`, Playwright Chromium.
+
+- **Mobile mode buttons:** Still wrap at a 390 × 844 viewport. `documentWidth` was 375 px, so no horizontal overflow was observed.
+- **Load KPI:** The earlier 100 W state wrapped the value across lines on the 390 px screenshot; the initial 0 W state fits. This remains a narrow-screen layout issue for three-digit values.
+- **Initial Next label:** Still reads only `ถัดไป →` before the first navigation; `showStep()` assigns the descriptive label after a step change.
+- **Console:** Reproduced one Tailwind CDN production warning and one `/favicon.ico` 404; no app JavaScript exception was observed.
+
+These are presentation/packaging findings; this recheck made no application-code changes.
