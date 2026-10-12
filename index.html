@@ -1082,6 +1082,15 @@
             });
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         // Summary
         function updateSummary() {
             // Total Load (with breakdown)
@@ -1114,8 +1123,8 @@
             // Device List with Forecast
             let deviceListHtml = devices.map(d =>
                 `<div class="flex justify-between py-2 px-3 bg-white rounded-lg">
-                    <span class="text-gray-700">${d.name}</span>
-                    <span class="font-medium text-gray-800">${d.load} ${d.unit} (${d.watts.toFixed(2)} W) - ${d.plugs || 1} รู</span>
+                    <span class="text-gray-700">${escapeHtml(d.name)}</span>
+                    <span class="font-medium text-gray-800">${escapeHtml(d.load)} ${escapeHtml(d.unit)} (${escapeHtml(d.watts.toFixed(2))} W) - ${escapeHtml(d.plugs || 1)} รู</span>
                 </div>`
             ).join('');
 
@@ -1449,7 +1458,7 @@
                                     <div class="device-fields grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                                     <div class="md:col-span-4">
                                         <label class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
-                                        <input type="text" value="${device.name}" class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
+                                        <input type="text" value="${escapeHtml(device.name)}" class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                                     </div>
                                     <div class="md:col-span-2">
                             <label class="field-label">กำลังไฟ*</label>
