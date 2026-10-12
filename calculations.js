@@ -5,6 +5,8 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
 
+    const DEFAULT_POWER_FACTOR = 0.8;
+
     function finiteNumber(value) {
         if (value === null || value === undefined || typeof value === 'boolean') return null;
         if (typeof value !== 'number' && typeof value !== 'string') return null;
@@ -47,7 +49,7 @@
                 inputsValid = false;
                 return;
             }
-            const watts = unit === 'VA' ? load * 0.8 : load;
+            const watts = unit === 'VA' ? load * DEFAULT_POWER_FACTOR : load;
             const plugsValue = finiteNumber(device.plugs);
             const plugs = device.plugs === undefined || device.plugs === null || device.plugs === '' ? 1 : plugsValue;
             if (plugs === null || !Number.isSafeInteger(plugs) || plugs < 1 || !Number.isSafeInteger(totalPlugs + plugs)) {
@@ -133,7 +135,9 @@
     function recommendUpsVA(loadW) {
         const load = finiteNumber(loadW);
         if (load === null || load <= 0) return 0;
-        const recommendation = Math.ceil(load * 1.3 / 100) * 100;
+        const requiredVA = (load / DEFAULT_POWER_FACTOR) * 1.3;
+        if (!Number.isFinite(requiredVA)) return null;
+        const recommendation = Math.ceil(requiredVA / 100) * 100;
         return Number.isFinite(recommendation) ? recommendation : null;
     }
 
@@ -209,17 +213,23 @@
         return { devices, settings, forecast: { value: forecastValue, unit: forecastUnit } };
     }
 
-    function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, exportDate = new Date() }) {
+    function buildExportData({ devices, calculatedData, settings, calculationSettings = settings, runtimeBatteryWasAutoFilled = false, exportDate = new Date() }) {
+        const exportSettings = runtimeBatteryWasAutoFilled
+            ? { ...settings, runtimeBatteryAh: null }
+            : settings;
+        const activeCalculationSettings = runtimeBatteryWasAutoFilled
+            ? { ...calculationSettings, runtimeBatteryAh: null }
+            : calculationSettings;
         const forecastValue = finiteNumber(calculatedData.forecastValue) ?? 0;
         const forecastUnit = calculatedData.forecastUnit || '%';
         const breakdown = calculateLoadBreakdown(devices, forecastValue, forecastUnit);
-        const activeBackupTime = finiteNumber(calculationSettings.backupTime);
-        const activeVoltage = finiteNumber(calculationSettings.voltage);
-        const activeEfficiency = finiteNumber(calculationSettings.efficiency);
+        const activeBackupTime = finiteNumber(activeCalculationSettings.backupTime);
+        const activeVoltage = finiteNumber(activeCalculationSettings.voltage);
+        const activeEfficiency = finiteNumber(activeCalculationSettings.efficiency);
         const batteryAh = breakdown.valid && breakdown.totalLoad > 0
             ? calculateBatteryAh(breakdown.totalLoad, activeBackupTime, activeVoltage, activeEfficiency)
             : null;
-        const runtimeCapacityAh = calculationSettings.runtimeBatteryAh ?? settings.runtimeBatteryAh ?? batteryAh;
+        const runtimeCapacityAh = activeCalculationSettings.runtimeBatteryAh ?? exportSettings.runtimeBatteryAh ?? batteryAh;
         const runtime = breakdown.valid && breakdown.totalLoad > 0
             ? calculateRuntimeMinutes(runtimeCapacityAh, activeVoltage, activeEfficiency, breakdown.totalLoad)
             : null;
@@ -242,7 +252,7 @@
             devices: devices.map(device => ({ ...device })),
             calculatedData: exportCalculatedData,
             forecast: { value: forecastValue, unit: forecastUnit, watt: exportCalculatedData.forecastWatt },
-            settings: { ...settings },
+            settings: { ...exportSettings },
         };
     }
 

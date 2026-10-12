@@ -100,9 +100,10 @@ test('builds a unique numeric runtime curve that matches the exact current load'
     assert.ok(fractional.some(point => point.loadW === 105.6 && point.currentLoad));
 });
 
-test('keeps existing UPS sizing and outlet screening rules at their boundaries', () => {
-    assert.equal(calculations.recommendUpsVA(76.92), 100);
+test('calculates PF-based UPS VA screening and validates outlet boundaries', () => {
+    assert.equal(calculations.recommendUpsVA(76.92), 200);
     assert.equal(calculations.recommendUpsVA(77), 200);
+    assert.equal(calculations.recommendUpsVA(200), 400);
     assert.equal(calculations.recommendUpsVA(0), 0);
     assert.equal(calculations.recommendUpsVA(1.4e308), null);
     assert.equal(calculations.recommendUpsType(0), null);
@@ -210,6 +211,20 @@ test('exports battery sizing and Runtime recalculated from the latest form setti
     });
     assert.equal(manualCapacityExport.calculatedData.batteryAh, 5.882353);
     assert.equal(manualCapacityExport.calculatedData.runtime, 59.98);
+});
+
+test('preserves auto-filled Runtime capacity as automatic across export and import', () => {
+    const exported = calculations.buildExportData({
+        devices: [{ name: 'Router', load: 120, unit: 'W', plugs: 1 }],
+        calculatedData: { forecastValue: 0, forecastUnit: '%', batteryAh: 0, runtime: null },
+        settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: 11.764706 },
+        calculationSettings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: 11.764706 },
+        runtimeBatteryWasAutoFilled: true,
+    });
+
+    assert.equal(exported.settings.runtimeBatteryAh, null);
+    assert.equal(exported.calculatedData.runtime, 60);
+    assert.equal(calculations.normalizeImportData(exported).settings.runtimeBatteryAh, null);
 });
 
 test('keeps compatibility with the previous v1.2 export shape and legacy Forecast watt fields', () => {
