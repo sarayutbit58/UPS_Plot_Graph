@@ -742,6 +742,8 @@
         let runtimeSource = 'formula';
         let runtimeCurve = null;
         let runtimeCurvePoints = [];
+        let runtimeCurveImportVersion = 0;
+        let jsonImportVersion = 0;
         let loadInputValid = true;
         let precisionInvalidTarget = null;
         let runtimeBatteryWasAutoFilled = false;
@@ -860,27 +862,33 @@
         }
 
         function refreshRuntimeCurveMetadata() {
-            if (runtimeCurvePoints.length < 2) return;
-            try {
-                runtimeCurve = UPScalculations.normalizeRuntimeCurveData({
-                    model: document.getElementById('runtimeCurveModel').value,
-                    batteryConfig: document.getElementById('runtimeCurveBatteryConfig').value,
-                    source: document.getElementById('runtimeCurveSource').value,
-                    conditions: document.getElementById('runtimeCurveConditions').value,
-                    points: runtimeCurvePoints,
-                });
-                document.getElementById('runtimeCurveStatus').textContent = `พร้อมใช้ ${runtimeCurve.points.length} จุด (${runtimeCurve.points[0].loadW}–${runtimeCurve.points[runtimeCurve.points.length - 1].loadW} W)`;
-            } catch (error) {
-                runtimeCurve = null;
-                document.getElementById('runtimeCurveStatus').textContent = `ข้อมูลรุ่นยังไม่ครบ: ${error.message || 'กรอกข้อมูลให้ครบ'}`;
-            }
+            if (!runtimeCurve) return;
+            const metadata = {
+                model: document.getElementById('runtimeCurveModel').value,
+                batteryConfig: document.getElementById('runtimeCurveBatteryConfig').value,
+                source: document.getElementById('runtimeCurveSource').value,
+                conditions: document.getElementById('runtimeCurveConditions').value,
+            };
+            if (UPScalculations.runtimeCurveMetadataMatches(runtimeCurve, metadata)) return;
+            runtimeCurveImportVersion++;
+            runtimeCurve = null;
+            runtimeCurvePoints = [];
+            document.getElementById('runtimeCurveStatus').textContent = 'ข้อมูลรุ่นหรือแหล่งอ้างอิงเปลี่ยนแล้ว กรุณานำเข้า CSV ใหม่เพื่อผูกข้อมูลให้ตรงกัน';
             updateRuntimeSourceControls();
-            if (runtimeSource === 'manufacturer' && currentStep >= 3 && calculatedData.totalLoad > 0) calculateRuntime();
+            if (calculatedData.totalLoad > 0 && currentStep >= 3) calculateRuntime();
+            if (currentStep === 4) updateSummary();
         }
 
         function importRuntimeCurve(event) {
+            const requestVersion = ++runtimeCurveImportVersion;
             const file = event.target.files && event.target.files[0];
             if (!file) return;
+            const selectedMetadata = {
+                model: document.getElementById('runtimeCurveModel').value,
+                batteryConfig: document.getElementById('runtimeCurveBatteryConfig').value,
+                source: document.getElementById('runtimeCurveSource').value,
+                conditions: document.getElementById('runtimeCurveConditions').value,
+            };
             if (file.size > 256_000) {
                 document.getElementById('runtimeCurveStatus').textContent = UPScalculations.runtimeCurveImportFailureMessage(
                     new Error('ไฟล์ CSV ต้องไม่เกิน 256 KB'), runtimeCurve && runtimeCurve.model,
@@ -890,13 +898,21 @@
             }
             const reader = new FileReader();
             reader.onload = function (loadEvent) {
+                if (requestVersion !== runtimeCurveImportVersion) return;
                 try {
-                    const points = UPScalculations.parseRuntimeCurveCsv(String(loadEvent.target.result || ''));
-                    const candidate = UPScalculations.normalizeRuntimeCurveData({
+                    const currentMetadata = {
                         model: document.getElementById('runtimeCurveModel').value,
                         batteryConfig: document.getElementById('runtimeCurveBatteryConfig').value,
                         source: document.getElementById('runtimeCurveSource').value,
                         conditions: document.getElementById('runtimeCurveConditions').value,
+                    };
+                    if (!UPScalculations.runtimeCurveMetadataMatches(selectedMetadata, currentMetadata)) {
+                        document.getElementById('runtimeCurveStatus').textContent = 'ข้อมูลรุ่นหรือแหล่งอ้างอิงเปลี่ยนระหว่างอ่านไฟล์ กรุณานำเข้า CSV อีกครั้ง';
+                        return;
+                    }
+                    const points = UPScalculations.parseRuntimeCurveCsv(String(loadEvent.target.result || ''));
+                    const candidate = UPScalculations.normalizeRuntimeCurveData({
+                        ...selectedMetadata,
                         points,
                     });
                     runtimeCurvePoints = points;
@@ -910,15 +926,18 @@
                 }
             };
             reader.onerror = function () {
+                if (requestVersion !== runtimeCurveImportVersion) return;
                 document.getElementById('runtimeCurveStatus').textContent = UPScalculations.runtimeCurveImportFailureMessage(
                     new Error('อ่านไฟล์ไม่ได้ กรุณาเลือก CSV อีกครั้ง'), runtimeCurve && runtimeCurve.model,
                 );
                 event.target.value = '';
             };
             reader.readAsText(file, 'UTF-8');
+            event.target.value = '';
         }
 
         function clearRuntimeCurve() {
+            runtimeCurveImportVersion++;
             runtimeCurve = null;
             runtimeCurvePoints = [];
             document.getElementById('runtimeCurveModel').value = '';
@@ -1797,15 +1816,18 @@
 
         // Import from JSON
         function importFromJSON(event) {
+            const requestVersion = ++jsonImportVersion;
             const file = event.target.files[0];
             if (!file) return;
 
             const reader = new FileReader();
             reader.onload = function (e) {
+                if (requestVersion !== jsonImportVersion) return;
                 try {
                     const importData = JSON.parse(e.target.result);
                     // Validate the complete payload before changing application state or DOM.
                     const normalized = UPScalculations.normalizeImportData(importData);
+                    runtimeCurveImportVersion++;
                     currentStep = 1;
                     devices = normalized.devices;
                     runtimeSource = normalized.runtimeSource;
@@ -1905,11 +1927,10 @@
                 }
             };
             reader.onerror = function () {
+                if (requestVersion !== jsonImportVersion) return;
                 alert('❌ อ่านไฟล์ไม่ได้ กรุณาเลือกไฟล์ JSON อีกครั้ง');
             };
             reader.readAsText(file);
-
-            // Reset file input
             event.target.value = '';
         }
     </script>

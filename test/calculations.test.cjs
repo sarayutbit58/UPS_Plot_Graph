@@ -327,6 +327,52 @@ test('interpolates manufacturer runtime only within published load points', () =
     assert.equal(calculations.calculateRuntimeFromCurve(points, '9007199254740993'), null);
 });
 
+test('matches published Vertiv GXTRT-1000 internal-battery runtime points', () => {
+    // Vertiv Installer/User Guide, Table 6-3, p.30, internal battery only:
+    // https://www.vertiv.com/491490/globalassets/products/critical-power/uninterruptible-power-supplies-ups/vertiv-liebert-gxt-rt-ups/liebert-gxt-rt-1-3kva-230v-user-guide-r3.pdf
+    const points = calculations.parseRuntimeCurveCsv([
+        'load_w,runtime_minutes',
+        '225,19', '450,9', '621,5.3', '675,5', '720,3.5', '810,3.5', '900,3.1',
+    ].join('\n'));
+    assert.deepEqual(points, [
+        { loadW: 225, runtimeMinutes: 19 },
+        { loadW: 450, runtimeMinutes: 9 },
+        { loadW: 621, runtimeMinutes: 5.3 },
+        { loadW: 675, runtimeMinutes: 5 },
+        { loadW: 720, runtimeMinutes: 3.5 },
+        { loadW: 810, runtimeMinutes: 3.5 },
+        { loadW: 900, runtimeMinutes: 3.1 },
+    ]);
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 450), 9);
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 337.5), 14);
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 224.99), null);
+    assert.equal(calculations.calculateRuntimeFromCurve(points, 900.01), null);
+});
+
+test('accepts quoted numeric values in manufacturer Runtime CSV files', () => {
+    assert.deepEqual(calculations.parseRuntimeCurveCsv([
+        'load_w,runtime_minutes',
+        '"100","60"',
+        '"200","30"',
+    ].join('\n')), [
+        { loadW: 100, runtimeMinutes: 60 },
+        { loadW: 200, runtimeMinutes: 30 },
+    ]);
+});
+
+test('detects edits that no longer match an imported Runtime curve provenance', () => {
+    const curve = {
+        model: 'UPS Model A', batteryConfig: 'Internal', source: 'manual.pdf', conditions: '25 C',
+        points: [{ loadW: 100, runtimeMinutes: 60 }, { loadW: 200, runtimeMinutes: 30 }],
+    };
+    assert.equal(calculations.runtimeCurveMetadataMatches(curve, {
+        model: 'UPS Model A', batteryConfig: 'Internal', source: 'manual.pdf', conditions: '25 C',
+    }), true);
+    assert.equal(calculations.runtimeCurveMetadataMatches(curve, {
+        model: 'UPS Model B', batteryConfig: 'Internal', source: 'manual.pdf', conditions: '25 C',
+    }), false);
+});
+
 test('builds a manufacturer curve with a marked interpolated current-load point', () => {
     assert.equal(typeof calculations.buildManufacturerRuntimeCurve, 'function');
     const points = [
@@ -557,6 +603,22 @@ test('exports and recalculates manufacturer Runtime from the imported curve', ()
     const imported = calculations.normalizeImportData(exported);
     assert.equal(imported.runtimeSource, 'manufacturer');
     assert.deepEqual(imported.runtimeCurve, runtimeCurve);
+});
+
+test('manufacturer Runtime export without a mode round-trips as Enterprise', () => {
+    const exported = calculations.buildExportData({
+        runtimeSource: 'manufacturer',
+        runtimeCurve: {
+            model: 'UPS-Example 1000', batteryConfig: 'Internal battery pack',
+            source: 'https://vendor.example/runtime-chart.pdf', conditions: '',
+            points: [{ loadW: 100, runtimeMinutes: 60 }, { loadW: 200, runtimeMinutes: 30 }],
+        },
+        devices: [{ name: 'Server', load: 150, unit: 'W', plugs: 1 }],
+        calculatedData: { forecastValue: 0, forecastUnit: '%' },
+        settings: { backupTime: 60, voltage: 12, efficiency: 85, runtimeBatteryAh: null },
+    });
+    assert.equal(exported.mode, 'enterprise');
+    assert.equal(calculations.normalizeImportData(exported).runtimeSource, 'manufacturer');
 });
 
 test('preserves auto-filled Runtime capacity as automatic across export and import', () => {

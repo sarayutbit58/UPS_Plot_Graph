@@ -309,14 +309,59 @@
 
     function parseRuntimeCurveCsv(csvText) {
         if (typeof csvText !== 'string' || csvText.length > 256_000) throw invalidRuntimeCurve('ไฟล์ CSV ไม่ถูกต้องหรือมีขนาดใหญ่เกินไป');
-        const lines = csvText.replace(/^\uFEFF/, '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-        if (lines.length < 3 || lines.length > 1001) throw invalidRuntimeCurve('CSV ต้องมีอย่างน้อย 2 จุดและไม่เกิน 1000 จุด');
-        const header = lines[0].split(',').map(value => value.trim().toLowerCase());
+        const records = [];
+        let row = [];
+        let field = '';
+        let inQuotes = false;
+        let afterQuote = false;
+        const commitField = () => {
+            row.push(field.trim());
+            field = '';
+            afterQuote = false;
+        };
+        const commitRow = () => {
+            commitField();
+            if (row.some(value => value !== '')) records.push(row);
+            row = [];
+        };
+        const source = csvText.replace(/^\uFEFF/, '');
+        for (let index = 0; index < source.length; index++) {
+            const character = source[index];
+            if (inQuotes) {
+                if (character === '"' && source[index + 1] === '"') {
+                    field += '"';
+                    index++;
+                } else if (character === '"') {
+                    inQuotes = false;
+                    afterQuote = true;
+                } else {
+                    field += character;
+                }
+                continue;
+            }
+            if (character === ',') {
+                commitField();
+            } else if (character === '\n' || character === '\r') {
+                if (character === '\r' && source[index + 1] === '\n') index++;
+                commitRow();
+            } else if (character === '"') {
+                if (field.trim() !== '' || afterQuote) throw invalidRuntimeCurve('รูปแบบเครื่องหมายคำพูดใน CSV ไม่ถูกต้อง');
+                field = '';
+                inQuotes = true;
+            } else if (afterQuote) {
+                if (!/\s/.test(character)) throw invalidRuntimeCurve('รูปแบบเครื่องหมายคำพูดใน CSV ไม่ถูกต้อง');
+            } else {
+                field += character;
+            }
+        }
+        if (inQuotes) throw invalidRuntimeCurve('รูปแบบเครื่องหมายคำพูดใน CSV ไม่ถูกต้อง');
+        if (row.length > 0 || field !== '' || afterQuote) commitRow();
+        if (records.length < 3 || records.length > 1001) throw invalidRuntimeCurve('CSV ต้องมีอย่างน้อย 2 จุดและไม่เกิน 1000 จุด');
+        const header = records[0].map(value => value.toLowerCase());
         if (header.length !== 2 || header[0] !== 'load_w' || header[1] !== 'runtime_minutes') {
             throw invalidRuntimeCurve('หัวตารางต้องเป็น load_w,runtime_minutes');
         }
-        const rows = lines.slice(1).map(line => {
-            const values = line.split(',').map(value => value.trim());
+        const rows = records.slice(1).map(values => {
             if (values.length !== 2) throw invalidRuntimeCurve('แต่ละแถวต้องมี Load W และ Runtime นาที');
             return { loadW: values[0], runtimeMinutes: values[1] };
         });
@@ -339,6 +384,14 @@
             throw invalidRuntimeCurve('ระบุรุ่น UPS ชุดแบตเตอรี่ แหล่งข้อมูล และจุด Runtime ให้ถูกต้อง');
         }
         return { model, batteryConfig, source, conditions, points };
+    }
+
+    function runtimeCurveMetadataMatches(curve, metadata) {
+        if (!curve || !metadata) return false;
+        return ['model', 'batteryConfig', 'source', 'conditions'].every(key =>
+            (typeof curve[key] === 'string' ? curve[key].trim() : '')
+            === (typeof metadata[key] === 'string' ? metadata[key].trim() : '')
+        );
     }
 
     function calculateRuntimeFromCurve(inputPoints, currentLoadW) {
@@ -523,7 +576,8 @@
             }
         }
         return {
-            version: '1.5', appName: 'UPS Picker', exportDate: exportDate.toISOString(), mode, runtimeSource,
+            version: '1.5', appName: 'UPS Picker', exportDate: exportDate.toISOString(),
+            mode: mode ?? (runtimeSource === 'manufacturer' ? 'enterprise' : null), runtimeSource,
             devices: devices.map(device => ({ ...device })),
             calculatedData: exportCalculatedData,
             forecast: { value: forecastValue, unit: forecastUnit, watt: exportCalculatedData.forecastWatt },
@@ -532,5 +586,5 @@
         };
     }
 
-    return { calculateLoadBreakdown, calculateBatteryAh, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, recommendUpsVA, planOutlets, escapeHtml, normalizeImportData, buildExportData };
+    return { calculateLoadBreakdown, calculateBatteryAh, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, normalizeImportData, buildExportData };
 }));
