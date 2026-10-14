@@ -111,6 +111,46 @@ class RecommendationApiTests(unittest.TestCase):
         self.assertTrue(result['bestSolution']['validation']['isValid'])
         self.assertEqual({'A', 'B', 'C', 'D', 'E'}, {row['code'] for row in result['scenarios']})
 
+    def test_api_rejects_untrusted_host_header(self):
+        body = json.dumps({
+            'runtimeRequirementMinutes': 5,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 300, 'va': 375, 'priority': 50}],
+        }).encode('utf-8')
+        request = Request(self.url + '/api/optimizations', data=body,
+                          headers={'Content-Type': 'application/json', 'Host': 'attacker.example'},
+                          method='POST')
+
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=3)
+        self.assertEqual(403, error.exception.code)
+
+    def test_api_rejects_untrusted_origin_header(self):
+        body = json.dumps({
+            'runtimeRequirementMinutes': 5,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 300, 'va': 375, 'priority': 50}],
+        }).encode('utf-8')
+        request = Request(self.url + '/api/optimizations', data=body,
+                          headers={'Content-Type': 'application/json', 'Origin': 'http://attacker.example'},
+                          method='POST')
+
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=3)
+        self.assertEqual(403, error.exception.code)
+
+    def test_api_accepts_loopback_origin_header(self):
+        body = json.dumps({
+            'runtimeRequirementMinutes': 5,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 300, 'va': 375, 'priority': 50}],
+        }).encode('utf-8')
+        request = Request(self.url + '/api/optimizations', data=body,
+                          headers={'Content-Type': 'application/json', 'Origin': self.url},
+                          method='POST')
+
+        with urlopen(request, timeout=3) as response:
+            self.assertEqual(200, response.status)
+            result = json.loads(response.read())
+        self.assertEqual('CSP', result['solver'])
+
     def test_optimization_api_serializes_normalized_vat_metadata(self):
         product_id = self.catalog['products'][0]
         connection = sqlite3.connect(self.db_path)

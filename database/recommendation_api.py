@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import sqlite3
+from urllib.parse import urlsplit
 
 try:
     from .allocation_engine import AllocationInputError, allocate
@@ -35,6 +36,30 @@ def create_server(database_path, port=8000):
     class Handler(BaseHTTPRequestHandler):
         server_version = 'UPSRecommendationAPI/1.0'
 
+        def _is_local_authority(self, value, is_origin=False):
+            if not value:
+                return False
+            try:
+                parsed = urlsplit(value if is_origin else '//' + value)
+                port = parsed.port
+            except ValueError:
+                return False
+            allowed_hosts = {'127.0.0.1', 'localhost', '::1'}
+            hostname = (parsed.hostname or '').lower()
+            if hostname not in allowed_hosts or parsed.username or parsed.password:
+                return False
+            if parsed.query or parsed.fragment or parsed.path not in {'', '/'}:
+                return False
+            if is_origin and parsed.scheme.casefold() != 'http':
+                return False
+            return (port if port is not None else 80) == self.server.server_address[1]
+
+        def _is_local_request(self):
+            if not self._is_local_authority(self.headers.get('Host')):
+                return False
+            origin = self.headers.get('Origin')
+            return not origin or self._is_local_authority(origin, is_origin=True)
+
         def _send_json(self, status, body):
             encoded = json.dumps(body, ensure_ascii=False, allow_nan=False,
                                  separators=(',', ':')).encode('utf-8')
@@ -46,6 +71,9 @@ def create_server(database_path, port=8000):
             self.wfile.write(encoded)
 
         def do_GET(self):
+            if not self._is_local_request():
+                self._send_json(403, {'error': 'Local API only accepts loopback Host and Origin values'})
+                return
             static_entry = STATIC_FILES.get(self.path)
             if static_entry:
                 file_path = PROJECT_ROOT / static_entry[0]
@@ -73,6 +101,9 @@ def create_server(database_path, port=8000):
                 self._send_json(503, {'error': 'Recommendation database is unavailable'})
 
         def do_POST(self):
+            if not self._is_local_request():
+                self._send_json(403, {'error': 'Local API only accepts loopback Host and Origin values'})
+                return
             if self.path not in {'/api/recommendations', '/api/allocations', '/api/optimizations'}:
                 self._send_json(404, {'error': 'Not found'})
                 return

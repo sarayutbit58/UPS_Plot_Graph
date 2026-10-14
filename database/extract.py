@@ -479,9 +479,9 @@ def scan_file(handle, relative, ext, inventory, records, info, archive_depth=0):
                     emit(inventory, child)
             info['metadata_json']['archive_member_count'] = children
         else:
-            # Hash cache is disk-backed. Include filename to avoid unsafe brand context reuse.
-            cache_key = hashlib.sha256((info['sha256'] + '|' + relative.split('!')[-1].split('/')[-1]).encode('utf-8')).hexdigest()
-            cache_dir = LOCAL / 'extract_cache_v3'
+            # Manufacturer inference can depend on the source path; cache only identical paths.
+            cache_key = hashlib.sha256((info['sha256'] + '|' + ext + '|' + relative).encode('utf-8')).hexdigest()
+            cache_dir = LOCAL / 'extract_cache_v4'
             cache_dir.mkdir(parents=True, exist_ok=True)
             cache_meta = cache_dir / (cache_key + '.json')
             cache_rows = cache_dir / (cache_key + '.jsonl')

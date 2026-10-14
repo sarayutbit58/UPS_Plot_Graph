@@ -145,6 +145,58 @@ class ImportCatalogAcceptanceTests(unittest.TestCase):
             self.run_import()
         self.assertEqual(before, self.snapshot())
 
+    def test_removed_source_is_pruned_on_complete_inventory_refresh(self):
+        removed_path = 'SYNTHETIC/removed.csv'
+        self.write(
+            [self.source(), self.source(removed_path, 'b' * 64)],
+            [self.record(), self.record(
+                path=removed_path, locator='row:1', model='SYNTHETIC UPS B',
+                manufacturer_sku='SYNTHETIC-SKU-B',
+            )],
+        )
+        self.run_import()
+        self.assertEqual(2, len(self.snapshot()['price_offers']))
+
+        self.write([self.source()], [self.record()])
+        totals = self.run_import()
+        snapshot = self.snapshot()
+
+        self.assertEqual(1, totals.get('removed_sources', 0))
+        self.assertEqual(1, len(snapshot['source_files']))
+        self.assertEqual(1, len(snapshot['products']))
+        self.assertEqual(1, len(snapshot['product_sources']))
+        self.assertEqual(1, len(snapshot['price_offers']))
+
+    def test_partial_inventory_can_preserve_omitted_sources_explicitly(self):
+        omitted_path = 'SYNTHETIC/second.csv'
+        self.write(
+            [self.source(), self.source(omitted_path, 'b' * 64)],
+            [self.record(), self.record(
+                path=omitted_path, locator='row:1', model='SYNTHETIC UPS B',
+                manufacturer_sku='SYNTHETIC-SKU-B',
+            )],
+        )
+        self.run_import()
+        self.write([self.source()], [self.record()])
+
+        totals = import_catalog(self.db, self.inventory, self.records, prune_missing_sources=False)
+        snapshot = self.snapshot()
+
+        self.assertEqual(0, totals['removed_sources'])
+        self.assertEqual(2, len(snapshot['source_files']))
+        self.assertEqual(2, len(snapshot['price_offers']))
+
+    def test_empty_inventory_refuses_to_remove_all_existing_sources(self):
+        self.write([self.source()], [self.record()])
+        self.run_import()
+        before = self.snapshot()
+        self.write([], [])
+
+        with self.assertRaisesRegex(ValueError, 'Inventory is empty'):
+            self.run_import()
+
+        self.assertEqual(before, self.snapshot())
+
     def test_exact_decimal_and_unknown_currency_are_preserved(self):
         self.write([self.source()], [self.record()])
         self.run_import()

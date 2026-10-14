@@ -21,7 +21,7 @@ Use Python 3.11+ with SQLite support. On Windows, pass the actual interpreter an
 & '<python.exe>' -X utf8 database/build_database.py --source-root '<Pricelist folder>' --output-dir database/local
 ```
 
-The scan reads sources sequentially and inventories every encountered file, including archive members. It records failures and coverage limits. Outputs are outside the original source tree. The database is `database/local/ups-products.sqlite3`; the build also writes deduplication, unpriced-pruning, and validation reports.
+The scan reads sources sequentially and inventories every encountered file, including archive members. It records failures and coverage limits. Outputs are outside the original source tree. The database is `database/local/ups-products.sqlite3`; the build also writes deduplication, unpriced-pruning, and validation reports. Each import treats the inventory as a complete snapshot and transactionally removes omitted source files and orphaned assertions so deleted prices cannot remain selectable. An empty snapshot refuses to delete an existing catalog. For a partial or `extract.py --limit` diagnostic inventory, pass `--preserve-omitted-sources` to `import_catalog.py`.
 
 Document readers require `openpyxl`, `pypdf`, `xlrd`, `pyxlsb` and `olefile`; optional image inspection uses Pillow. The extractor also discovers reader packages in `database/local/deps`. Windows image OCR uses the installed Windows English OCR engine, with no model downloads. Other platforms/languages record their coverage limitations. Check `extraction_summary.json` and inventory status rather than assuming full text coverage.
 
@@ -41,6 +41,8 @@ python -X utf8 database/manage.py rollback --db "<disposable acceptance-test dat
 python -X utf8 -m unittest discover -s database/tests -v
 python -X utf8 database/test_extract.py
 ```
+
+The extractor caches by content and full source path because manufacturer inference can depend on the source directory. The local API binds to loopback and rejects requests whose `Host` or supplied `Origin` is not a loopback address at the bound port.
 
 Rollback drops the initial catalog tables and their rows. Run it only against a disposable database or after taking a backup. Migration, rollback, seed and import are transactional. Repeating an identical import preserves row counts. A changed source hash requires a fresh output/database, so historical provenance cannot silently point to replaced content.
 

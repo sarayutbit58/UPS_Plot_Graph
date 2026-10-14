@@ -8,7 +8,7 @@ Start the standard-library HTTP service from the repository root:
 python -X utf8 database/recommendation_api.py --db database/local/ups-products.sqlite3 --port 8000
 ```
 
-The service binds only to `127.0.0.1` because the SQLite catalog contains reseller price observations. It exposes `GET /health` and `POST /api/recommendations`.
+The service binds only to `127.0.0.1` because the SQLite catalog contains reseller price observations. It validates `Host` and any supplied `Origin` against loopback names and the bound port to reject DNS-rebinding requests. It exposes `GET /health` and the local `POST /api/recommendations`, `/api/allocations` and `/api/optimizations` endpoints.
 
 Example request:
 

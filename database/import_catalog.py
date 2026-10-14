@@ -67,19 +67,44 @@ def reject(connection, source_id, record, reason):
         (source_id, str(record.get('source_locator') or 'unknown'), reason, raw_json))
 
 
-def import_catalog(db_path, inventory_path, records_path):
+def prune_omitted_sources(connection, current_paths):
+    existing = connection.execute('SELECT id,relative_path FROM source_files').fetchall()
+    omitted = [row for row in existing if row['relative_path'] not in current_paths]
+    if omitted and not current_paths:
+        raise ValueError('Inventory is empty while the database has sources; refusing to remove all catalog data')
+    for source in omitted:
+        source_id = source['id']
+        connection.execute('''DELETE FROM price_offers WHERE product_source_id IN
+            (SELECT id FROM product_sources WHERE source_file_id=?)''', (source_id,))
+        connection.execute('''DELETE FROM product_specifications WHERE product_source_id IN
+            (SELECT id FROM product_sources WHERE source_file_id=?)''', (source_id,))
+        connection.execute('DELETE FROM product_sources WHERE source_file_id=?', (source_id,))
+        connection.execute('DELETE FROM import_rejections WHERE source_file_id=?', (source_id,))
+        connection.execute('DELETE FROM source_files WHERE id=?', (source_id,))
+    if omitted:
+        connection.execute('''DELETE FROM products WHERE NOT EXISTS
+            (SELECT 1 FROM product_sources WHERE product_sources.product_id=products.id)''')
+        connection.execute('''DELETE FROM manufacturers WHERE NOT EXISTS
+            (SELECT 1 FROM products WHERE products.manufacturer_id=manufacturers.id)''')
+    return len(omitted)
+
+
+def import_catalog(db_path, inventory_path, records_path, prune_missing_sources=True):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     connection = connect(db_path)
     try:
         migrate(connection)
         seed(connection)
-        totals = {'inventory': 0, 'records': 0, 'accepted': 0, 'duplicates': 0, 'rejected': 0}
+        totals = {'inventory': 0, 'records': 0, 'accepted': 0, 'duplicates': 0,
+                  'rejected': 0, 'removed_sources': 0}
         with transaction(connection):
             source_ids = {}
             for item in json_lines(inventory_path):
                 relative = str(item.get('relative_path') or item.get('source_path') or '').replace('\\', '/')
                 source_ids[relative] = upsert_source(connection, item)
                 totals['inventory'] += 1
+            if prune_missing_sources:
+                totals['removed_sources'] = prune_omitted_sources(connection, set(source_ids))
             for raw in json_lines(records_path):
                 totals['records'] += 1
                 record = normalize_record(raw)
@@ -140,8 +165,12 @@ def main():
     parser.add_argument('--db', required=True)
     parser.add_argument('--inventory', required=True)
     parser.add_argument('--records', required=True)
+    parser.add_argument('--preserve-omitted-sources', action='store_true',
+                        help='Keep existing sources omitted from a partial or diagnostic inventory')
     args = parser.parse_args()
-    print(json.dumps(import_catalog(args.db, args.inventory, args.records), ensure_ascii=False))
+    print(json.dumps(import_catalog(args.db, args.inventory, args.records,
+                                   prune_missing_sources=not args.preserve_omitted_sources),
+                     ensure_ascii=False))
 
 
 if __name__ == '__main__':
