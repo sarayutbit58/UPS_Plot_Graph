@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from import_catalog import import_catalog
+from merge_duplicates import apply_merges, plan_merges
 from manage import connect
 from validate import validate
 
@@ -81,6 +82,33 @@ class ImportCatalogAcceptanceTests(unittest.TestCase):
         before = self.snapshot()
         repeated = self.run_import()
         self.assertEqual(0, repeated['accepted'])
+        self.assertEqual(2, repeated['duplicates'])
+        self.assertEqual(before, self.snapshot())
+
+    def test_model_only_import_merges_case_and_punctuation_variants(self):
+        self.write([self.source()], [
+            self.record(manufacturer_sku=None, model='U-650/AS', locator='row:1'),
+            self.record(manufacturer_sku=None, model='u650 as', locator='row:2'),
+        ])
+        totals = self.run_import()
+        self.assertEqual(1, totals['products'])
+        self.assertEqual(2, totals['product_sources'])
+
+    def test_import_remains_idempotent_after_model_only_rows_join_sku_products(self):
+        self.write([self.source()], [
+            self.record(manufacturer_sku=None, model='U-650/AS', locator='row:1'),
+            self.record(model='U650 AS', manufacturer_sku='MAKER-650AS', locator='row:2'),
+        ])
+        self.run_import()
+        connection = connect(self.db)
+        try:
+            plan = plan_merges(connection)
+            self.assertEqual(1, len(plan['merges']))
+            apply_merges(connection, plan)
+        finally:
+            connection.close()
+        before = self.snapshot()
+        repeated = self.run_import()
         self.assertEqual(2, repeated['duplicates'])
         self.assertEqual(before, self.snapshot())
 

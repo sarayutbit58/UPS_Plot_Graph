@@ -20,10 +20,20 @@ class NormalizationTests(unittest.TestCase):
         self.assertIsNone(normalized['currency'])
         self.assertEqual(normalized['vat_treatment'], 'unknown')
 
-    def test_punctuation_and_case_variants_do_not_merge(self):
+    def test_case_and_punctuation_only_model_variants_share_identity(self):
         keys = {self.record(model=model)['identity_key']
                 for model in ['U-650/AS', 'U650/AS', 'U-650-AS', 'u-650/as']}
-        self.assertEqual(len(keys), 4)
+        self.assertEqual(len(keys), 1)
+
+    def test_alphanumeric_model_variants_remain_distinct(self):
+        keys = {self.record(model=model)['identity_key']
+                for model in ['U650/AS', 'U650/AS2', 'U650/BS']}
+        self.assertEqual(len(keys), 3)
+
+    def test_model_only_identity_keeps_product_categories_separate(self):
+        ups = self.record(model='Family-A', product_type='UPS')
+        battery = self.record(model='Family A', product_type='battery')
+        self.assertNotEqual(ups['identity_key'], battery['identity_key'])
 
     def test_brand_case_and_whitespace_deduplicate(self):
         self.assertEqual(self.record()['identity_key'],

@@ -30,6 +30,12 @@ def _text(value):
     return re.sub(r'\s+', ' ', unicodedata.normalize('NFC', str(value))).strip()
 
 
+def model_identity_key(value):
+    """Canonicalize presentation-only model differences, preserving every letter and digit."""
+    text = unicodedata.normalize('NFKC', _text(value)).casefold()
+    return ''.join(character for character in text if character.isalnum())
+
+
 def _positive(value, field):
     if value is None or value == '':
         return None
@@ -76,6 +82,9 @@ def normalize_record(raw):
             raise ValueError('unknown or ambiguous manufacturer')
         if model.casefold() in UNKNOWN or any(separator in model for separator in ('|', ';')):
             raise ValueError('unknown or ambiguous model')
+        normalized_model = model_identity_key(model)
+        if not normalized_model:
+            raise ValueError('model has no alphanumeric identity')
         if sku and sku.casefold() in UNKNOWN:
             sku = None
         product_type = _text(raw.get('product_type'))
@@ -83,7 +92,11 @@ def normalize_record(raw):
         if not product_type:
             raise ValueError('missing or unsupported product_type')
         manufacturer_key = manufacturer.casefold()
-        identity_key = json.dumps([manufacturer_key, 'sku' if sku else 'model', sku or model], ensure_ascii=False, separators=(',', ':'))
+        identity_value = sku if sku else normalized_model
+        identity_parts = [manufacturer_key, 'sku' if sku else 'model', identity_value]
+        if not sku:
+            identity_parts.append(product_type)
+        identity_key = json.dumps(identity_parts, ensure_ascii=False, separators=(',', ':'))
         price = raw.get('price_amount')
         amount = None
         if price is not None and price != '':

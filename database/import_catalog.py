@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 from manage import connect, migrate, seed, transaction
-from normalize import normalize_record
+from normalize import model_identity_key, normalize_record
 
 
 def json_lines(path):
@@ -90,13 +90,23 @@ def import_catalog(db_path, inventory_path, records_path):
                     reject(connection, source_id, record, record['reason'])
                     totals['rejected'] += 1
                     continue
+                previous_source = connection.execute('''SELECT id,raw_json FROM product_sources
+                    WHERE source_file_id=? AND source_locator=?''',
+                    (source_id, record['source_locator'])).fetchone()
+                if previous_source:
+                    if previous_source['raw_json'] == record['raw_json']:
+                        totals['duplicates'] += 1
+                    else:
+                        reject(connection, source_id, record, 'source locator conflict: differing assertions at the same location')
+                        totals['rejected'] += 1
+                    continue
                 connection.execute('INSERT OR IGNORE INTO manufacturers(name,canonical_key) VALUES (?,?)',
                                    (record['manufacturer'], record['manufacturer_key']))
                 manufacturer_id = connection.execute('SELECT id FROM manufacturers WHERE canonical_key=?',
                                                       (record['manufacturer_key'],)).fetchone()[0]
                 previous = connection.execute('SELECT * FROM products WHERE identity_key=?',
                                                (record['identity_key'],)).fetchone()
-                if previous and (previous['model'] != record['model'] or previous['product_type'] != record['product_type']):
+                if previous and (model_identity_key(previous['model']) != model_identity_key(record['model']) or previous['product_type'] != record['product_type']):
                     reject(connection, source_id, record, 'identity conflict: same key has a different model or product type')
                     totals['rejected'] += 1
                     continue
@@ -106,16 +116,6 @@ def import_catalog(db_path, inventory_path, records_path):
                      record['description'], record['product_type']))
                 product_id = connection.execute('SELECT id FROM products WHERE identity_key=?',
                                                  (record['identity_key'],)).fetchone()[0]
-                previous_source = connection.execute('''SELECT id,raw_json FROM product_sources
-                    WHERE product_id=? AND source_file_id=? AND source_locator=?''',
-                    (product_id, source_id, record['source_locator'])).fetchone()
-                if previous_source:
-                    if previous_source['raw_json'] == record['raw_json']:
-                        totals['duplicates'] += 1
-                    else:
-                        reject(connection, source_id, record, 'source locator conflict: differing assertions at the same location')
-                        totals['rejected'] += 1
-                    continue
                 source_record_id = connection.execute('''INSERT INTO product_sources
                     (product_id,source_file_id,source_locator,raw_text,raw_json) VALUES (?,?,?,?,?)''',
                     (product_id, source_id, record['source_locator'], record['raw_text'], record['raw_json'])).lastrowid
