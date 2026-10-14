@@ -1,0 +1,239 @@
+{
+  "version": 1,
+  "curves": [
+    {
+      "manufacturer": "APC",
+      "model": "SMC1000IC",
+      "sku": "SMC1000IC",
+      "ratedWatts": 600,
+      "outletCount": 8,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 300, "runtimeMinutes": 14 },
+        { "loadW": 600, "runtimeMinutes": 5 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMC1500IC",
+      "sku": "SMC1500IC",
+      "ratedWatts": 900,
+      "outletCount": 8,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 450, "runtimeMinutes": 11 },
+        { "loadW": 900, "runtimeMinutes": 4 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMC1000I-2UC",
+      "sku": "SMC1000I-2UC",
+      "ratedWatts": 600,
+      "outletCount": 4,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 300, "runtimeMinutes": 14 },
+        { "loadW": 600, "runtimeMinutes": 5 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMC1500I-2UC",
+      "sku": "SMC1500I-2UC",
+      "ratedWatts": 900,
+      "outletCount": 4,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 450, "runtimeMinutes": 18 },
+        { "loadW": 900, "runtimeMinutes": 6 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMT750IC",
+      "sku": "SMT750IC",
+      "ratedWatts": 500,
+      "outletCount": 6,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 200, "runtimeMinutes": 22 },
+        { "loadW": 500, "runtimeMinutes": 5 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMT1000IC",
+      "sku": "SMT1000IC",
+      "ratedWatts": 700,
+      "outletCount": 8,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 200, "runtimeMinutes": 45 },
+        { "loadW": 500, "runtimeMinutes": 10 },
+        { "loadW": 700, "runtimeMinutes": 6 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMT1500IC",
+      "sku": "SMT1500IC",
+      "ratedWatts": 1000,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 200, "runtimeMinutes": 84 },
+        { "loadW": 500, "runtimeMinutes": 23 },
+        { "loadW": 700, "runtimeMinutes": 12 },
+        { "loadW": 1000, "runtimeMinutes": 7 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMT2200IC",
+      "sku": "SMT2200IC",
+      "ratedWatts": 1980,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 200, "runtimeMinutes": 137 },
+        { "loadW": 500, "runtimeMinutes": 51 },
+        { "loadW": 700, "runtimeMinutes": 34 },
+        { "loadW": 1000, "runtimeMinutes": 21 },
+        { "loadW": 1400, "runtimeMinutes": 13 },
+        { "loadW": 1600, "runtimeMinutes": 10 },
+        { "loadW": 1980, "runtimeMinutes": 7 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMT3000IC",
+      "sku": "SMT3000IC",
+      "ratedWatts": 2700,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 200, "runtimeMinutes": 149 },
+        { "loadW": 500, "runtimeMinutes": 55 },
+        { "loadW": 700, "runtimeMinutes": 37 },
+        { "loadW": 1000, "runtimeMinutes": 23 },
+        { "loadW": 1400, "runtimeMinutes": 14 },
+        { "loadW": 1600, "runtimeMinutes": 12 },
+        { "loadW": 2700, "runtimeMinutes": 6 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMT1000RMI2UC",
+      "sku": "SMT1000RMI2UC",
+      "ratedWatts": 700,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 200, "runtimeMinutes": 70 },
+        { "loadW": 500, "runtimeMinutes": 17 },
+        { "loadW": 700, "runtimeMinutes": 9 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMT2200RMI2UC",
+      "sku": "SMT2200RMI2UC",
+      "ratedWatts": 1980,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 200, "runtimeMinutes": 84 },
+        { "loadW": 500, "runtimeMinutes": 35 },
+        { "loadW": 700, "runtimeMinutes": 24 },
+        { "loadW": 1000, "runtimeMinutes": 15 },
+        { "loadW": 1400, "runtimeMinutes": 9 },
+        { "loadW": 1600, "runtimeMinutes": 7 },
+        { "loadW": 1980, "runtimeMinutes": 5 }
+      ]
+    },
+    {
+      "manufacturer": "APC",
+      "model": "SMT3000RMI2UC",
+      "sku": "SMT3000RMI2UC",
+      "ratedWatts": 2700,
+      "batteryConfiguration": "internal battery",
+      "conditions": "Runtime estimates in the manufacturer technical specification; further test conditions are not specified in the table.",
+      "source": {
+        "title": "APC Smart-UPS SMC and SMT Technical Specifications",
+        "url": "https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5",
+        "publicationYear": 2018
+      },
+      "points": [
+        { "loadW": 200, "runtimeMinutes": 86 },
+        { "loadW": 500, "runtimeMinutes": 38 },
+        { "loadW": 700, "runtimeMinutes": 26 },
+        { "loadW": 1000, "runtimeMinutes": 17 },
+        { "loadW": 1400, "runtimeMinutes": 11 },
+        { "loadW": 1600, "runtimeMinutes": 9 },
+        { "loadW": 2700, "runtimeMinutes": 3 }
+      ]
+    }
+  ]
+}

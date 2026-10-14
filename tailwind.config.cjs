@@ -1,5 +1,5 @@
 module.exports = {
-    content: ['./index.html'],
+    content: ['./index.html', './optimization.js'],
     theme: {
         extend: {
             fontFamily: {

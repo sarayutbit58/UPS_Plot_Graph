@@ -289,6 +289,7 @@
             .app-sidebar { position: static; margin-bottom: 14px; padding: 8px; }
             .sidebar-label, .sidebar-note { display: none; }
             .step-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+            body[data-mode="enterprise"] .step-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
             .step-nav-button { min-height: 52px; flex-direction: column; justify-content: center; gap: 3px; padding: 5px 2px; text-align: center; }
             .nav-step { width: 22px; height: 22px; flex-basis: 22px; border-radius: 7px; font-size: 10px; }
             .nav-copy { display: block; }
@@ -346,21 +347,25 @@
         <aside class="app-sidebar" aria-label="เมนูขั้นตอนการคำนวณ">
             <p class="sidebar-label">WORKSPACE</p>
             <nav class="step-nav" aria-label="ขั้นตอนการคำนวณ">
-                <button id="step1-indicator" class="step-nav-button" type="button" aria-current="step" onclick="goToStep(1)">
+                <button id="step1-indicator" class="step-nav-button" type="button" aria-label="ขั้นตอนที่ 1 โหลดอุปกรณ์" aria-current="step" onclick="goToStep(1)">
                     <span id="step1-number" class="nav-step">01</span>
-                    <span class="nav-copy"><strong>โหลดอุปกรณ์</strong><small>รายการและกำลังไฟ</small></span>
+                    <span class="nav-copy"><strong>โหลด</strong><small>รายการและกำลังไฟ</small></span>
                 </button>
-                <button id="step2-indicator" class="step-nav-button" type="button" onclick="goToStep(2)">
+                <button id="step2-indicator" class="step-nav-button" type="button" aria-label="ขั้นตอนที่ 2 ขนาดแบตเตอรี่" onclick="goToStep(2)">
                     <span id="step2-number" class="nav-step">02</span>
-                    <span class="nav-copy"><strong>ขนาดแบตเตอรี่</strong><small>ตามเวลาที่ต้องการ</small></span>
+                    <span class="nav-copy"><strong>แบตเตอรี่</strong><small>ตามเวลาที่ต้องการ</small></span>
                 </button>
-                <button id="step3-indicator" class="step-nav-button" type="button" onclick="goToStep(3)">
+                <button id="step3-indicator" class="step-nav-button" type="button" aria-label="ขั้นตอนที่ 3 เวลาสำรองไฟ" onclick="goToStep(3)">
                     <span id="step3-number" class="nav-step">03</span>
-                    <span class="nav-copy"><strong>เวลาสำรองไฟ</strong><small>กราฟ Runtime</small></span>
+                    <span class="nav-copy"><strong>Runtime</strong><small>กราฟ Runtime</small></span>
                 </button>
-                <button id="step4-indicator" class="step-nav-button" type="button" onclick="goToStep(4)">
+                <button id="step4-indicator" class="step-nav-button" type="button" aria-label="ขั้นตอนที่ 4 สรุปผล" onclick="goToStep(4)">
                     <span id="step4-number" class="nav-step">04</span>
-                    <span class="nav-copy"><strong>สรุปผล</strong><small>ข้อเสนอแนะการเลือก UPS</small></span>
+                    <span class="nav-copy"><strong>สรุป</strong><small>ข้อเสนอแนะการเลือก UPS</small></span>
+                </button>
+                <button id="step5-indicator" class="step-nav-button enterprise-only flex" type="button" aria-label="ขั้นตอนที่ 5 เปรียบเทียบการจัดสรร UPS" onclick="goToStep(5)">
+                    <span id="step5-number" class="nav-step">05</span>
+                    <span class="nav-copy"><strong>เทียบ UPS</strong><small>ออกแบบ UPS หลายรุ่น</small></span>
                 </button>
             </nav>
             <div class="sidebar-note">ทำตามลำดับจากโหลดไปยังผลลัพธ์ หรือเลือกขั้นตอนที่ต้องการจากเมนูนี้</div>
@@ -715,6 +720,32 @@
                         </button>
                     </div>
                 </div>
+                <div class="enterprise-only mt-5 flex justify-end">
+                    <button type="button" onclick="goToStep(5)"
+                        class="px-5 py-3 btn-primary text-white rounded-xl font-medium">
+                        เปรียบเทียบแบบจัดสรร UPS →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 5: Scenario comparison -->
+            <div id="step5" class="step-content hidden enterprise-only" role="region" aria-labelledby="step5-heading">
+                <h2 id="step5-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">เปรียบเทียบแบบจัดสรร UPS</h2>
+                <p class="text-gray-500 mb-6">ระบบค้นหาแบบผสมหลายรุ่น และตรวจ W, VA, Runtime, Outlet ก่อนแสดงแบบที่ผ่านทุกข้อกำหนด</p>
+                <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-5">
+                    <p class="font-semibold text-blue-800">เกณฑ์ค้นหา</p>
+                    <p class="text-sm text-blue-700 mt-1">Best Overall ให้ความสำคัญกับจำนวน UPS ต่ำก่อน และจัดลำดับ Runtime reserve ต่อเมื่อผ่านข้อจำกัดวิศวกรรมครบ</p>
+                    <p class="text-sm text-blue-700 mt-1">สกุลเงินที่เว้นว่างถือเป็น THB ตามที่ยืนยัน; Lowest Cost แสดงราคาไม่รวม VAT</p>
+                    <p class="text-sm text-blue-700 mt-1">ราคา inclusive จะปรับเมื่อมีช่วงวันที่ราคามีผลที่ตรวจสอบอัตรา VAT ได้; unknown หรือไม่มีช่วงวันที่ราคามีผลจะเทียบไม่ได้</p>
+                    <p class="text-sm text-blue-700 mt-1">หากวันที่อ้างอิงราคาหาย ระบบจะแจ้งเตือนให้ตรวจสอบก่อนสั่งซื้อ</p>
+                    <p class="text-sm text-blue-700 mt-1">ถ้ารายการหนึ่งใช้หลายรู ระบบแบ่งโหลดเท่ากันต่อรู และกระจาย Forecast ตามสัดส่วนโหลด โดยไม่เพิ่มจำนวนรูปลั๊ก</p>
+                </div>
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <p id="optimizationStatus" class="field-help" role="status" aria-live="polite">กดค้นหาเพื่อสร้างแบบจัดสรรจากโหลดปัจจุบัน</p>
+                    <button id="runOptimizationButton" type="button" onclick="runScenarioOptimization()"
+                        class="px-5 py-3 btn-primary text-white rounded-xl font-medium whitespace-nowrap">ค้นหาแบบจัดสรร</button>
+                </div>
+                <div id="optimizationResults" class="space-y-5" aria-live="polite"></div>
             </div>
 
             <!-- Navigation Buttons -->
@@ -739,6 +770,7 @@
     <footer class="app-footer">UPS Picker · ผลลัพธ์เป็นค่าประมาณเพื่อช่วยวางแผนเบื้องต้น</footer>
 
     <script src="./calculations.js"></script>
+    <script src="./optimization.js"></script>
     <script>
         // State
         let currentStep = 1;
@@ -756,6 +788,7 @@
         let devices = [];
         let deviceIdCounter = 0;
         let runtimeChart = null;
+        let optimizationRequestVersion = 0;
 
         // Calculated values storage
         let calculatedData = {
@@ -781,6 +814,7 @@
 
         function setMode(mode, preserveEnterpriseSettings = false) {
             const nextMode = mode === 'enterprise' ? 'enterprise' : 'basic';
+            if (nextMode !== currentMode) invalidateOptimizationResults();
             if (currentMode === 'enterprise' && nextMode === 'basic' && !preserveEnterpriseSettings) {
                 enterpriseBatterySettings = {
                     voltage: Number(document.getElementById('batteryVoltage').value),
@@ -807,6 +841,10 @@
             document.getElementById('modeDescription').textContent = currentMode === 'basic'
                 ? 'ข้อมูลหลักที่จำเป็นสำหรับการคำนวณ'
                 : 'ปรับสมมติฐาน Forecast และรายละเอียดโหลดเพิ่มเติม';
+            if (currentMode === 'basic' && currentStep === 5) {
+                currentStep = 4;
+                showStep(4);
+            }
             updateRuntimeSourceControls();
             document.querySelectorAll('.device-card').forEach(updateDeviceLoadLabel);
             updateBasicContextNote();
@@ -1119,6 +1157,7 @@
                 }
                 updateDashboardMetrics();
                 if (currentStep === 4) updateSummary();
+                invalidateOptimizationResults();
                 return;
             }
             loadInputValid = true;
@@ -1162,6 +1201,7 @@
             } else {
                 forecastPreview.classList.add('hidden');
             }
+            invalidateOptimizationResults();
         }
 
         // Forecast Unit Toggle
@@ -1200,6 +1240,7 @@
                 runtimeChart = null;
             }
             calculateBatteryAh();
+            invalidateOptimizationResults();
         }
 
         function calculateBatteryAh() {
@@ -1503,6 +1544,57 @@
             updateDashboardMetrics();
         }
 
+        function invalidateOptimizationResults() {
+            optimizationRequestVersion++;
+            const results = document.getElementById('optimizationResults');
+            const status = document.getElementById('optimizationStatus');
+            if (!results || !status) return;
+            results.replaceChildren();
+            status.textContent = 'ข้อมูลโหลดเปลี่ยนแล้ว กดค้นหาใหม่เพื่อให้ผลตรงกับค่าปัจจุบัน';
+        }
+
+        async function runScenarioOptimization() {
+            if (currentMode !== 'enterprise') return;
+            updateTotalLoad();
+            if (!loadInputValid || calculatedData.totalLoad <= 0) {
+                document.getElementById('optimizationStatus').textContent = 'ตรวจสอบโหลดและจำนวนปลั๊กก่อนค้นหา';
+                return;
+            }
+            const button = document.getElementById('runOptimizationButton');
+            const status = document.getElementById('optimizationStatus');
+            const results = document.getElementById('optimizationResults');
+            const requestVersion = optimizationRequestVersion;
+            button.disabled = true;
+            button.textContent = 'กำลังค้นหา…';
+            status.textContent = 'กำลังตรวจ W, VA, Runtime และ Outlet ของแบบผสมหลายรุ่น';
+            results.replaceChildren();
+            try {
+                const inputDevices = [...document.querySelectorAll('.device-card')].map(card => ({
+                    name: card.querySelector('.device-name').value || 'อุปกรณ์ไม่ระบุชื่อ',
+                    load: card.querySelector('.device-load').value,
+                    unit: card.querySelector('.device-unit').value,
+                    plugs: card.querySelector('.device-plugs')?.value || 1,
+                }));
+                const request = UPSOptimization.buildRequest(
+                    inputDevices,
+                    document.getElementById('backupTimeMin').value,
+                    calculatedData.deviceLoad,
+                    calculatedData.totalLoad,
+                );
+                const response = await UPSOptimization.optimize(request);
+                if (requestVersion !== optimizationRequestVersion) return;
+                UPSOptimization.render(results, response);
+                status.textContent = `พบแบบที่ผ่านข้อกำหนด ${response.validDesignCount} แบบ จาก ${response.search.candidateModelCount} รุ่นที่มีข้อมูลเทคนิคครบ`;
+            } catch (error) {
+                if (requestVersion === optimizationRequestVersion) {
+                    status.textContent = error.message || 'ค้นหาแบบจัดสรรไม่สำเร็จ';
+                }
+            } finally {
+                button.disabled = false;
+                button.textContent = 'ค้นหาแบบจัดสรรอีกครั้ง';
+            }
+        }
+
         // Navigation
         function nextStep() {
             if (currentStep === 1) {
@@ -1551,7 +1643,7 @@
         }
 
         function goToStep(step) {
-            if (step < 1 || step > 4) return;
+            if (step < 1 || step > 5 || (step === 5 && currentMode !== 'enterprise')) return;
             if (step > 1) {
                 updateTotalLoad();
                 if (!loadInputValid) {
@@ -1580,7 +1672,7 @@
                     return;
                 }
             }
-            if (step === 4) {
+            if (step >= 4) {
                 syncRuntimeBatteryAh();
                 document.getElementById('runtimeVoltage').value = calculatedData.voltage;
                 document.getElementById('runtimeEfficiency').value = calculatedData.efficiency;
@@ -1661,8 +1753,8 @@
 
             // Update buttons
             document.getElementById('prevBtn').classList.toggle('hidden', step === 1);
-            document.getElementById('nextBtn').classList.toggle('hidden', step === 4);
-            document.getElementById('restartBtn').classList.toggle('hidden', step !== 4);
+            document.getElementById('nextBtn').classList.toggle('hidden', step >= 4);
+            document.getElementById('restartBtn').classList.toggle('hidden', step < 4);
 
             const nextLabels = {
                 1: 'ถัดไป: ขนาดแบตเตอรี่ →',
@@ -1694,7 +1786,7 @@
         }
 
         function updateStepIndicators() {
-            for (let i = 1; i <= 4; i++) {
+            for (let i = 1; i <= 5; i++) {
                 const indicator = document.getElementById(`step${i}-indicator`);
                 indicator.setAttribute('aria-current', i === currentStep ? 'step' : 'false');
                 document.getElementById(`step${i}-number`).textContent = i < currentStep
