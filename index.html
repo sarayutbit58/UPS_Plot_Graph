@@ -347,25 +347,25 @@
         <aside class="app-sidebar" aria-label="เมนูขั้นตอนการคำนวณ">
             <p class="sidebar-label">WORKSPACE</p>
             <nav class="step-nav" aria-label="ขั้นตอนการคำนวณ">
-                <button id="step1-indicator" class="step-nav-button" type="button" aria-current="step" onclick="goToStep(1)">
+                <button id="step1-indicator" class="step-nav-button" type="button" aria-label="ขั้นตอนที่ 1 โหลดอุปกรณ์" aria-current="step" onclick="goToStep(1)">
                     <span id="step1-number" class="nav-step">01</span>
-                    <span class="nav-copy"><strong>โหลดอุปกรณ์</strong><small>รายการและกำลังไฟ</small></span>
+                    <span class="nav-copy"><strong>โหลด</strong><small>รายการและกำลังไฟ</small></span>
                 </button>
-                <button id="step2-indicator" class="step-nav-button" type="button" onclick="goToStep(2)">
+                <button id="step2-indicator" class="step-nav-button" type="button" aria-label="ขั้นตอนที่ 2 ขนาดแบตเตอรี่" onclick="goToStep(2)">
                     <span id="step2-number" class="nav-step">02</span>
-                    <span class="nav-copy"><strong>ขนาดแบตเตอรี่</strong><small>ตามเวลาที่ต้องการ</small></span>
+                    <span class="nav-copy"><strong>แบตเตอรี่</strong><small>ตามเวลาที่ต้องการ</small></span>
                 </button>
-                <button id="step3-indicator" class="step-nav-button" type="button" onclick="goToStep(3)">
+                <button id="step3-indicator" class="step-nav-button" type="button" aria-label="ขั้นตอนที่ 3 เวลาสำรองไฟ" onclick="goToStep(3)">
                     <span id="step3-number" class="nav-step">03</span>
-                    <span class="nav-copy"><strong>เวลาสำรองไฟ</strong><small>กราฟ Runtime</small></span>
+                    <span class="nav-copy"><strong>Runtime</strong><small>กราฟ Runtime</small></span>
                 </button>
-                <button id="step4-indicator" class="step-nav-button" type="button" onclick="goToStep(4)">
+                <button id="step4-indicator" class="step-nav-button" type="button" aria-label="ขั้นตอนที่ 4 สรุปผล" onclick="goToStep(4)">
                     <span id="step4-number" class="nav-step">04</span>
-                    <span class="nav-copy"><strong>สรุปผล</strong><small>ข้อเสนอแนะการเลือก UPS</small></span>
+                    <span class="nav-copy"><strong>สรุป</strong><small>ข้อเสนอแนะการเลือก UPS</small></span>
                 </button>
-                <button id="step5-indicator" class="step-nav-button enterprise-only flex" type="button" onclick="goToStep(5)">
+                <button id="step5-indicator" class="step-nav-button enterprise-only flex" type="button" aria-label="ขั้นตอนที่ 5 เปรียบเทียบการจัดสรร UPS" onclick="goToStep(5)">
                     <span id="step5-number" class="nav-step">05</span>
-                    <span class="nav-copy"><strong>เปรียบเทียบ</strong><small>ออกแบบ UPS หลายรุ่น</small></span>
+                    <span class="nav-copy"><strong>เทียบ UPS</strong><small>ออกแบบ UPS หลายรุ่น</small></span>
                 </button>
             </nav>
             <div class="sidebar-note">ทำตามลำดับจากโหลดไปยังผลลัพธ์ หรือเลือกขั้นตอนที่ต้องการจากเมนูนี้</div>

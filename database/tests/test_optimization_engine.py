@@ -67,6 +67,16 @@ class OptimizationEngineTests(unittest.TestCase):
             self.assertLessEqual(unit['outlets']['used'], unit['outlets']['available'])
             self.assertGreaterEqual(unit['estimatedRuntimeMinutes'], result['bestSolution']['runtimeRequirementMinutes'])
 
+    def test_single_device_search_is_complete_without_enumerating_unused_ups(self):
+        result = self.optimize(devices=[
+            {'name': 'Server', 'quantity': 1, 'watt': 200, 'va': 250, 'priority': 50},
+        ], runtime=5)
+
+        self.assertEqual(1, result['search']['maxUnitsPerDesign'])
+        self.assertTrue(result['search']['isComplete'])
+        self.assertEqual(2, result['validDesignCount'])
+        self.assertEqual(1, len(result['topAlternatives']))
+
     def test_finds_a_mixed_model_design_when_no_single_model_can_fit_the_load(self):
         # Keep only two verified models: UPS-1 has many outlets but cannot carry
         # the high-watt device; UPS-2 can carry it but has too few outlets for

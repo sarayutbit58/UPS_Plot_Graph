@@ -528,6 +528,7 @@ def optimize_from_connection(connection, request, curve_catalog=None):
                               or not candidate['estimated_cost'].get('sourceDate'))
     candidate_count = len(candidates)
     minimum_units = _minimum_units(parsed, candidates) if candidates else 1
+    max_units_per_design = min(MAX_SEARCH_UNITS, parsed['device_count'])
     work_budget = max(20, min(MAX_FLEET_CANDIDATES,
                               MAX_SEARCH_WORK // max(1, parsed['device_count'] * MAX_SEARCH_UNITS)))
     valid_by_signature = {}
@@ -538,8 +539,8 @@ def optimize_from_connection(connection, request, curve_catalog=None):
     pruned_fleets = 0
     reached_limit = False
 
-    if candidates and minimum_units <= MAX_SEARCH_UNITS:
-        for unit_count in range(minimum_units, MAX_SEARCH_UNITS + 1):
+    if candidates and minimum_units <= max_units_per_design:
+        for unit_count in range(minimum_units, max_units_per_design + 1):
             for fleet in _fleet_count_vectors(unit_count, candidate_count):
                 if fleet_candidates_visited >= work_budget:
                     reached_limit = True
@@ -641,6 +642,8 @@ def optimize_from_connection(connection, request, curve_catalog=None):
         notes.append('การจัดวางอุปกรณ์ถึงเพดานค้นหาหรือใช้ best-fit สำหรับอุปกรณ์เกิน 200 ชิ้น ผลเป็นแบบดีที่สุดจากตำแหน่งที่ตรวจแล้ว')
     if minimum_units > MAX_SEARCH_UNITS:
         notes.append(f'จำนวนขั้นต่ำจากโหลดรวมคือ {minimum_units} เครื่อง ซึ่งเกินขอบเขต solver ที่ {MAX_SEARCH_UNITS} เครื่อง')
+    elif minimum_units > max_units_per_design:
+        notes.append(f'ต้องใช้ UPS อย่างน้อย {minimum_units} เครื่อง แต่มีอุปกรณ์ที่จัดลง outlet ได้เพียง {parsed["device_count"]} ชิ้น; ระบบไม่แบ่งโหลดอุปกรณ์ชิ้นเดียวข้าม UPS')
     if not candidates:
         notes.append('ไม่พบ UPS ที่มีข้อมูลแหล่งอ้างอิงครบทั้ง W, VA, จำนวน outlet และ runtime curve')
     if len(alternatives) < TOP_ALTERNATIVES and best:
@@ -652,7 +655,9 @@ def optimize_from_connection(connection, request, curve_catalog=None):
     return {
         'solver': 'CSP',
         'search': {'candidateModelCount': candidate_count, 'minimumUnitsByCapacity': minimum_units,
-                   'maxUnitsPerDesign': MAX_SEARCH_UNITS, 'maxDistinctModelsPerDesign': MAX_DISTINCT_MODELS,
+                   'maxUnitsPerDesign': max_units_per_design,
+                   'configuredMaxUnitsPerDesign': MAX_SEARCH_UNITS,
+                   'maxDistinctModelsPerDesign': MAX_DISTINCT_MODELS,
                    'fleetCandidatesVisited': fleet_candidates_visited,
                    'fleetCandidateBudget': work_budget,
                    'fleetEvaluations': fleet_evaluations, 'prunedFleetCandidates': pruned_fleets,
@@ -661,7 +666,7 @@ def optimize_from_connection(connection, request, curve_catalog=None):
                    'maxAssignmentNodesPerFleet': MAX_ASSIGNMENT_NODES_PER_FLEET,
                    'exactAssignmentInstanceLimit': MAX_EXACT_ASSIGNMENT_INSTANCES,
                    'isComplete': not reached_limit and assignment_search_complete
-                   and minimum_units <= MAX_SEARCH_UNITS},
+                   and minimum_units <= max_units_per_design},
         'priceComparison': {'available': price_comparable, 'currency': comparable_currency,
                             'vatTreatment': comparable_vat, 'modelsMissingSourceDate': missing_price_dates,
                             'reasonCode': price_reason_code, 'reason': price_reason},
