@@ -133,12 +133,43 @@ class OptimizationEngineTests(unittest.TestCase):
         self.assertTrue(best['validation']['runtimeValid'])
         self.assertTrue(result['search']['isComplete'])
 
-    def test_lowest_cost_is_unavailable_when_currency_or_vat_is_not_comparable(self):
+    def test_lowest_cost_is_unavailable_when_vat_is_not_comparable(self):
+        self.connection.execute("UPDATE price_offers SET vat_treatment='unknown'")
         result = self.optimize()
         cheapest = next(row for row in result['scenarios'] if row['code'] == 'A')
 
         self.assertFalse(cheapest['available'])
         self.assertEqual('incomparable_price_basis', cheapest['reasonCode'])
+        self.assertEqual('missing_vat', result['priceComparison']['reasonCode'])
+
+    def test_missing_currency_uses_user_confirmed_thb_when_vat_is_comparable(self):
+        self.connection.execute("UPDATE price_offers SET vat_treatment='exclusive'")
+        result = self.optimize()
+        cheapest = next(row for row in result['scenarios'] if row['code'] == 'A')
+
+        self.assertTrue(cheapest['available'])
+        self.assertEqual('THB', result['priceComparison']['currency'])
+        self.assertEqual('user-confirmed', result['priceComparison']['currencySource'])
+        self.assertEqual('THB', result['bestSolution']['totalCostCurrency'])
+
+    def test_explicit_non_thb_currency_blocks_cost_ranking(self):
+        self.connection.execute("UPDATE price_offers SET currency='USD',vat_treatment='exclusive'")
+        result = self.optimize()
+        cheapest = next(row for row in result['scenarios'] if row['code'] == 'A')
+
+        self.assertFalse(cheapest['available'])
+        self.assertEqual('non_thb_currency', result['priceComparison']['reasonCode'])
+
+    def test_missing_price_does_not_report_a_comparison_currency(self):
+        product_id = self.catalog['products'][0]
+        self.connection.execute('''DELETE FROM price_offers WHERE product_source_id IN
+            (SELECT id FROM product_sources WHERE product_id=?)''', (product_id,))
+        result = self.optimize()
+
+        self.assertFalse(result['priceComparison']['available'])
+        self.assertEqual('missing_price', result['priceComparison']['reasonCode'])
+        self.assertIsNone(result['priceComparison']['currency'])
+        self.assertIsNone(result['priceComparison']['currencySource'])
 
     def test_lowest_cost_can_rank_when_currency_and_vat_are_comparable(self):
         self.connection.execute("UPDATE price_offers SET currency='THB',vat_treatment='exclusive'")

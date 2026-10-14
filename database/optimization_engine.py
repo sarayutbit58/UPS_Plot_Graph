@@ -47,6 +47,7 @@ MAX_ASSIGNMENT_NODES_PER_FLEET = 1_000
 MAX_ASSIGNMENT_NODES_TOTAL = 250_000
 MAX_EXACT_ASSIGNMENT_INSTANCES = 200
 TOP_ALTERNATIVES = 5
+USER_CONFIRMED_PRICE_CURRENCY = 'THB'
 
 
 class OptimizationInputError(AllocationInputError):
@@ -54,22 +55,32 @@ class OptimizationInputError(AllocationInputError):
 
 
 def _price_comparison_basis(candidates):
-    """Return a comparable cost basis only when every eligible model is traceable."""
+    """Return a comparable cost basis, applying the user's THB confirmation to blank currencies."""
     price_groups = [candidate.get('price_offers') or [] for candidate in candidates]
     if not price_groups or any(not group for group in price_groups):
-        return False, 'missing_price', 'ราคาของ UPS ที่เข้าเกณฑ์ยังไม่ครบทุกโมเดล'
+        return (False, 'missing_price', 'ราคาของ UPS ที่เข้าเกณฑ์ยังไม่ครบทุกโมเดล',
+                None, None, 0, None)
     prices = [price for group in price_groups for price in group]
-    currencies = {str(price.get('currency') or '').strip().upper() for price in prices}
-    if '' in currencies:
-        return False, 'missing_currency', 'ยังไม่มีสกุลเงินครบทุกโมเดล'
-    if len(currencies) != 1:
-        return False, 'mixed_currency', 'สกุลเงินของราคาแต่ละโมเดลไม่ตรงกัน'
+    currencies = {str(price.get('currency') or '').strip().upper() for price in prices
+                  if str(price.get('currency') or '').strip()}
+    missing_currency_count = sum(not str(price.get('currency') or '').strip() for price in prices)
+    currency_source = 'user-confirmed' if missing_currency_count else 'catalog'
+    if len(currencies) > 1:
+        return (False, 'mixed_currency', 'สกุลเงินของราคาแต่ละโมเดลไม่ตรงกัน',
+                None, 'conflicting-source', missing_currency_count, None)
+    if currencies and currencies != {USER_CONFIRMED_PRICE_CURRENCY}:
+        currency = next(iter(currencies))
+        return (False, 'non_thb_currency', 'พบราคาในสกุลเงินอื่นที่ต้องแปลงก่อนเทียบ',
+                currency, 'catalog', missing_currency_count, None)
+    currency = USER_CONFIRMED_PRICE_CURRENCY
     vat = {str(price.get('vatTreatment') or '').strip().casefold() for price in prices}
     if '' in vat or 'unknown' in vat:
-        return False, 'missing_vat', 'ข้อมูลการรวม/ไม่รวม VAT ยังไม่ครบทุกโมเดล'
+        return (False, 'missing_vat', 'ข้อมูลการรวม/ไม่รวม VAT ยังไม่ครบทุกโมเดล',
+                currency, currency_source, missing_currency_count, None)
     if len(vat) != 1:
-        return False, 'mixed_vat', 'เงื่อนไข VAT ของราคาแต่ละโมเดลไม่ตรงกัน'
-    return True, None, None
+        return (False, 'mixed_vat', 'เงื่อนไข VAT ของราคาแต่ละโมเดลไม่ตรงกัน',
+                currency, currency_source, missing_currency_count, None)
+    return (True, None, None, currency, currency_source, missing_currency_count, next(iter(vat)))
 
 
 def _candidate_models(connection, curve_catalog):
@@ -424,7 +435,7 @@ def _assign_devices(parsed, fleet, candidates, node_limit):
     return summaries, complete, nodes
 
 
-def _solution(parsed, fleet, candidates, units, price_comparable):
+def _solution(parsed, fleet, candidates, units, price_comparable, price_currency, price_currency_source):
     counts = {}
     for unit in units:
         counts[unit['productId']] = counts.get(unit['productId'], 0) + 1
@@ -479,7 +490,9 @@ def _solution(parsed, fleet, candidates, units, price_comparable):
     if unknown_expansion_units:
         justifications.append(f"ข้อมูล expansion ยังไม่ครบสำหรับ UPS {unknown_expansion_units} เครื่อง จึงไม่นับในคะแนนขยาย")
     if not price_comparable:
-        justifications.append('ไม่ใช้ราคาเป็นตัวจัดอันดับ เพราะ currency/VAT ยังเทียบกันไม่ครบ')
+        justifications.append('ไม่ใช้ราคาเป็นตัวจัดอันดับ เพราะข้อมูลราคา สกุลเงิน หรือ VAT ยังเทียบกันไม่ครบ')
+    elif price_currency_source == 'user-confirmed':
+        justifications.append('ใช้ THB ตามการยืนยันของผู้ใช้กับ price rows ที่เว้น currency')
     elif any(not model['estimated_cost'].get('sourceDate') for model in models):
         justifications.append('บางราคาไม่มีวันที่ต้นทาง จึงควรตรวจราคาและวันมีผลก่อนสั่งซื้อ')
     return {
@@ -496,6 +509,7 @@ def _solution(parsed, fleet, candidates, units, price_comparable):
         'expansion': {'verifiedUpsUnits': expansion_units, 'maxBatteryPacks': expansion_packs,
                       'unknownUpsUnits': unknown_expansion_units},
         'totalCost': None if total_cost is None else float(total_cost),
+        'totalCostCurrency': price_currency if price_comparable else None,
         'validation': {'isValid': True, 'capacityValid': True, 'outletValid': True,
                        'runtimeValid': True, 'runtimeNotApplicableUnits': zero_load_unit_count,
                        'minimumEngineeringMarginPercent': 20},
@@ -522,7 +536,8 @@ def optimize_from_connection(connection, request, curve_catalog=None):
     """Find source-backed fleet designs and rank them under five planning scenarios."""
     candidates = _candidate_models(connection, curve_catalog)
     parsed = _parse_optimization_request(request, candidates)
-    price_comparable, price_reason_code, price_reason = _price_comparison_basis(candidates)
+    (price_comparable, price_reason_code, price_reason, price_currency,
+     price_currency_source, missing_currency_offers, comparable_vat) = _price_comparison_basis(candidates)
     missing_price_dates = sum(1 for candidate in candidates
                               if not candidate.get('estimated_cost')
                               or not candidate['estimated_cost'].get('sourceDate'))
@@ -563,7 +578,8 @@ def optimize_from_connection(connection, request, curve_catalog=None):
                 assignment_search_complete = assignment_search_complete and placement_complete
                 if units is None:
                     continue
-                solution = _solution(parsed, fleet, candidates, units, price_comparable)
+                solution = _solution(parsed, fleet, candidates, units, price_comparable,
+                                     price_currency, price_currency_source)
                 previous = valid_by_signature.get(solution['signature'])
                 if previous is None or solution['minimumEstimatedRuntimeMinutes'] > previous['minimumEstimatedRuntimeMinutes']:
                     valid_by_signature[solution['signature']] = solution
@@ -571,11 +587,6 @@ def optimize_from_connection(connection, request, curve_catalog=None):
                 break
 
     solutions = list(valid_by_signature.values())
-    for solution in solutions:
-        if price_comparable:
-            solution['totalCostCurrency'] = next(
-                str(model['estimated_cost']['currency']).upper()
-                for model in candidates if model['product_id'] == solution['models'][0]['productId'])
     best_by_scenario = {}
     scenario_specs = [
         ('A', 'Lowest Cost', 'เปรียบเทียบราคารวมเมื่อสกุลเงินและ VAT เทียบกันได้; แจ้งเตือนเมื่อวันที่อ้างอิงราคาไม่ครบ'),
@@ -631,11 +642,7 @@ def optimize_from_connection(connection, request, curve_catalog=None):
         })
 
     notes = []
-    comparable_currency = None
-    comparable_vat = None
-    if price_comparable and candidates:
-        comparable_currency = str(candidates[0]['estimated_cost']['currency']).upper()
-        comparable_vat = candidates[0]['estimated_cost']['vatTreatment']
+    comparable_currency = price_currency
     if reached_limit:
         notes.append('การค้นหาถึงเพดานจำนวนชุดที่กำหนดแล้ว แบบที่แสดงคือแบบดีที่สุดจากชุดที่ตรวจครบ')
     if not assignment_search_complete:
@@ -650,6 +657,8 @@ def optimize_from_connection(connection, request, curve_catalog=None):
         notes.append(f'พบแบบทางเลือกที่แตกต่างและผ่านข้อกำหนด {len(alternatives)} แบบ')
     if price_comparable and missing_price_dates:
         notes.append(f'ราคา {missing_price_dates} รุ่นไม่มีวันที่ต้นทาง ควรตรวจสอบราคาก่อนสั่งซื้อ')
+    if missing_currency_offers:
+        notes.append(f'ใช้ THB ตามการยืนยันของผู้ใช้กับ price offers {missing_currency_offers} รายการที่ไม่มี currency ใน catalog')
     if not best and candidates and not notes:
         notes.append('ไม่พบ fleet ที่ผ่านข้อจำกัดทั้งหมดในขอบเขตการค้นหานี้')
     return {
@@ -668,6 +677,8 @@ def optimize_from_connection(connection, request, curve_catalog=None):
                    'isComplete': not reached_limit and assignment_search_complete
                    and minimum_units <= max_units_per_design},
         'priceComparison': {'available': price_comparable, 'currency': comparable_currency,
+                            'currencySource': price_currency_source,
+                            'offersMissingCurrency': missing_currency_offers,
                             'vatTreatment': comparable_vat, 'modelsMissingSourceDate': missing_price_dates,
                             'reasonCode': price_reason_code, 'reason': price_reason},
         'bestSolution': best,

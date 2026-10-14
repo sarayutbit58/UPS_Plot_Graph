@@ -43,13 +43,13 @@ All available scenario results first satisfy W, VA, runtime and outlet constrain
 
 | Scenario | Ranking |
 |---|---|
-| A · Lowest Cost | Lowest total catalog amount, then fewer units and greater runtime reserve. Unavailable unless every eligible model has a source price and the same known currency and VAT treatment. Missing source dates are shown as a warning. |
+| A · Lowest Cost | Lowest total catalog amount, then fewer units and greater runtime reserve. Unavailable if any eligible model has no price. A blank currency uses THB based on the user's confirmation; an explicit non-THB/conflicting currency or unknown/mixed VAT also makes the scenario unavailable. Missing source dates are shown as a warning. |
 | B · Best Runtime | Highest minimum estimated runtime across units carrying a positive load, then fewer UPS units. Zero-load-only UPS units have runtime marked not applicable. |
 | C · Maximum Expansion | Highest total explicitly supported external-battery pack count; unknown capacity is not counted. |
 | D · Minimum UPS Count | Fewest UPS units, then greater runtime reserve. |
 | E · Best Overall | Fewest UPS units, then lowest comparable catalog cost when available, then greater runtime reserve. |
 
-The local catalog snapshot on 2026-10-14 has no currency recorded for eligible UPS prices and VAT is unknown for some records. Scenario A therefore remains unavailable until the source records are corrected. The optimizer does not infer THB or treat an unknown VAT basis as comparable.
+The local catalog snapshot on 2026-10-14 has no currency recorded for eligible UPS prices. The user confirmed that these catalog amounts are THB, so the optimizer reports that as a user-confirmed assumption rather than source data. VAT is unknown for some records, so Scenario A remains unavailable until the VAT basis is completed and comparable.
 
 ## Tests
 
