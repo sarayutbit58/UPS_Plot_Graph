@@ -1,2 +1,6 @@
 # Dependencies
 node_modules/
+
+# Local confidential product/pricing data and extraction dependencies
+database/local/
+__pycache__/
