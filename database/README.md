@@ -9,6 +9,7 @@ This is a standalone database layer for UPS Picker. It does not change the brows
 - Migrate/rollback: `manage.py`, `migrations/001_initial.up.sql`, `migrations/001_initial.down.sql`.
 - Reference seed: `seeds/001_reference.sql` (classification vocabulary only).
 - ETL: `extract.py`, `normalize.py`, `import_catalog.py`; conservative identity reconciliation: `merge_duplicates.py`; unpriced-product pruning: `prune_unpriced.py`; combined runner: `build_database.py`.
+- UPS recommendation engine and loopback API: `recommendation_engine.py`, `recommendation_api.py`; scoring and API contract: `recommendation.md`; exact manufacturer runtime source records: `manufacturer_runtime_curves.json`.
 - Data validation: `validate.py`; local `validation.json` and `validation.md`.
 - Acceptance tests: `tests/`; extraction checks: `test_extract.py`.
 
@@ -33,6 +34,8 @@ python -X utf8 database/manage.py seed --db database/local/ups-products.sqlite3
 python -X utf8 database/import_catalog.py --db database/local/ups-products.sqlite3 --inventory database/local/inventory.jsonl --records database/local/records.jsonl
 python -X utf8 database/merge_duplicates.py --db database/local/ups-products.sqlite3 --minimum-score 0.80 --report database/local/deduplication.json --apply
 python -X utf8 database/prune_unpriced.py --db database/local/ups-products.sqlite3 --report database/local/unpriced-pruning.json
+python -X utf8 database/recommendation_api.py --db database/local/ups-products.sqlite3 --port 8000
+python -X utf8 -m unittest database.tests.test_recommendation_engine database.tests.test_recommendation_api -v
 python -X utf8 database/validate.py --db database/local/ups-products.sqlite3 --report database/local/validation.json
 python -X utf8 database/manage.py rollback --db "<disposable acceptance-test database>"
 python -X utf8 -m unittest discover -s database/tests -v
@@ -54,3 +57,7 @@ Prices are exact decimal strings. Currency, VAT, dates and ratings stay unknown 
 ## Latest reconciliation (2026-10-14)
 
 The catalog first reconciled 136 cosmetic model variants, then removed 454 products with no price offers. The resulting database has 1,094 products (817 UPS), 7,506 source assertions/specifications, and all 7,084 price offers, 1,612 source files, and 7,386 rejections. No products without at least one price offer remain. Structural validation passed with SQLite integrity `ok` and no foreign-key violations. See `database/local/deduplication.md`, `database/local/unpriced-pruning.md`, and `database/local/validation.md` for the separate reports.
+
+## UPS recommendations (2026-10-14)
+
+`recommendation_api.py` serves the database-backed Top 5 engine on loopback only. It ranks using the formula in `recommendation.md`, returns capacity/runtime/outlet/price/expansion scores with source evidence, and marks missing values unknown. It does not allocate outlets or distribute loads. Reseller cost is the explicit NDP/Dealer source amount with VAT/source metadata; the current catalog has no currency or offer date, so the API does not convert the amount or score price efficiency until comparable currency and VAT data exist. APC runtime overlay entries are exact SKU/model matches to the linked Schneider technical specification.
