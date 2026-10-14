@@ -6,6 +6,7 @@ from pathlib import Path
 from extract import extract
 from import_catalog import import_catalog
 from merge_duplicates import reconcile, render_markdown
+from prune_unpriced import prune_unpriced_database, render_markdown as render_pruning_markdown
 from validate import validate
 
 
@@ -25,9 +26,12 @@ def main():
     merged = reconcile(catalog, minimum_score=0.80, apply=True)
     (output / 'deduplication.json').write_text(json.dumps(merged, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     (output / 'deduplication.md').write_text(render_markdown(merged), encoding='utf-8')
+    pruning = prune_unpriced_database(catalog)
+    (output / 'unpriced-pruning.json').write_text(json.dumps(pruning, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    (output / 'unpriced-pruning.md').write_text(render_pruning_markdown(pruning), encoding='utf-8')
     report = validate(catalog, output / 'validation.json')
     print(json.dumps({'database': str(catalog), 'scan': scan,
-                      'import': imported, 'deduplication': merged['result'],
+                      'import': imported, 'deduplication': merged['result'], 'unpriced_pruning': pruning,
                       'validation_passed': report['passed']}, ensure_ascii=False))
     raise SystemExit(0 if report['passed'] else 1)
 
