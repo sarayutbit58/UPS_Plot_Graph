@@ -9,6 +9,7 @@ import threading
 import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -95,6 +96,66 @@ class RecommendationApiTests(unittest.TestCase):
         self.assertTrue(result['validation']['isValid'])
         self.assertEqual(1, len(result['deviceAllocations']))
         self.assertEqual(1, len(result['outletAllocations']))
+
+    def test_allocation_api_returns_partial_validation_when_fixed_capacity_is_short(self):
+        body = json.dumps({
+            'selectedUps': {
+                'mode': 'fixed',
+                'models': [{'productId': self.catalog['products'][0], 'quantity': 1}],
+            },
+            'runtimeRequirementMinutes': 10,
+            'devices': [
+                {'name': 'Server A', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 5},
+                {'name': 'Server B', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 3},
+            ],
+        }).encode('utf-8')
+        request = Request(self.url + '/api/allocations', data=body,
+                          headers={'Content-Type': 'application/json'}, method='POST')
+        with urlopen(request, timeout=3) as response:
+            self.assertEqual(200, response.status)
+            result = json.loads(response.read())
+        self.assertFalse(result['validation']['isValid'])
+        self.assertEqual(1, len(result['deviceAllocations']))
+        self.assertEqual(1, result['unassignedDevices'][0]['quantity'])
+
+    def test_allocation_api_rejects_missing_runtime_target(self):
+        body = json.dumps({
+            'selectedUps': {
+                'mode': 'fixed',
+                'models': [{'productId': self.catalog['products'][0], 'quantity': 1}],
+            },
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 3}],
+        }).encode('utf-8')
+        request = Request(self.url + '/api/allocations', data=body,
+                          headers={'Content-Type': 'application/json'}, method='POST')
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=3)
+        self.assertEqual(400, error.exception.code)
+        payload = json.loads(error.exception.read())
+        self.assertIn('runtimeRequirementMinutes', payload['error'])
+
+    def test_allocation_api_returns_json_503_when_runtime_catalog_is_broken(self):
+        body = json.dumps({
+            'selectedUps': {
+                'mode': 'fixed',
+                'models': [{'productId': self.catalog['products'][0], 'quantity': 1}],
+            },
+            'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 3}],
+        }).encode('utf-8')
+        request = Request(self.url + '/api/allocations', data=body,
+                          headers={'Content-Type': 'application/json'}, method='POST')
+        with patch('database.allocation_engine._read_curve_catalog',
+                   side_effect=ValueError('damaged runtime catalog')):
+            try:
+                urlopen(request, timeout=3)
+                self.fail('Expected the invalid server-side runtime catalog to return HTTP 503')
+            except HTTPError as error:
+                self.assertEqual(503, error.code)
+                payload = json.loads(error.read())
+                self.assertEqual('Recommendation data could not be processed', payload['error'])
+            except Exception as error:
+                self.fail(f'Expected a controlled JSON error, got {type(error).__name__}: {error}')
 
 
 if __name__ == '__main__':

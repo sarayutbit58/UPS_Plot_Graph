@@ -22,13 +22,13 @@ Start the local recommendation service as described in `recommendation.md`. The 
 
 Use `mode: "fixed"` to allocate only the specified UPS counts; each model must have a positive `quantity`. Use `mode: "auto"` to treat any supplied quantities as starting units and allow the allocator to add units from the selected model pool until devices fit or no selected model can pass the constraints. In auto mode, an omitted quantity starts at zero. It never invents a different UPS model. Duplicate product IDs are rejected.
 
-Each physical device instance is placed on one UPS and receives one generic outlet number. Quantities can split across units, but a single device is not divided across UPSs. Higher integer priorities (1–100) are placed first; equal priorities keep input order. Candidate placements use deterministic best-fit packing among already selected UPS units; auto mode adds a new selected model only when no current unit can accept that device. The auto mode is a greedy heuristic, not an optimization solver.
+Each physical device instance is assumed to use one outlet and is placed on one UPS with one generic outlet number. Quantities can split across units, but a single device is not divided across UPSs. Higher integer priorities (1–100) are placed first; equal priorities keep input order. Candidate placements use deterministic best-fit packing among already selected UPS units; auto mode adds a new selected model only when no current unit can accept that device. The auto mode is a greedy heuristic, not an optimization solver.
 
 The response includes:
 
-- `deviceAllocations`: each assigned device instance, its UPS unit, outlet number, and post-placement runtime estimate.
+- `deviceAllocations`: each assigned device instance, its UPS unit, outlet number, and runtime estimate for the final UPS load.
 - `unassignedDevices`: remaining quantity and the constraints that blocked placement.
-- `upsUtilization`: W/VA ratings and usage, outlet usage, runtime, source model identity, and whether the unit was auto-added.
+- `upsUtilization`: W/VA ratings and usage, outlet usage, final runtime, source model identity, whether the unit was auto-added, capacity/outlet source locators, and source conflict warnings. Device-level runtime estimates match this final per-unit runtime.
 - `outletAllocations`: generic sequential outlet assignments. `outletType` is null because the catalog does not record receptacle types.
 - `capacityReport`: required load, rated fleet capacity, the 20% engineering planning limits, assigned load, and overload/margin status.
 - `validation`: `isValid` is true only when every device instance has an assignment and W, VA, outlet count, and runtime all pass.

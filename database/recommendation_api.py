@@ -72,6 +72,9 @@ def create_server(database_path, port=8000):
             except (RecommendationInputError, AllocationInputError) as error:
                 self._send_json(400, {'error': str(error)})
                 return
+            except ValueError:
+                self._send_json(503, {'error': 'Recommendation data could not be processed'})
+                return
             except FileNotFoundError:
                 self._send_json(503, {'error': 'Recommendation database is unavailable'})
                 return

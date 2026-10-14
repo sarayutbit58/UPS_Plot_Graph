@@ -79,6 +79,29 @@ class AllocationEngineTests(unittest.TestCase):
         self.assertEqual([1, 1], [row['outletNumber'] for row in result['outletAllocations']])
         self.assertEqual(2, len(result['upsUtilization']))
 
+    def test_fixed_mode_supports_quantities_for_a_mixed_model_pool(self):
+        result = self.allocate(self.request(
+            selected_ups={'mode': 'fixed', 'models': [
+                {'productId': self.ups1, 'quantity': 1},
+                {'productId': self.ups2, 'quantity': 1},
+            ]},
+            devices=[
+                {'name': 'Large server', 'quantity': 1, 'watt': 600, 'va': 700, 'priority': 5},
+                {'name': 'Small server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 3},
+            ],
+        ))
+        self.assertTrue(result['validation']['isValid'])
+        self.assertEqual({'UPS-1', 'UPS-2'}, {row['model'] for row in result['upsUtilization']})
+        self.assertTrue(all(not row['autoAdded'] for row in result['upsUtilization']))
+
+    def test_auto_mode_uses_starting_units_before_adding_more(self):
+        result = self.allocate(self.request(
+            selected_ups={'mode': 'auto', 'models': [{'productId': self.ups1, 'quantity': 1}]},
+            devices=[{'name': 'Server', 'quantity': 2, 'watt': 400, 'va': 500, 'priority': 3}],
+        ))
+        self.assertTrue(result['validation']['isValid'])
+        self.assertEqual([False, True], [row['autoAdded'] for row in result['upsUtilization']])
+
     def test_priority_is_preserved_when_fixed_capacity_cannot_fit_every_device(self):
         result = self.allocate(self.request(devices=[
             {'name': 'Critical server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 5},
@@ -194,6 +217,35 @@ class AllocationEngineTests(unittest.TestCase):
         self.assertGreater(result['capacityReport']['fleetCapacity']['ratedWatts'], 800)
         self.assertTrue(result['capacityReport']['overloadedWatts'])
         self.assertTrue(result['capacityReport']['overloaded'])
+
+    def test_reports_aggregate_overload_when_each_device_fits_individually(self):
+        result = self.allocate(self.request(devices=[
+            {'name': 'Server A', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 5},
+            {'name': 'Server B', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 3},
+        ]))
+        self.assertEqual(1, len(result['deviceAllocations']))
+        self.assertEqual(1, result['unassignedDevices'][0]['quantity'])
+        self.assertTrue(result['capacityReport']['overloaded'])
+
+    def test_assignment_runtime_matches_final_unit_load(self):
+        result = self.allocate(self.request(devices=[
+            {'name': 'Device A', 'quantity': 1, 'watt': 300, 'va': 375, 'priority': 2},
+            {'name': 'Device B', 'quantity': 1, 'watt': 100, 'va': 125, 'priority': 2},
+        ]))
+        unit_runtime = result['upsUtilization'][0]['estimatedRuntimeMinutes']
+        self.assertEqual(2, len(result['deviceAllocations']))
+        self.assertEqual([unit_runtime, unit_runtime], [
+            row['estimatedRuntimeMinutes'] for row in result['deviceAllocations']
+        ])
+
+    def test_surfaces_capacity_outlet_evidence_and_conflict_warnings(self):
+        result = self.allocate(self.request())
+        unit = result['upsUtilization'][0]
+        self.assertTrue(unit['technicalEvidence']['ratingWatts'])
+        self.assertTrue(unit['technicalEvidence']['ratingVa'])
+        self.assertTrue(unit['technicalEvidence']['outlets'])
+        self.assertTrue(any('Conflicting source rating_va' in warning for warning in unit['sourceWarnings']))
+        self.assertFalse(any('price' in warning.casefold() for warning in unit['sourceWarnings']))
 
     def test_requires_runtime_target_and_device_priority(self):
         missing_runtime = self.request()

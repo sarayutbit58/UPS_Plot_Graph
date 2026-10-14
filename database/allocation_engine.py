@@ -67,12 +67,10 @@ def _finite_sum(values, label):
 
 def _integer(value, label, minimum, maximum):
     number = _decimal(value)
-    if number is None or number != number.to_integral_value():
+    if (number is None or number != number.to_integral_value()
+            or number < minimum or number > maximum):
         raise AllocationInputError(f'{label} must be an integer from {minimum} to {maximum}')
-    result = int(number)
-    if not minimum <= result <= maximum:
-        raise AllocationInputError(f'{label} must be an integer from {minimum} to {maximum}')
-    return result
+    return int(number)
 
 
 def _parse_request(request):
@@ -183,9 +181,41 @@ def _model_records(connection, selected_models, curve_catalog):
             'rating_w': product.get('rating_w'), 'rating_va': product.get('rating_va'),
             'outlet_count': product.get('outlet_count'), 'runtime_curve': product.get('runtime_curve'),
             'quantity': selected['quantity'], 'selection_index': selected['selection_index'],
+            'evidence': list(product.get('evidence', [])),
+            'source_warnings': [warning for warning in product.get('warnings', [])
+                                if 'price' not in warning.casefold()],
+            'manufacturer_outlet_source': product.get('manufacturer_outlet_source'),
             'unusable_reasons': missing,
         })
     return models
+
+
+def _evidence_refs(model, flag):
+    refs = []
+    seen = set()
+    for evidence in model.get('evidence', []):
+        if not evidence.get(flag):
+            continue
+        reference = {'path': evidence.get('path'), 'locator': evidence.get('locator')}
+        key = (reference['path'], reference['locator'])
+        if key not in seen:
+            seen.add(key)
+            refs.append(reference)
+        if len(refs) >= 3:
+            break
+    return refs
+
+
+def _technical_evidence(model):
+    outlet_source = model.get('manufacturer_outlet_source')
+    outlets = [outlet_source] if outlet_source else _evidence_refs(model, 'outletEvidence')
+    curve = model.get('runtime_curve')
+    return {
+        'ratingWatts': _evidence_refs(model, 'ratingWEvidence'),
+        'ratingVa': _evidence_refs(model, 'ratingVaEvidence'),
+        'outlets': outlets,
+        'runtimeCurve': [] if not curve else [curve.get('source')],
+    }
 
 
 def _new_unit(model, sequence, auto_added):
@@ -195,6 +225,8 @@ def _new_unit(model, sequence, auto_added):
         'model': model['model'], 'sku': model['sku'],
         'rating_w': model['rating_w'], 'rating_va': model['rating_va'],
         'outlet_count': model['outlet_count'], 'runtime_curve': model['runtime_curve'],
+        'evidence': model['evidence'], 'source_warnings': model['source_warnings'],
+        'manufacturer_outlet_source': model['manufacturer_outlet_source'],
         'auto_added': auto_added, 'used_w': 0.0, 'used_va': 0.0, 'outlets': [],
     }
 
@@ -359,7 +391,7 @@ def allocate_from_connection(connection, request, curve_catalog=None):
                 'watt': device['watt_each'], 'va': device['va_each'],
                 'upsUnitId': unit['ups_unit_id'], 'productId': unit['product_id'],
                 'model': unit['model'], 'outletNumber': outlet_number,
-                'estimatedRuntimeMinutes': round(runtime, 2),
+            'estimatedRuntimeMinutes': round(runtime, 2), 'runtimeStatus': 'meets_requirement',
             }
             device_allocations.append(allocation)
             outlet_allocations.append({
@@ -382,6 +414,17 @@ def allocate_from_connection(connection, request, curve_catalog=None):
         group['quantity'] += 1
         group['unassignedInstanceNumbers'].append(item['instance_number'])
     unassigned_devices = sorted(unassigned_groups.values(), key=lambda item: item['deviceIndex'])
+
+    final_runtime_by_unit = {}
+    for unit in units:
+        runtime = (_interpolate_runtime(unit['runtime_curve']['points'], unit['used_w'])
+                   if unit['used_w'] and unit['runtime_curve'] else None)
+        if unit['used_w'] and runtime is None:
+            raise AllocationInputError('Final UPS load is outside the selected runtime curve range')
+        final_runtime_by_unit[unit['ups_unit_id']] = runtime
+    for allocation in device_allocations:
+        runtime = final_runtime_by_unit[allocation['upsUnitId']]
+        allocation['estimatedRuntimeMinutes'] = round(runtime, 2)
 
     assigned_w = _finite_sum((unit['used_w'] for unit in units), 'Assigned W')
     assigned_va = _finite_sum((unit['used_va'] for unit in units), 'Assigned VA')
@@ -446,7 +489,7 @@ def allocate_from_connection(connection, request, curve_catalog=None):
 
     unit_summaries = []
     for unit in units:
-        runtime = _interpolate_runtime(unit['runtime_curve']['points'], unit['used_w']) if unit['used_w'] and unit['runtime_curve'] else None
+        runtime = final_runtime_by_unit[unit['ups_unit_id']]
         unit_summaries.append({
             'upsUnitId': unit['ups_unit_id'], 'productId': unit['product_id'],
             'manufacturer': unit['manufacturer'], 'model': unit['model'], 'sku': unit['sku'],
@@ -461,6 +504,8 @@ def allocate_from_connection(connection, request, curve_catalog=None):
             'estimatedRuntimeMinutes': None if runtime is None else round(runtime, 2),
             'runtimeStatus': 'unused' if not unit['used_w'] else 'meets_requirement',
             'runtimeCurveSource': None if not unit['runtime_curve'] else unit['runtime_curve']['source'],
+            'technicalEvidence': _technical_evidence(unit),
+            'sourceWarnings': list(unit['source_warnings']),
         })
 
     return {
@@ -476,7 +521,9 @@ def allocate_from_connection(connection, request, curve_catalog=None):
         'selectedModels': [
             {'productId': model['product_id'], 'manufacturer': model['manufacturer'],
              'model': model['model'], 'sku': model['sku'], 'initialQuantity': model['quantity'],
-             'unusableReasons': model['unusable_reasons']}
+             'unusableReasons': model['unusable_reasons'],
+             'technicalEvidence': _technical_evidence(model),
+             'sourceWarnings': list(model['source_warnings'])}
             for model in models
         ],
     }
