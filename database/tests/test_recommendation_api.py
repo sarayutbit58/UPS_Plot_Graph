@@ -97,6 +97,31 @@ class RecommendationApiTests(unittest.TestCase):
         self.assertEqual(1, len(result['deviceAllocations']))
         self.assertEqual(1, len(result['outletAllocations']))
 
+    def test_post_returns_optimization_scenarios_through_the_local_api(self):
+        body = json.dumps({
+            'runtimeRequirementMinutes': 5,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 300, 'va': 375, 'priority': 50}],
+        }).encode('utf-8')
+        request = Request(self.url + '/api/optimizations', data=body,
+                          headers={'Content-Type': 'application/json'}, method='POST')
+        with urlopen(request, timeout=3) as response:
+            self.assertEqual(200, response.status)
+            result = json.loads(response.read())
+        self.assertEqual('CSP', result['solver'])
+        self.assertTrue(result['bestSolution']['validation']['isValid'])
+        self.assertEqual({'A', 'B', 'C', 'D', 'E'}, {row['code'] for row in result['scenarios']})
+
+    def test_get_serves_only_the_whitelisted_local_ui_files(self):
+        with urlopen(self.url + '/', timeout=3) as response:
+            self.assertEqual(200, response.status)
+            self.assertIn(b'UPS Picker', response.read())
+        with urlopen(self.url + '/optimization.js', timeout=3) as response:
+            self.assertEqual(200, response.status)
+            self.assertIn(b'UPSOptimization', response.read())
+        with self.assertRaises(HTTPError) as error:
+            urlopen(self.url + '/database/schema.sql', timeout=3)
+        self.assertEqual(404, error.exception.code)
+
     def test_allocation_api_returns_partial_validation_when_fixed_capacity_is_short(self):
         body = json.dumps({
             'selectedUps': {

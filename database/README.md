@@ -1,6 +1,6 @@
 # UPS product database foundation
 
-This is a standalone database layer for UPS Picker. It does not change the browser application or implement selection, ranking, optimization, allocation or application reports.
+This is the local database and decision-engine layer for UPS Picker. It keeps the existing calculator formulas while adding source-backed recommendation, allocation and bounded optimization services.
 
 ## Deliverables
 
@@ -9,7 +9,7 @@ This is a standalone database layer for UPS Picker. It does not change the brows
 - Migrate/rollback: `manage.py`, `migrations/001_initial.up.sql`, `migrations/001_initial.down.sql`.
 - Reference seed: `seeds/001_reference.sql` (classification vocabulary only).
 - ETL: `extract.py`, `normalize.py`, `import_catalog.py`; conservative identity reconciliation: `merge_duplicates.py`; unpriced-product pruning: `prune_unpriced.py`; combined runner: `build_database.py`.
-- UPS recommendation engine and loopback API: `recommendation_engine.py`, `recommendation_api.py`; scoring and API contract: `recommendation.md`; exact manufacturer runtime source records: `manufacturer_runtime_curves.json`.
+- UPS recommendation, allocation and optimization engines with a loopback API: `recommendation_engine.py`, `allocation_engine.py`, `optimization_engine.py`, `recommendation_api.py`; contracts: `recommendation.md`, `allocation.md`, `optimization.md`; exact manufacturer runtime source records: `manufacturer_runtime_curves.json`.
 - Data validation: `validate.py`; local `validation.json` and `validation.md`.
 - Acceptance tests: `tests/`; extraction checks: `test_extract.py`.
 
@@ -63,3 +63,5 @@ The catalog first reconciled 136 cosmetic model variants, then removed 454 produ
 `recommendation_api.py` serves the database-backed Top 5 engine on loopback only. The `/api/recommendations` endpoint ranks using the formula in `recommendation.md`, returns capacity/runtime/outlet/price/expansion scores with source evidence, and marks missing values unknown. It excludes product identities explicitly described as battery accessories before combining source rows, while retaining complete UPS systems sold with external battery packs. It rejects numeric inputs outside the finite JSON range. Reseller cost is the explicit NDP/Dealer source amount with VAT/source metadata; the current catalog has no currency or offer date, so the API does not convert the amount or score price efficiency until comparable currency and VAT data exist. APC runtime overlay entries are exact SKU/model matches to the linked Schneider technical specification.
 
 `allocation_engine.py` adds count-based device, UPS-unit and outlet assignment through `POST /api/allocations`. It supports fixed quantities and auto-added units from a selected mixed-model pool, enforces the existing 20% W/VA margin and a required in-range runtime curve, and returns per-unit utilization, unassigned devices, capacity validation and engineering recommendations. Outlet slots are generic because the catalog does not record receptacle types. See `allocation.md` for the request contract and limits.
+
+`optimization_engine.py` adds a bounded CSP search through `POST /api/optimizations`. It chooses integer quantities from mixed UPS models, checks every proposed design against W, VA, runtime and outlet constraints, and returns the Best Overall design, up to five distinct valid alternatives, and scenarios A–E. The search is bounded to 12 UPS units and at most three model types per design. Lowest Cost is unavailable until all eligible models have prices with a known common currency and VAT treatment. See `optimization.md` for ranking, search bounds and local UI access.
