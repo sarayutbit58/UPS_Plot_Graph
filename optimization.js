@@ -184,7 +184,7 @@
                 const design = scenario.solution;
                 card.appendChild(element('p', 'text-sm font-semibold text-slate-800 mt-2', modelMixText(design.modelMix)));
                 const costText = design.totalCost === null || design.totalCost === undefined
-                    ? '' : ` · ${showNumber(design.totalCost)} ${result.priceComparison?.currency || ''}`;
+                    ? '' : ` · ${showNumber(design.totalCost)} ${result.priceComparison?.currency || ''} (ไม่รวม VAT)`;
                 card.appendChild(element('p', 'text-sm text-slate-600 mt-1',
                     `${design.unitCount} เครื่อง · Runtime ต่ำสุด ${showNumber(design.minimumEstimatedRuntimeMinutes)} นาที · Expansion ${design.expansion.maxBatteryPacks} packs${costText}`));
             }

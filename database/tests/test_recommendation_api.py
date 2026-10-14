@@ -111,6 +111,44 @@ class RecommendationApiTests(unittest.TestCase):
         self.assertTrue(result['bestSolution']['validation']['isValid'])
         self.assertEqual({'A', 'B', 'C', 'D', 'E'}, {row['code'] for row in result['scenarios']})
 
+    def test_optimization_api_serializes_normalized_vat_metadata(self):
+        product_id = self.catalog['products'][0]
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.execute("UPDATE price_offers SET currency='THB',vat_treatment='exclusive'")
+            source_id = connection.execute('''SELECT id FROM product_sources
+                WHERE product_id=? AND source_locator=?''',
+                (product_id, f'sheet:UPS;row:{product_id}')).fetchone()[0]
+            raw_json = json.loads(connection.execute(
+                'SELECT raw_json FROM product_sources WHERE id=?', (source_id,)
+            ).fetchone()[0])
+            raw_json.update(price_effective_from='2026-05-01', price_effective_to='2026-05-31')
+            connection.execute('UPDATE product_sources SET raw_json=? WHERE id=?',
+                               (json.dumps(raw_json), source_id))
+            connection.execute('''UPDATE price_offers
+                SET amount_decimal='9630',vat_treatment='inclusive',source_date='2026-05-10'
+                WHERE product_source_id=?''', (source_id,))
+            connection.commit()
+        finally:
+            connection.close()
+        body = json.dumps({
+            'runtimeRequirementMinutes': 5,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 50}],
+        }).encode('utf-8')
+        request = Request(self.url + '/api/optimizations', data=body,
+                          headers={'Content-Type': 'application/json'}, method='POST')
+
+        with urlopen(request, timeout=3) as response:
+            self.assertEqual(200, response.status)
+            result = json.loads(response.read())
+
+        self.assertEqual(7, result['priceComparison']['vatRatePercent'])
+        self.assertEqual([{'startsOn': '2026-05-01', 'endsOn': '2026-05-31'}],
+                         result['priceComparison']['priceEffectivePeriods'])
+        cheapest = next(row for row in result['scenarios'] if row['code'] == 'A')
+        self.assertTrue(cheapest['available'], result['priceComparison'])
+        self.assertEqual(9000, cheapest['solution']['totalCost'])
+
     def test_get_serves_only_the_whitelisted_local_ui_files(self):
         with urlopen(self.url + '/', timeout=3) as response:
             self.assertEqual(200, response.status)

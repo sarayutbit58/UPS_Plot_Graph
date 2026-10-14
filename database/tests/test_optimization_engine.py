@@ -1,6 +1,7 @@
 """Acceptance tests for the bounded UPS design optimizer."""
 
 from pathlib import Path
+import json
 import sqlite3
 import sys
 import unittest
@@ -151,6 +152,80 @@ class OptimizationEngineTests(unittest.TestCase):
         self.assertEqual('THB', result['priceComparison']['currency'])
         self.assertEqual('user-confirmed', result['priceComparison']['currencySource'])
         self.assertEqual('THB', result['bestSolution']['totalCostCurrency'])
+
+    def test_inclusive_price_with_verified_effective_period_is_normalized_to_exclusive(self):
+        self.connection.execute("UPDATE price_offers SET currency='THB',vat_treatment='exclusive'")
+        product_id = self.catalog['products'][0]
+        source_id = self.connection.execute('''SELECT id FROM product_sources
+            WHERE product_id=? AND source_locator=?''',
+            (product_id, f'sheet:UPS;row:{product_id}')).fetchone()[0]
+        raw_json = json.loads(self.connection.execute(
+            'SELECT raw_json FROM product_sources WHERE id=?', (source_id,)
+        ).fetchone()[0])
+        raw_json.update(price_effective_from='2026-05-01', price_effective_to='2026-05-31')
+        self.connection.execute('UPDATE product_sources SET raw_json=? WHERE id=?',
+                                 (json.dumps(raw_json), source_id))
+        self.connection.execute('''UPDATE price_offers
+            SET amount_decimal='9630',vat_treatment='inclusive',source_date=NULL
+            WHERE product_source_id=?''', (source_id,))
+        result = self.optimize(devices=[
+            {'name': 'Server', 'quantity': 1, 'watt': 200, 'va': 250, 'priority': 50},
+        ], runtime=5)
+        cheapest = next(row for row in result['scenarios'] if row['code'] == 'A')
+
+        self.assertTrue(cheapest['available'])
+        self.assertEqual('exclusive', result['priceComparison'].get('vatBasis'))
+        self.assertEqual(1, result['priceComparison'].get('inclusiveOffersNormalized'))
+        self.assertEqual(7, result['priceComparison'].get('vatRatePercent'))
+        self.assertEqual([{'startsOn': '2026-05-01', 'endsOn': '2026-05-31'}],
+                         result['priceComparison']['priceEffectivePeriods'])
+        self.assertEqual(9000, cheapest['solution']['totalCost'])
+        stored_amount = self.connection.execute(
+            'SELECT amount_decimal FROM price_offers WHERE product_source_id=?', (source_id,)
+        ).fetchone()[0]
+        self.assertEqual('9630', stored_amount)
+
+    def test_inclusive_price_without_verified_effective_period_blocks_comparison(self):
+        self.connection.execute("UPDATE price_offers SET currency='THB',vat_treatment='exclusive'")
+        product_id = self.catalog['products'][0]
+        source_id = self.connection.execute('''SELECT id FROM product_sources
+            WHERE product_id=? AND source_locator=?''',
+            (product_id, f'sheet:UPS;row:{product_id}')).fetchone()[0]
+        for source_date in (None, '2026-05-10', '2024-12-31'):
+            with self.subTest(source_date=source_date):
+                self.connection.execute('''UPDATE price_offers
+                    SET amount_decimal='9630',vat_treatment='inclusive',source_date=?
+                    WHERE product_source_id=?''', (source_date, source_id))
+                result = self.optimize(devices=[
+                    {'name': 'Server', 'quantity': 1, 'watt': 200, 'va': 250, 'priority': 50},
+                ], runtime=5)
+                cheapest = next(row for row in result['scenarios'] if row['code'] == 'A')
+
+                self.assertFalse(cheapest['available'])
+                self.assertEqual('unverified_vat_rate', result['priceComparison']['reasonCode'])
+
+    def test_inclusive_price_with_effective_period_outside_verified_vat_window_blocks(self):
+        self.connection.execute("UPDATE price_offers SET currency='THB',vat_treatment='exclusive'")
+        product_id = self.catalog['products'][0]
+        source_id = self.connection.execute('''SELECT id FROM product_sources
+            WHERE product_id=? AND source_locator=?''',
+            (product_id, f'sheet:UPS;row:{product_id}')).fetchone()[0]
+        raw_json = json.loads(self.connection.execute(
+            'SELECT raw_json FROM product_sources WHERE id=?', (source_id,)
+        ).fetchone()[0])
+        raw_json.update(price_effective_from='2024-12-01', price_effective_to='2024-12-31')
+        self.connection.execute('UPDATE product_sources SET raw_json=? WHERE id=?',
+                                 (json.dumps(raw_json), source_id))
+        self.connection.execute('''UPDATE price_offers
+            SET amount_decimal='9630',vat_treatment='inclusive',source_date='2026-05-10'
+            WHERE product_source_id=?''', (source_id,))
+        result = self.optimize(devices=[
+            {'name': 'Server', 'quantity': 1, 'watt': 200, 'va': 250, 'priority': 50},
+        ], runtime=5)
+        cheapest = next(row for row in result['scenarios'] if row['code'] == 'A')
+
+        self.assertFalse(cheapest['available'])
+        self.assertEqual('unverified_vat_rate', result['priceComparison']['reasonCode'])
 
     def test_explicit_non_thb_currency_blocks_cost_ranking(self):
         self.connection.execute("UPDATE price_offers SET currency='USD',vat_treatment='exclusive'")

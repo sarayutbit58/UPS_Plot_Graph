@@ -440,6 +440,8 @@ def _build_inventory(connection):
                 product['prices'].append({
                     'amount': row['amount_decimal'], 'decimal': amount, 'currency': row['currency'],
                     'vatTreatment': row['vat_treatment'], 'sourceDate': row['source_date'],
+                    'priceEffectiveFrom': raw.get('price_effective_from'),
+                    'priceEffectiveTo': raw.get('price_effective_to'),
                     'priceType': _clean_text(price_type), 'kind': kind, 'source': source_ref,
                 })
 

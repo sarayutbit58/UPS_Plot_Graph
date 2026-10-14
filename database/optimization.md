@@ -43,13 +43,21 @@ All available scenario results first satisfy W, VA, runtime and outlet constrain
 
 | Scenario | Ranking |
 |---|---|
-| A · Lowest Cost | Lowest total catalog amount, then fewer units and greater runtime reserve. Unavailable if any eligible model has no price. A blank currency uses THB based on the user's confirmation; an explicit non-THB/conflicting currency or unknown/mixed VAT also makes the scenario unavailable. Missing source dates are shown as a warning. |
+| A · Lowest Cost | Lowest total catalog amount on an exclusive-VAT THB basis, then fewer units and greater runtime reserve. Unavailable if any eligible model has no price, currency conflicts, VAT is unknown, or an inclusive offer cannot be normalized from a verified VAT period. Missing source dates on exclusive offers are shown as a warning. |
 | B · Best Runtime | Highest minimum estimated runtime across units carrying a positive load, then fewer UPS units. Zero-load-only UPS units have runtime marked not applicable. |
 | C · Maximum Expansion | Highest total explicitly supported external-battery pack count; unknown capacity is not counted. |
 | D · Minimum UPS Count | Fewest UPS units, then greater runtime reserve. |
 | E · Best Overall | Fewest UPS units, then lowest comparable catalog cost when available, then greater runtime reserve. |
 
-The local catalog snapshot on 2026-10-14 has no currency recorded for eligible UPS prices. The user confirmed that these catalog amounts are THB, so the optimizer reports that as a user-confirmed assumption rather than source data. VAT is unknown for some records, so Scenario A remains unavailable until the VAT basis is completed and comparable.
+The local catalog snapshot on 2026-10-14 has 16 eligible models and 76 eligible price offers: 52 are marked exclusive, 24 have unknown VAT, and none are marked inclusive. No eligible offer records currency, source date or an effective period. The user confirmed THB, so the optimizer reports that as a user-confirmed assumption rather than source data. Scenario A remains unavailable because 24 offers have unknown VAT.
+
+## Exclusive-VAT comparison basis
+
+- Explicit `exclusive` offers are compared at their recorded amount.
+- An `inclusive` offer is normalized to the pre-VAT amount with `gross × 100 / (100 + rate)` only when its source record provides both `price_effective_from` and `price_effective_to`, and that full effective period maps to a verified Thai VAT-rate period. These are optional ISO date fields preserved in `product_sources.raw_json`; `source_date` alone does not establish when a price was effective. The original catalog amount is never changed.
+- The currently supported period is 2025-10-01 through 2027-09-30 at 7%, checked on 2026-10-14 against the Revenue Department's [2025 extension notice](https://www.rd.go.th/59/page-2.html) and [2026 extension notice](https://www.rd.go.th/59/page-1.html). The Revenue Department gives the included-VAT calculation as `gross × 7 / 107`; equivalently, the net amount is `gross × 100 / 107` ([calculation guide](https://rd.go.th/fileadmin/user_upload/SMEs/infographic/info-e-business-63.pdf)).
+- An `unknown` VAT treatment, missing effective-period fields, or a price effective period outside a verified period blocks cost comparison. Update the verified-period map when the official rate or dates change.
+- `priceComparison.vatBasis` reports `exclusive`; `inclusiveOffersNormalized`, `vatRatePercent`, `vatRatePeriods`, and `priceEffectivePeriods` disclose any normalization applied.
 
 ## Tests
 

@@ -99,6 +99,23 @@ class NormalizationTests(unittest.TestCase):
         self.assertFalse(self.record(source_date='20261014')['accepted'])
         self.assertEqual(self.record(source_date='2026-10-14')['source_date'], '2026-10-14')
 
+    def test_price_effective_period_requires_two_ordered_calendar_dates(self):
+        valid = self.record(price_amount='100.00', vat_treatment='inclusive',
+                            price_effective_from='2026-05-01', price_effective_to='2026-05-31')
+        self.assertTrue(valid['accepted'])
+        self.assertEqual('2026-05-01', valid['price_effective_from'])
+        self.assertEqual('2026-05-31', valid['price_effective_to'])
+
+        for fields in [
+            {'price_effective_from': '2026-05-01'},
+            {'price_effective_to': '2026-05-31'},
+            {'price_effective_from': '2026-02-30', 'price_effective_to': '2026-03-01'},
+            {'price_effective_from': '2026-06-01', 'price_effective_to': '2026-05-31'},
+        ]:
+            with self.subTest(fields=fields):
+                self.assertFalse(self.record(price_amount='100.00', vat_treatment='inclusive',
+                                             **fields)['accepted'])
+
 
 if __name__ == '__main__':
     unittest.main()

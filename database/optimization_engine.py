@@ -1,7 +1,8 @@
 """Bounded CSP search for source-backed UPS fleet designs."""
 
-from decimal import Decimal
 import copy
+from datetime import date
+from decimal import Decimal
 import itertools
 import math
 from pathlib import Path
@@ -48,39 +49,113 @@ MAX_ASSIGNMENT_NODES_TOTAL = 250_000
 MAX_EXACT_ASSIGNMENT_INSTANCES = 200
 TOP_ALTERNATIVES = 5
 USER_CONFIRMED_PRICE_CURRENCY = 'THB'
+VERIFIED_THAI_VAT_PERIODS = (
+    (date(2025, 10, 1), date(2027, 9, 30), Decimal('7')),
+)
 
 
 class OptimizationInputError(AllocationInputError):
     """Optimization request fields cannot be used to design a UPS fleet."""
 
 
+def _verified_thai_vat_rate(effective_from, effective_to):
+    if not effective_from or not effective_to:
+        return None
+    try:
+        starts_at = date.fromisoformat(str(effective_from))
+        ends_at = date.fromisoformat(str(effective_to))
+    except ValueError:
+        return None
+    if starts_at > ends_at:
+        return None
+    for starts_on, ends_on, rate in VERIFIED_THAI_VAT_PERIODS:
+        if starts_on <= starts_at and ends_at <= ends_on:
+            return (rate, {'startsOn': starts_on.isoformat(), 'endsOn': ends_on.isoformat()},
+                    {'startsOn': starts_at.isoformat(), 'endsOn': ends_at.isoformat()})
+    return None
+
+
 def _price_comparison_basis(candidates):
-    """Return a comparable cost basis, applying the user's THB confirmation to blank currencies."""
+    """Validate prices and store normalized comparison costs on candidates."""
+    def unavailable(code, reason, currency=None, currency_source=None, missing_currency_count=0):
+        return (False, code, reason, currency, currency_source, missing_currency_count,
+                None, 0, None, [], [])
+
     price_groups = [candidate.get('price_offers') or [] for candidate in candidates]
     if not price_groups or any(not group for group in price_groups):
-        return (False, 'missing_price', 'ราคาของ UPS ที่เข้าเกณฑ์ยังไม่ครบทุกโมเดล',
-                None, None, 0, None)
+        return unavailable('missing_price', 'ราคาของ UPS ที่เข้าเกณฑ์ยังไม่ครบทุกโมเดล')
     prices = [price for group in price_groups for price in group]
     currencies = {str(price.get('currency') or '').strip().upper() for price in prices
                   if str(price.get('currency') or '').strip()}
     missing_currency_count = sum(not str(price.get('currency') or '').strip() for price in prices)
     currency_source = 'user-confirmed' if missing_currency_count else 'catalog'
     if len(currencies) > 1:
-        return (False, 'mixed_currency', 'สกุลเงินของราคาแต่ละโมเดลไม่ตรงกัน',
-                None, 'conflicting-source', missing_currency_count, None)
+        return unavailable('mixed_currency', 'สกุลเงินของราคาแต่ละโมเดลไม่ตรงกัน',
+                           None, 'conflicting-source', missing_currency_count)
     if currencies and currencies != {USER_CONFIRMED_PRICE_CURRENCY}:
         currency = next(iter(currencies))
-        return (False, 'non_thb_currency', 'พบราคาในสกุลเงินอื่นที่ต้องแปลงก่อนเทียบ',
-                currency, 'catalog', missing_currency_count, None)
+        return unavailable('non_thb_currency', 'พบราคาในสกุลเงินอื่นที่ต้องแปลงก่อนเทียบ',
+                           currency, 'catalog', missing_currency_count)
     currency = USER_CONFIRMED_PRICE_CURRENCY
-    vat = {str(price.get('vatTreatment') or '').strip().casefold() for price in prices}
-    if '' in vat or 'unknown' in vat:
-        return (False, 'missing_vat', 'ข้อมูลการรวม/ไม่รวม VAT ยังไม่ครบทุกโมเดล',
-                currency, currency_source, missing_currency_count, None)
-    if len(vat) != 1:
-        return (False, 'mixed_vat', 'เงื่อนไข VAT ของราคาแต่ละโมเดลไม่ตรงกัน',
-                currency, currency_source, missing_currency_count, None)
-    return (True, None, None, currency, currency_source, missing_currency_count, next(iter(vat)))
+
+    normalized_groups = []
+    inclusive_count = 0
+    rates_used = set()
+    vat_periods_used = set()
+    offer_periods_used = set()
+    for candidate, group in zip(candidates, price_groups):
+        normalized_offers = []
+        for offer in group:
+            treatment = str(offer.get('vatTreatment') or '').strip().casefold()
+            if treatment not in {'exclusive', 'inclusive'}:
+                return unavailable('missing_vat', 'มีราคาไม่ทราบ VAT จึงเปรียบเทียบราคาไม่รวม VAT ไม่ได้',
+                                   currency, currency_source, missing_currency_count)
+            try:
+                amount = offer.get('decimal')
+                amount = amount if isinstance(amount, Decimal) else Decimal(str(amount or offer.get('amount')))
+            except Exception:
+                return unavailable('missing_price', 'ราคา UPS บางรายการไม่ใช่จำนวนเงินที่ใช้เปรียบเทียบได้',
+                                   currency, currency_source, missing_currency_count)
+            if not amount.is_finite() or amount <= 0:
+                return unavailable('missing_price', 'ราคา UPS บางรายการไม่ใช่จำนวนเงินที่ใช้เปรียบเทียบได้',
+                                   currency, currency_source, missing_currency_count)
+            if treatment == 'exclusive':
+                net_amount = amount
+            else:
+                rate_details = _verified_thai_vat_rate(
+                    offer.get('priceEffectiveFrom'), offer.get('priceEffectiveTo'))
+                if rate_details is None:
+                    return unavailable(
+                        'unverified_vat_rate',
+                        'ราคา inclusive ไม่มีช่วงวันที่มีผลซึ่งยืนยันอัตรา VAT ได้ จึงแปลงเป็นราคาไม่รวม VAT ไม่ได้',
+                        currency, currency_source, missing_currency_count,
+                    )
+                rate, vat_period, offer_period = rate_details
+                net_amount = amount * Decimal('100') / (Decimal('100') + rate)
+                inclusive_count += 1
+                rates_used.add(rate)
+                vat_periods_used.add((vat_period['startsOn'], vat_period['endsOn']))
+                offer_periods_used.add((offer_period['startsOn'], offer_period['endsOn']))
+            normalized_offers.append((net_amount, offer))
+        normalized_groups.append((candidate, min(
+            normalized_offers, key=lambda item: (item[0], item[1].get('kind') or '')
+        )))
+
+    for candidate, (net_amount, offer) in normalized_groups:
+        candidate['_cost'] = net_amount
+        candidate['_comparison_cost_source_date'] = offer.get('sourceDate')
+
+    rate_percent = float(next(iter(rates_used))) if len(rates_used) == 1 else None
+    rate_periods = [
+        {'startsOn': starts_on, 'endsOn': ends_on}
+        for starts_on, ends_on in sorted(vat_periods_used)
+    ]
+    offer_periods = [
+        {'startsOn': starts_on, 'endsOn': ends_on}
+        for starts_on, ends_on in sorted(offer_periods_used)
+    ]
+    return (True, None, None, currency, currency_source, missing_currency_count,
+            'exclusive', inclusive_count, rate_percent, rate_periods, offer_periods)
 
 
 def _candidate_models(connection, curve_catalog):
@@ -491,9 +566,10 @@ def _solution(parsed, fleet, candidates, units, price_comparable, price_currency
         justifications.append(f"ข้อมูล expansion ยังไม่ครบสำหรับ UPS {unknown_expansion_units} เครื่อง จึงไม่นับในคะแนนขยาย")
     if not price_comparable:
         justifications.append('ไม่ใช้ราคาเป็นตัวจัดอันดับ เพราะข้อมูลราคา สกุลเงิน หรือ VAT ยังเทียบกันไม่ครบ')
-    elif price_currency_source == 'user-confirmed':
-        justifications.append('ใช้ THB ตามการยืนยันของผู้ใช้กับ price rows ที่เว้น currency')
-    elif any(not model['estimated_cost'].get('sourceDate') for model in models):
+    else:
+        if price_currency_source == 'user-confirmed':
+            justifications.append('ใช้ THB ตามการยืนยันของผู้ใช้กับ price rows ที่เว้น currency')
+    if price_comparable and any(not model.get('_comparison_cost_source_date') for model in models):
         justifications.append('บางราคาไม่มีวันที่ต้นทาง จึงควรตรวจราคาและวันมีผลก่อนสั่งซื้อ')
     return {
         'id': f'fleet-{signature}', 'signature': signature,
@@ -537,10 +613,14 @@ def optimize_from_connection(connection, request, curve_catalog=None):
     candidates = _candidate_models(connection, curve_catalog)
     parsed = _parse_optimization_request(request, candidates)
     (price_comparable, price_reason_code, price_reason, price_currency,
-     price_currency_source, missing_currency_offers, comparable_vat) = _price_comparison_basis(candidates)
-    missing_price_dates = sum(1 for candidate in candidates
-                              if not candidate.get('estimated_cost')
-                              or not candidate['estimated_cost'].get('sourceDate'))
+     price_currency_source, missing_currency_offers, comparable_vat,
+     inclusive_offers_normalized, vat_rate_percent, vat_rate_periods,
+     price_effective_periods) = _price_comparison_basis(candidates)
+    missing_price_dates = sum(
+        1 for candidate in candidates
+        if not (candidate.get('_comparison_cost_source_date') if price_comparable
+                else (candidate.get('estimated_cost') or {}).get('sourceDate'))
+    )
     candidate_count = len(candidates)
     minimum_units = _minimum_units(parsed, candidates) if candidates else 1
     max_units_per_design = min(MAX_SEARCH_UNITS, parsed['device_count'])
@@ -589,11 +669,11 @@ def optimize_from_connection(connection, request, curve_catalog=None):
     solutions = list(valid_by_signature.values())
     best_by_scenario = {}
     scenario_specs = [
-        ('A', 'Lowest Cost', 'เปรียบเทียบราคารวมเมื่อสกุลเงินและ VAT เทียบกันได้; แจ้งเตือนเมื่อวันที่อ้างอิงราคาไม่ครบ'),
+        ('A', 'Lowest Cost', 'เปรียบเทียบราคาบนฐานไม่รวม VAT เมื่อสกุลเงินและ VAT ตรวจสอบได้'),
         ('B', 'Best Runtime', 'Runtime ต่ำสุดของ UPS ที่รับโหลดจริงสูงที่สุด; ใช้จำนวน UPS น้อยกว่าเมื่อเสมอกัน'),
         ('C', 'Maximum Expansion', 'จำนวน external battery packs ที่ยืนยันได้สูงที่สุด'),
         ('D', 'Minimum UPS Count', 'ใช้จำนวน UPS น้อยที่สุด แล้วเลือก runtime reserve ที่สูงกว่า'),
-        ('E', 'Best Overall', 'จำนวน UPS น้อยที่สุด, ตามด้วยราคาที่เทียบกันได้, แล้ว runtime reserve'),
+        ('E', 'Best Overall', 'จำนวน UPS น้อยที่สุด, ตามด้วยราคาที่เทียบกันได้บนฐานไม่รวม VAT, แล้ว runtime reserve'),
     ]
     for code, _, _ in scenario_specs:
         if code == 'A' and not price_comparable:
@@ -657,6 +737,15 @@ def optimize_from_connection(connection, request, curve_catalog=None):
         notes.append(f'พบแบบทางเลือกที่แตกต่างและผ่านข้อกำหนด {len(alternatives)} แบบ')
     if price_comparable and missing_price_dates:
         notes.append(f'ราคา {missing_price_dates} รุ่นไม่มีวันที่ต้นทาง ควรตรวจสอบราคาก่อนสั่งซื้อ')
+    if price_comparable and inclusive_offers_normalized:
+        vat_period_text = ', '.join(f"{period['startsOn']} ถึง {period['endsOn']}" for period in vat_rate_periods)
+        offer_period_text = ', '.join(f"{period['startsOn']} ถึง {period['endsOn']}"
+                                      for period in price_effective_periods)
+        notes.append(
+            f'ปรับราคา inclusive {inclusive_offers_normalized} offers เป็นราคาไม่รวม VAT '
+            f'ด้วยอัตรา {vat_rate_percent}% จากช่วงมีผลของราคา {offer_period_text} '
+            f'ซึ่งอยู่ในช่วง VAT ที่ยืนยัน {vat_period_text}'
+        )
     if missing_currency_offers:
         notes.append(f'ใช้ THB ตามการยืนยันของผู้ใช้กับ price offers {missing_currency_offers} รายการที่ไม่มี currency ใน catalog')
     if not best and candidates and not notes:
@@ -679,7 +768,11 @@ def optimize_from_connection(connection, request, curve_catalog=None):
         'priceComparison': {'available': price_comparable, 'currency': comparable_currency,
                             'currencySource': price_currency_source,
                             'offersMissingCurrency': missing_currency_offers,
-                            'vatTreatment': comparable_vat, 'modelsMissingSourceDate': missing_price_dates,
+                            'vatTreatment': comparable_vat, 'vatBasis': 'exclusive',
+                            'inclusiveOffersNormalized': inclusive_offers_normalized,
+                            'vatRatePercent': vat_rate_percent, 'vatRatePeriods': vat_rate_periods,
+                            'priceEffectivePeriods': price_effective_periods,
+                            'modelsMissingSourceDate': missing_price_dates,
                             'reasonCode': price_reason_code, 'reason': price_reason},
         'bestSolution': best,
         'topAlternatives': alternatives,

@@ -125,6 +125,21 @@ def normalize_record(raw):
                 date.fromisoformat(source_date)
             except ValueError:
                 raise ValueError('source_date must be an ISO calendar date') from None
+        price_effective_from = _text(raw.get('price_effective_from')) or None
+        price_effective_to = _text(raw.get('price_effective_to')) or None
+        if bool(price_effective_from) != bool(price_effective_to):
+            raise ValueError('price_effective_from and price_effective_to must both be supplied')
+        if price_effective_from and price_effective_to:
+            for field, value in (('price_effective_from', price_effective_from),
+                                 ('price_effective_to', price_effective_to)):
+                if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+                    raise ValueError(f'{field} must be an ISO calendar date')
+                try:
+                    date.fromisoformat(value)
+                except ValueError:
+                    raise ValueError(f'{field} must be an ISO calendar date') from None
+            if price_effective_from > price_effective_to:
+                raise ValueError('price_effective_from must not be after price_effective_to')
         result.update(
             accepted=True, manufacturer=manufacturer, manufacturer_key=manufacturer_key,
             identity_key=identity_key, model=model, sku=sku,
@@ -136,6 +151,7 @@ def normalize_record(raw):
             form_factor=FORM_FACTORS.get(_text(raw.get('form_factor')).casefold()),
             price_amount=amount, currency=currency, vat_treatment=vat,
             price_type=price_type, source_date=source_date,
+            price_effective_from=price_effective_from, price_effective_to=price_effective_to,
             confidence=raw.get('confidence'), extraction_notes=notes,
         )
     except ValueError as error:
