@@ -925,3 +925,10 @@ These are presentation/packaging findings; this recheck made no application-code
 
 - User explicitly selected merging PR #2 and publishing the new Dashboard. Revalidated the PR as OPEN, draft, CLEAN/MERGEABLE, with base `ffa798c6ca3e1368aa106b17b2766acd50844eea` and reviewed head `6827be1985aec2b3a1a93f8e1dc288a6cce7173f`; local checkout was clean and matched that head.
 - Fresh `npm test` passed 52/52 before release. GitHub Pages still uses main/root. The release will be checked against its deployment commit and served HTML/JavaScript/CSS; this preflight does not yet establish publication or physical-device validation.
+
+## Dashboard Published and Verified — 2026-10-14
+
+- PR #2 was marked ready and merged with a head-commit guard into main. GitHub confirmed MERGED at 2026-10-14 08:36:32 Asia/Bangkok, merge commit `38ddaaf8d08a32f594d74ef811d6f2dad04c2ae5`. Local main was fast-forwarded to the same commit; the merged product tree matched the reviewed branch.
+- Pages build `1282877148` for that merge commit completed with status built and no error. The published URL is `https://sarayutbit58.github.io/UPS_Plot_Graph/`. HTTP checks for index.html, calculations.js, and styles/tailwind.css each returned 200 and their SHA-256 hashes matched the Git blobs in the release commit byte-for-byte.
+- Fresh tests on merged main passed 52/52. Chrome checks on the published URL reproduced Basic 120 W / 60 minutes = 11.764706 Ah and 60-minute Runtime; Enterprise 150 VA + 10% Forecast = 132 W, two plugs, 3.055556 Ah and 30-minute Runtime at 24 V / 90%. The chart was available and Console had no messages.
+- Published-site viewport checks had equal document/client widths at 320 px mobile/touch emulation and 1351 px client width within a 1366 px desktop viewport. This verifies responsive browser rendering rather than physical phone, native picker/disk failure, or screen-reader behavior; those evidence gaps remain.
