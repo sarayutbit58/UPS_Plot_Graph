@@ -58,6 +58,23 @@ class RecommendationApiTests(unittest.TestCase):
         payload = json.loads(error.exception.read())
         self.assertIn('error', payload)
 
+    def test_numeric_overflow_returns_a_json_400_error(self):
+        body = json.dumps({
+            'devices': [
+                {'name': 'Load A', 'quantity': 1, 'watt': '1e308', 'va': '1e308'},
+                {'name': 'Load B', 'quantity': 1, 'watt': '1e308', 'va': '1e308'},
+            ],
+            'powerFactor': 0.8,
+            'runtimeRequirementMinutes': 10,
+        }).encode('utf-8')
+        request = Request(self.url + '/api/recommendations', data=body,
+                          headers={'Content-Type': 'application/json'}, method='POST')
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=3)
+        self.assertEqual(400, error.exception.code)
+        payload = json.loads(error.exception.read())
+        self.assertIn('supported numeric range', payload['error'])
+
 
 if __name__ == '__main__':
     unittest.main()

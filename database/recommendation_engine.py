@@ -2,6 +2,7 @@
 
 from decimal import Decimal, InvalidOperation
 import json
+import math
 from pathlib import Path
 import re
 import sqlite3
@@ -36,7 +37,15 @@ def _decimal(value):
 
 def _number(value):
     number = _decimal(value)
-    return float(number) if number is not None else None
+    if number is None:
+        return None
+    try:
+        result = float(number)
+    except (OverflowError, ValueError):
+        return None
+    if not math.isfinite(result) or (number != 0 and result == 0):
+        return None
+    return result
 
 
 def _clean_text(value):
@@ -50,8 +59,13 @@ def _parse_load(request):
     runtime_required = _decimal(request.get('runtimeRequirementMinutes'))
     if power_factor is None or not Decimal('0') < power_factor <= Decimal('1'):
         raise RecommendationInputError('powerFactor must be greater than 0 and at most 1')
+    if _number(power_factor) is None:
+        raise RecommendationInputError('powerFactor exceeds the supported numeric range')
     if runtime_required is None or runtime_required <= 0:
         raise RecommendationInputError('runtimeRequirementMinutes must be greater than 0')
+    runtime_required_number = _number(runtime_required)
+    if runtime_required_number is None:
+        raise RecommendationInputError('runtimeRequirementMinutes exceeds the supported numeric range')
 
     devices = request.get('devices')
     if devices is None and 'deviceName' in request:
@@ -89,10 +103,16 @@ def _parse_load(request):
         device_pf = _decimal(device.get('powerFactor', power_factor))
         if device_pf is None or not Decimal('0') < device_pf <= Decimal('1'):
             raise RecommendationInputError(f'devices[{index}].powerFactor must be greater than 0 and at most 1')
+        if _number(device_pf) is None:
+            raise RecommendationInputError(f'devices[{index}].powerFactor exceeds the supported numeric range')
         if watts is None:
             watts = va * device_pf
         if va is None:
             va = watts / device_pf
+        watts_number = _number(watts)
+        va_number = _number(va)
+        if watts_number is None or va_number is None:
+            raise RecommendationInputError(f'devices[{index}] load exceeds the supported numeric range')
         if watts > va * Decimal('1.05'):
             warnings.append(f'{name}: watt exceeds VA by more than 5%; both explicit ratings were retained')
         elif abs(watts - va * device_pf) / max(watts, va * device_pf) > Decimal('0.10'):
@@ -102,18 +122,23 @@ def _parse_load(request):
         total_outlets += quantity
         normalized_devices.append({
             'name': name, 'quantity': quantity,
-            'wattEach': _number(watts), 'vaEach': _number(va),
+            'wattEach': watts_number, 'vaEach': va_number,
             'powerFactor': _number(device_pf),
         })
 
     effective_pf = total_watts / total_va if total_va else power_factor
+    total_watts_number = _number(total_watts)
+    total_va_number = _number(total_va)
+    effective_pf_number = _number(effective_pf)
+    if total_watts_number is None or total_va_number is None or effective_pf_number is None:
+        raise RecommendationInputError('total load exceeds the supported numeric range')
     return {
         'devices': normalized_devices,
-        'watts': _number(total_watts),
-        'va': _number(total_va),
-        'effectivePowerFactor': _number(effective_pf),
+        'watts': total_watts_number,
+        'va': total_va_number,
+        'effectivePowerFactor': effective_pf_number,
         'powerFactorInput': _number(power_factor),
-        'runtimeRequirementMinutes': _number(runtime_required),
+        'runtimeRequirementMinutes': runtime_required_number,
         'requiredOutlets': total_outlets,
         'warnings': warnings,
     }
@@ -121,7 +146,26 @@ def _parse_load(request):
 
 def _numeric_field(value):
     number = _decimal(value)
-    return number if number is not None and number > 0 else None
+    return number if number is not None and number > 0 and _number(number) is not None else None
+
+
+def _non_ups_accessory_reason(description, model, sku):
+    """Identify strong product-identity evidence that a UPS-typed row is an accessory."""
+    text = _clean_text(' '.join(str(value or '') for value in (description, model, sku))).casefold()
+    bundled_ups_pattern = (
+        r'\bups\b.*\b\d+(?:\.\d+)?\s*(?:kva|va|kw|w)\b'
+        r'.*\bwith\b.{0,40}\b(?:external\s+)?battery\s+pack\b'
+    )
+    if re.search(bundled_ups_pattern, text):
+        return None
+    accessory_patterns = (
+        r'\b(?:external|replacement|extended)\s+battery\s+(?:pack|module|cabinet|cartridge)\b',
+        r'\bbattery\s+(?:pack|module|cabinet|cartridge)\s+(?:for|compatible with|used with)\b',
+        r'\breplacement\s+batter(?:y|ies)\b',
+    )
+    if any(re.search(pattern, text) for pattern in accessory_patterns):
+        return 'battery accessory'
+    return None
 
 
 def _parse_runtime_minutes(value):
@@ -321,6 +365,7 @@ def _build_inventory(connection):
             'id': row['id'], 'manufacturer_id': row['manufacturer_id'],
             'manufacturer': row['manufacturer'], 'model': row['model'],
             'sku': row['sku'], 'description': row['description'], 'product_type': row['product_type'],
+            'non_ups_reason': _non_ups_accessory_reason(row['description'], row['model'], row['sku']),
             'rating_va_values': set(), 'rating_w_values': set(), 'outlet_values': set(),
             'expansion_values': set(), 'expansion_models': set(), 'max_pack_values': set(),
             'curves': {}, 'prices': [], 'evidence': [], 'warnings': [],
@@ -403,11 +448,11 @@ def _build_inventory(connection):
     # duplicate recommendations without fuzzy matching names.
     sku_matches = {}
     for product in products.values():
-        if product['sku']:
+        if product['sku'] and not product['non_ups_reason']:
             sku_matches.setdefault((product['manufacturer_id'], product['sku']), []).append(product)
     removed_alias_ids = set()
     for alias in products.values():
-        if alias['sku'] or alias['id'] in removed_alias_ids:
+        if alias['sku'] or alias['id'] in removed_alias_ids or alias['non_ups_reason']:
             continue
         targets = sku_matches.get((alias['manufacturer_id'], alias['model']), [])
         if len(targets) != 1:
@@ -575,13 +620,23 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
     candidates = []
     excluded_missing_capacity = 0
     excluded_margin = 0
+    excluded_non_ups_accessory = 0
     for product in inventory:
+        if product['non_ups_reason']:
+            excluded_non_ups_accessory += 1
+            continue
         rating_w, rating_va = product['rating_w'], product['rating_va']
         if not rating_w or not rating_va:
             excluded_missing_capacity += 1
             continue
         margin_w = rating_w / load['watts'] - 1
         margin_va = rating_va / load['va'] - 1
+        if not math.isfinite(margin_w) or not math.isfinite(margin_va):
+            raise RecommendationInputError('load produces a calculation outside the supported numeric range')
+        margin_w_percent = margin_w * 100
+        margin_va_percent = margin_va * 100
+        if not math.isfinite(margin_w_percent) or not math.isfinite(margin_va_percent):
+            raise RecommendationInputError('load produces a calculation outside the supported numeric range')
         if margin_w + 1e-9 < float(MIN_ENGINEERING_MARGIN) or margin_va + 1e-9 < float(MIN_ENGINEERING_MARGIN):
             excluded_margin += 1
             continue
@@ -603,7 +658,7 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
         }
         candidate = {
             **product,
-            'engineering_margin': {'watts_percent': round(margin_w * 100, 2), 'va_percent': round(margin_va * 100, 2),
+            'engineering_margin': {'watts_percent': round(margin_w_percent, 2), 'va_percent': round(margin_va_percent, 2),
                                    'minimum_percent': round(margin * 100, 2)},
             'estimated_runtime_minutes': None if runtime is None else round(runtime, 2),
             'runtime_status': runtime_status,
@@ -727,7 +782,11 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
             'runtimeInterpolation': 'linear between source Full load and Half load points only; no extrapolation',
         },
         'eligibleProductCount': len(candidates),
-        'excludedProductCount': {'missingCapacity': excluded_missing_capacity, 'belowMinimumMargin': excluded_margin},
+        'excludedProductCount': {
+            'missingCapacity': excluded_missing_capacity,
+            'belowMinimumMargin': excluded_margin,
+            'nonUpsAccessory': excluded_non_ups_accessory,
+        },
         'recommendations': recommendations,
         'recommendedUps': recommendations[0] if recommendations else None,
         'alternativeUps': recommendations[1:],

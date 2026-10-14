@@ -61,10 +61,12 @@ On the local catalog snapshot inspected on 2026-10-14, the API forms 806 recomme
 ## Evidence and limits
 
 - Ratings, price offers, technical source rows, and source locations are read from SQLite. If source ratings conflict, the engine uses the lowest recorded VA/W ratings and warns.
+- UPS-typed product identities whose product description clearly identifies a battery pack/module or replacement battery are excluded before source rows are combined. This prevents an accessory SKU and its price from being paired with runtime/capacity evidence for the UPS it supports; complete UPS systems sold with an external battery pack remain eligible. The count appears under `excludedProductCount.nonUpsAccessory`.
 - Runtime uses exact manufacturer-key/model or SKU matching. The engine uses its APC runtime overlay in [manufacturer_runtime_curves.json](manufacturer_runtime_curves.json) plus eligible Full load/Half load points stored in `product_sources.raw_text`. It interpolates only between known points and never extrapolates. Each runtime result includes its source URL or local source path and row locator. The APC overlay is from Schneider Electric's [Smart-UPS SMC/SMT technical specification](https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5), published in 2018; table test conditions are not specified there.
 - Outlet counts and external-battery support are scored only when a source row states them. The engine compares outlet counts only; it does not allocate equipment to receptacle types.
 - Estimated reseller cost uses explicit NDP or Dealer Price rows and excludes SRP, end-user, warranty-upgrade, and pack-tier rows. It preserves the source amount and VAT treatment. The current database has no explicit currency or offer date, so `currency` and `sourceDate` remain null and price efficiency is not scored. The amount is a historical source observation, not a current quotation.
 - The local catalog has 817 UPS rows; exact SKU aliases are grouped for ranking where a model-only row matches one explicit manufacturer SKU. This creates one recommendation per exact product identity without fuzzy-name joining.
+- Load inputs that cannot be represented as finite JSON numbers are rejected with HTTP 400. Runtime estimates, scores, and the API serializer reject non-finite values rather than returning invalid JSON.
 
 ## Test cases
 

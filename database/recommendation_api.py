@@ -24,7 +24,8 @@ def create_server(database_path, port=8000):
         server_version = 'UPSRecommendationAPI/1.0'
 
         def _send_json(self, status, body):
-            encoded = json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+            encoded = json.dumps(body, ensure_ascii=False, allow_nan=False,
+                                 separators=(',', ':')).encode('utf-8')
             self.send_response(status)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(encoded)))

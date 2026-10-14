@@ -172,6 +172,63 @@ class RecommendationEngineTests(unittest.TestCase):
             self.assertGreaterEqual(row['engineeringMargin']['wattsPercent'], 20)
             self.assertGreaterEqual(row['engineeringMargin']['vaPercent'], 20)
 
+    def test_excludes_battery_pack_misclassified_as_ups(self):
+        product_id = self.connection.execute('''INSERT INTO products
+            (manufacturer_id,identity_key,model,sku,description,product_type) VALUES (?,?,?,?,?,'UPS')''',
+            (self.catalog['manufacturer_id'], 'MISCLASSIFIED-EBM', 'SRV6KIL', 'APC-SRV240BP-9A',
+             'APC Easy UPS SRV 240V Battery Pack for 6&10kVA Tower')).lastrowid
+        tech = {'manufacturer': 'APC', 'model': 'SRV6KIL', 'product_type': 'ups',
+                'source_path': 'SYNTHETIC/catalog.xlsx',
+                'source_locator': 'sheet:How to Select UPS;row:70'}
+        tech_source = self.connection.execute('''INSERT INTO product_sources
+            (product_id,source_file_id,source_locator,raw_text,raw_json) VALUES (?,?,?,?,?)''',
+            (product_id, self.catalog['source_file_id'], tech['source_locator'],
+             'SRV6KIL | Double-conversion online | 6000 | 6000 | 6 min | 17 min',
+             json.dumps(tech))).lastrowid
+        self.connection.execute('''INSERT INTO product_specifications
+            (product_source_id,rating_va,rating_w) VALUES (?,?,?)''', (tech_source, 6000, 6000))
+        accessory = {'manufacturer': 'APC', 'model': 'SRV6KIL', 'sku': 'APC-SRV240BP-9A',
+                     'description': 'APC Easy UPS SRV 240V Battery Pack for 6&10kVA Tower',
+                     'price_type': 'NDP (Exc VAT)', 'source_path': 'SYNTHETIC/catalog.xlsx',
+                     'source_locator': 'sheet:Dealer;row:80'}
+        price_source = self.connection.execute('''INSERT INTO product_sources
+            (product_id,source_file_id,source_locator,raw_text,raw_json) VALUES (?,?,?,?,?)''',
+            (product_id, self.catalog['source_file_id'], accessory['source_locator'],
+             accessory['description'], json.dumps(accessory))).lastrowid
+        self.connection.execute('''INSERT INTO product_specifications
+            (product_source_id,rating_va,rating_w) VALUES (?,?,?)''', (price_source, 10000, None))
+        self.connection.execute('''INSERT INTO price_offers
+            (product_source_id,amount_decimal,currency,vat_treatment,price_type)
+            VALUES (?,?,?,?,?)''', (price_source, '32530', None, 'exclusive', 'source-marked'))
+        result = recommend_from_connection(self.connection, self.request(devices=[
+            {'name': 'Large load', 'quantity': 1, 'watt': 4000, 'va': 5000},
+        ]))
+        self.assertNotIn('SRV6KIL', [row['model'] for row in result['recommendations']])
+        self.assertGreater(result['excludedProductCount']['nonUpsAccessory'], 0)
+
+    def test_keeps_ups_system_sold_with_external_battery_pack(self):
+        product_id = self.connection.execute('''INSERT INTO products
+            (manufacturer_id,identity_key,model,sku,description,product_type) VALUES (?,?,?,?,?,'UPS')''',
+            (self.catalog['manufacturer_id'], 'BUNDLED-UPS', 'SRV6KIL-BUNDLE', 'SRV6KIL-BUNDLE',
+             'APC Easy UPS SRV 6000VA 230V, with RailKit, External Battery Pack')).lastrowid
+        source_id = self.connection.execute('''INSERT INTO product_sources
+            (product_id,source_file_id,source_locator,raw_text,raw_json) VALUES (?,?,?,?,?)''',
+            (product_id, self.catalog['source_file_id'], 'sheet:UPS;row:bundle',
+             'APC Easy UPS SRV 6000VA 230V, with RailKit, External Battery Pack',
+             json.dumps({'manufacturer': 'APC', 'model': 'SRV6KIL-BUNDLE'}))).lastrowid
+        self.connection.execute('''INSERT INTO product_specifications
+            (product_source_id,rating_va,rating_w) VALUES (?,?,?)''', (source_id, 6000, 6000))
+        result = recommend_from_connection(self.connection, self.request())
+        self.assertEqual(7, result['eligibleProductCount'])
+        self.assertEqual(0, result['excludedProductCount']['nonUpsAccessory'])
+
+    def test_rejects_loads_that_overflow_json_number_range(self):
+        with self.assertRaisesRegex(RecommendationInputError, 'supported numeric range'):
+            recommend_from_connection(self.connection, self.request(devices=[
+                {'name': 'Large load A', 'quantity': 1, 'watt': '1e308', 'va': '1e308'},
+                {'name': 'Large load B', 'quantity': 1, 'watt': '1e308', 'va': '1e308'},
+            ]))
+
     def test_runtime_uses_curve_interpolation_and_never_extrapolates(self):
         result = recommend_from_connection(self.connection, self.request(
             devices=[{'name': 'Load', 'quantity': 1, 'watt': 600, 'va': 750}],
