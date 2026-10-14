@@ -23,6 +23,8 @@ Open `http://127.0.0.1:8000` to use the calculator and the Enterprise scenario-c
 
 Input follows the allocation engine's limits and validation: finite positive W and VA for loaded devices, integer quantities and priorities, at least one positive-load device, and a positive runtime target. A row with 0 W and 0 VA still consumes its outlets; a UPS that carries only those zero-load outlets has runtime marked not applicable. The Enterprise screen converts each line's total W/VA and outlet count to per-outlet instances; when a line uses multiple outlets, its load is split evenly across those outlets. Forecast load is added proportionally to the entered device loads without increasing outlet count.
 
+On the dashboard, `จำนวนอุปกรณ์` counts identical physical devices; W/VA and Enterprise `รูปลั๊ก/เครื่อง` are entered per device. The browser calculates total load and outlets as device quantity × per-device values, then sends the optimizer one load instance per outlet with the corresponding per-outlet W/VA. Dashboard JSON schema 1.6 preserves device quantity; older JSON imports default missing quantities to one. Optimizer requests above 10,000 outlet instances are rejected to match the API limit.
+
 ## Constraint solver
 
 The engine uses a deterministic constraint satisfaction search (CSP). Each design chooses integer counts of eligible UPS models and then places device instances onto units. A model is eligible only when its source-backed W, VA, outlet count and runtime curve are all present. The engine reuses the allocation placement checks, including a minimum 20% W/VA engineering margin and runtime interpolation only within published curve points.

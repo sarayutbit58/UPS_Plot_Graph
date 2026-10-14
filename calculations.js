@@ -129,7 +129,7 @@
 
     function calculateLoadBreakdown(inputDevices, forecastValue, forecastUnit) {
         if (!Array.isArray(inputDevices)) {
-            return { devices: [], deviceLoad: 0, forecastWatt: 0, totalLoad: 0, totalPlugs: 0, precisionInvalidTarget: null, invalidPlugIndex: null, valid: false };
+            return { devices: [], deviceLoad: 0, forecastWatt: 0, totalLoad: 0, totalPlugs: 0, precisionInvalidTarget: null, invalidPlugIndex: null, invalidQuantityIndex: null, valid: false };
         }
         const devices = [];
         let deviceLoad = 0;
@@ -138,6 +138,7 @@
         let inputsValid = true;
         let precisionInvalidTarget = null;
         let invalidPlugIndex = null;
+        let invalidQuantityIndex = null;
         inputDevices.forEach((device, index) => {
             const rawLoad = device && device.load;
             const load = finiteNumber(rawLoad);
@@ -160,14 +161,28 @@
                 inputsValid = false;
                 return;
             }
+            const rawQuantity = device.quantity === undefined ? 1 : device.quantity;
+            const quantity = finiteNumber(rawQuantity);
+            if (quantity === null || !decimalInputMatchesNumber(rawQuantity, quantity)
+                || !Number.isSafeInteger(quantity) || quantity < 1) {
+                inputsValid = false;
+                invalidQuantityIndex ??= index;
+                return;
+            }
             const wattsNumerator = unit === 'VA' ? loadFraction.numerator * 4n : loadFraction.numerator;
             const wattsDenominator = unit === 'VA' ? loadFraction.denominator * 5n : loadFraction.denominator;
             const rawPlugs = device.plugs === undefined || device.plugs === null || device.plugs === '' ? 1 : device.plugs;
             const plugs = finiteNumber(rawPlugs);
             if (plugs === null || !decimalInputMatchesNumber(rawPlugs, plugs)
-                || !Number.isSafeInteger(plugs) || plugs < 1 || !Number.isSafeInteger(totalPlugs + plugs)) {
+                || !Number.isSafeInteger(plugs) || plugs < 1) {
                 inputsValid = false;
                 invalidPlugIndex ??= index;
+                return;
+            }
+            const rowOutletCount = quantity * plugs;
+            if (!Number.isSafeInteger(rowOutletCount) || !Number.isSafeInteger(totalPlugs + rowOutletCount)) {
+                inputsValid = false;
+                invalidQuantityIndex ??= index;
                 return;
             }
             const rowMicroWatts = roundFractionToScaledInteger(wattsNumerator, wattsDenominator, 6);
@@ -182,18 +197,19 @@
                 precisionInvalidTarget ??= { type: 'device-load', index };
                 return;
             }
-            const nextDeviceLoadMicroWatts = rowMicroWatts === null ? null : deviceLoadMicroWatts + rowMicroWatts;
+            const rowTotalMicroWatts = rowMicroWatts === null ? null : rowMicroWatts * BigInt(quantity);
+            const nextDeviceLoadMicroWatts = rowTotalMicroWatts === null ? null : deviceLoadMicroWatts + rowTotalMicroWatts;
             const nextDeviceLoad = nextDeviceLoadMicroWatts === null ? null : fromScaledInteger(nextDeviceLoadMicroWatts, 6);
             if (nextDeviceLoad === null) {
                 inputsValid = false;
                 precisionInvalidTarget ??= { type: 'device-load', index };
                 return;
             }
-            const normalized = { name: String(device.name ?? ''), load, unit, watts: roundedWatts, plugs };
+            const normalized = { name: String(device.name ?? ''), load, unit, quantity, watts: roundedWatts, plugs };
             devices.push(normalized);
             deviceLoadMicroWatts = nextDeviceLoadMicroWatts;
             deviceLoad = nextDeviceLoad;
-            totalPlugs += plugs;
+            totalPlugs += rowOutletCount;
         });
         const rawForecast = finiteNumber(forecastValue);
         const forecastProvided = forecastValue !== undefined && forecastValue !== null && !(typeof forecastValue === 'string' && forecastValue.trim() === '');
@@ -238,6 +254,7 @@
             totalPlugs,
             precisionInvalidTarget,
             invalidPlugIndex,
+            invalidQuantityIndex,
             valid,
         };
     }
@@ -541,7 +558,7 @@
         }
         if (data.devices.length > MAX_DEVICES) throw invalidImport(`ไฟล์มีอุปกรณ์เกินขีดจำกัด ${MAX_DEVICES} รายการ`);
         if (data.version !== undefined && data.version !== null) {
-            if (typeof data.version !== 'string' || !/^1\.[0-5]$/.test(data.version)) {
+            if (typeof data.version !== 'string' || !/^1\.[0-6]$/.test(data.version)) {
                 throw invalidImport(`ไม่รองรับเวอร์ชันไฟล์ ${String(data.version)}`);
             }
         }
@@ -565,15 +582,21 @@
             const rawLoad = device.load;
             const load = finiteNumber(rawLoad);
             const loadFraction = decimalFraction(rawLoad);
+            const rawQuantity = device.quantity === undefined ? 1 : device.quantity;
+            const quantity = finiteNumber(rawQuantity);
             const rawPlugs = device.plugs === undefined ? 1 : device.plugs;
             const plugs = finiteNumber(rawPlugs);
+            if (quantity === null || !decimalInputMatchesNumber(rawQuantity, quantity)
+                || !Number.isSafeInteger(quantity) || quantity < 1) {
+                throw invalidImport('จำนวนอุปกรณ์ไม่ถูกต้อง');
+            }
             if (load === null || !loadFraction || !decimalInputMatchesNumber(rawLoad, load)
                 || (typeof rawLoad === 'number' && Number.isInteger(load) && !Number.isSafeInteger(load)) || loadFraction.numerator < 0n
                 || plugs === null || !decimalInputMatchesNumber(rawPlugs, plugs) || !Number.isSafeInteger(plugs)
                 || plugs < 1 || !['W', 'VA'].includes(device.unit ?? 'W')) {
                 throw invalidImport('ข้อมูลโหลดหรือจำนวนปลั๊กไม่ถูกต้อง');
             }
-            return { name: String(device.name ?? ''), load, unit: device.unit ?? 'W', plugs };
+            return { name: String(device.name ?? ''), load, unit: device.unit ?? 'W', quantity, plugs };
         });
         const sourceSettings = data.settings === undefined || data.settings === null ? {} : data.settings;
         if (typeof sourceSettings !== 'object' || Array.isArray(sourceSettings)) throw invalidImport('ค่าตั้งค่าแบตเตอรี่ไม่ถูกต้อง');
@@ -730,9 +753,12 @@
             }
         }
         return {
-            version: '1.5', appName: 'UPS Picker', exportDate: exportDate.toISOString(),
+            version: '1.6', appName: 'UPS Picker', exportDate: exportDate.toISOString(),
             mode: exportMode, runtimeSource: exportRuntimeSource,
-            devices: devices.map(device => ({ ...device })),
+            devices: devices.map(device => ({
+                ...device,
+                quantity: canonicalNumericOrRaw(device.quantity === undefined ? 1 : device.quantity),
+            })),
             calculatedData: exportCalculatedData,
             forecast: { value: forecastValue, unit: forecastUnit, watt: exportCalculatedData.forecastWatt },
             settings: serializedSettings,

@@ -8,13 +8,13 @@ const calculations = require('../calculations.js');
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const exportSource = html.slice(html.indexOf('async function exportToJSON()'), html.indexOf('// Import from JSON'));
 
-function exportFixture(showSaveFilePicker) {
+function exportFixture(showSaveFilePicker, devices = [{ name: 'Router ทดสอบ 🔋', load: 120, unit: 'W', plugs: 1 }]) {
     const events = [], alerts = [], deferred = [], anchors = [];
     const values = { backupTimeMin: '60', batteryVoltage: '12', upsEfficiency: '85', runtimeBatteryAh: '10' };
     const context = vm.createContext({
         UPScalculations: calculations,
         currentMode: 'basic',
-        devices: [{ name: 'Router ทดสอบ 🔋', load: 120, unit: 'W', plugs: 1 }],
+        devices,
         calculatedData: { forecastValue: 0, forecastUnit: '%' },
         enterpriseBatterySettings: { voltage: 12, efficiency: 85 },
         runtimeBatteryWasAutoFilled: false, runtimeSource: 'formula', runtimeCurve: null,
@@ -56,6 +56,23 @@ test('export announces native save only after writing and closing valid JSON', a
     const restored = calculations.normalizeImportData(calculations.parseImportJson(text));
     assert.equal(restored.devices[0].load, 120);
     assert.equal(restored.settings.runtimeBatteryAh, 10);
+});
+
+test('export saves the device quantity in schema 1.6 and restores its calculated load', async () => {
+    const fixture = exportFixture(undefined, [
+        { name: 'Router ทดสอบ 🔋', load: 120, unit: 'W', quantity: 3, plugs: 1 },
+    ]);
+    await fixture.run();
+
+    const encodedPayload = fixture.anchors[0].href.slice('data:application/json;charset=utf-8,'.length);
+    const exported = JSON.parse(decodeURIComponent(encodedPayload));
+    assert.equal(exported.version, '1.6');
+    assert.equal(exported.devices[0].quantity, 3);
+    assert.equal(exported.calculatedData.deviceLoad, 360);
+
+    const restored = calculations.normalizeImportData(exported);
+    assert.equal(restored.devices[0].quantity, 3);
+    assert.equal(calculations.calculateLoadBreakdown(restored.devices, 0, '%').deviceLoad, 360);
 });
 
 test('export aborts a failed writable before starting its download fallback', async () => {

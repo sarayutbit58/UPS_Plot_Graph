@@ -5,6 +5,8 @@
 }(typeof globalThis === 'undefined' ? this : globalThis, function () {
     'use strict';
 
+    const MAX_DEVICE_INSTANCES = 10_000;
+
     function roundSix(value) {
         const rounded = Math.round(value * 1_000_000) / 1_000_000;
         if (!Number.isFinite(rounded) || rounded <= 0) throw new Error('กำลังไฟต้องเป็นค่าบวกที่มีความละเอียดเพียงพอ');
@@ -23,17 +25,26 @@
 
         const scale = totalLoad / deviceLoad;
         const devices = [];
+        let totalOutletInstances = 0;
         inputDevices.forEach((row, index) => {
             if (row.load === undefined || row.load === null
                 || (typeof row.load === 'string' && row.load.trim() === '')) return;
             const load = Number(row.load);
             if (!Number.isFinite(load) || load < 0) throw new Error(`ตรวจสอบกำลังไฟของอุปกรณ์ลำดับ ${index + 1}`);
+            const quantity = row.quantity === undefined ? 1 : Number(row.quantity);
+            if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error(`ตรวจสอบจำนวนอุปกรณ์ของลำดับ ${index + 1}`);
             const plugs = Number(row.plugs || 1);
             if (!Number.isSafeInteger(plugs) || plugs < 1) throw new Error(`ตรวจสอบจำนวนปลั๊กของอุปกรณ์ลำดับ ${index + 1}`);
+            const outletQuantity = quantity * plugs;
+            if (!Number.isSafeInteger(outletQuantity)
+                || totalOutletInstances + outletQuantity > MAX_DEVICE_INSTANCES) {
+                throw new Error('จำนวนเต้ารับรวมเกินขีดจำกัด 10,000 ช่องสำหรับการจัดสรร');
+            }
+            totalOutletInstances += outletQuantity;
             if (load === 0) {
                 devices.push({
                     name: String(row.name || `อุปกรณ์ ${index + 1}`).trim().slice(0, 160) || `อุปกรณ์ ${index + 1}`,
-                    quantity: plugs, watt: 0, va: 0, priority: 50,
+                    quantity: outletQuantity, watt: 0, va: 0, priority: 50,
                 });
                 return;
             }
@@ -42,7 +53,7 @@
             const va = unit === 'VA' ? load : load / 0.8;
             devices.push({
                 name: String(row.name || `อุปกรณ์ ${index + 1}`).trim().slice(0, 160) || `อุปกรณ์ ${index + 1}`,
-                quantity: plugs,
+                quantity: outletQuantity,
                 watt: roundSix(watts / plugs * scale),
                 va: roundSix(va / plugs * scale),
                 priority: 50,

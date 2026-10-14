@@ -15,6 +15,28 @@ test('optimizer request preserves outlet count and applies forecast load without
     assert.equal(request.devices.reduce((sum, row) => sum + row.va * row.quantity, 0), 275);
 });
 
+test('optimizer request expands device quantities and per-device outlet counts', () => {
+    const request = buildRequest([
+        { name: 'Switch', load: 120, unit: 'W', quantity: 3, plugs: 2 },
+        { name: 'Router', load: 125, unit: 'VA', quantity: 2, plugs: 1 },
+    ], 30, 560, 616);
+
+    assert.deepEqual(request.devices.map(row => row.quantity), [6, 2]);
+    assert.equal(request.devices.reduce((sum, row) => sum + row.watt * row.quantity, 0), 616);
+    assert.equal(request.devices.reduce((sum, row) => sum + row.va * row.quantity, 0), 770);
+});
+
+test('optimizer request rejects invalid device quantity and excessive outlet instances', () => {
+    for (const quantity of [0, 1.5]) {
+        assert.throws(() => buildRequest([
+            { name: 'Router', load: 100, unit: 'W', quantity, plugs: 1 },
+        ], 30, 100, 100), /จำนวนอุปกรณ์/);
+    }
+    assert.throws(() => buildRequest([
+        { name: 'Router', load: 100, unit: 'W', quantity: 10001, plugs: 1 },
+    ], 30, 100, 100), /10,000/);
+});
+
 test('optimizer request rejects forecast-only load because it has no source outlet', () => {
     assert.throws(() => buildRequest([], 30, 0, 100), /โหลดอุปกรณ์และจำนวนปลั๊ก/);
 });
