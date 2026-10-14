@@ -7,8 +7,10 @@ from pathlib import Path
 import sqlite3
 
 try:
+    from .allocation_engine import AllocationInputError, allocate
     from .recommendation_engine import RecommendationInputError, recommend
 except ImportError:  # Running this file directly keeps the database folder on sys.path.
+    from allocation_engine import AllocationInputError, allocate
     from recommendation_engine import RecommendationInputError, recommend
 
 
@@ -45,7 +47,7 @@ def create_server(database_path, port=8000):
                 self._send_json(503, {'error': 'Recommendation database is unavailable'})
 
         def do_POST(self):
-            if self.path != '/api/recommendations':
+            if self.path not in {'/api/recommendations', '/api/allocations'}:
                 self._send_json(404, {'error': 'Not found'})
                 return
             content_type = self.headers.get('Content-Type', '').split(';', 1)[0].strip().casefold()
@@ -62,11 +64,12 @@ def create_server(database_path, port=8000):
                 return
             try:
                 payload = json.loads(self.rfile.read(content_length).decode('utf-8'))
-                result = recommend(path, payload)
+                result = (allocate(path, payload) if self.path == '/api/allocations'
+                          else recommend(path, payload))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 self._send_json(400, {'error': 'Request body is not valid UTF-8 JSON'})
                 return
-            except RecommendationInputError as error:
+            except (RecommendationInputError, AllocationInputError) as error:
                 self._send_json(400, {'error': str(error)})
                 return
             except FileNotFoundError:

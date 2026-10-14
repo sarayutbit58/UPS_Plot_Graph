@@ -21,7 +21,7 @@ class RecommendationApiTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp.name) / 'catalog.sqlite3'
         disk = sqlite3.connect(self.db_path, isolation_level=None)
-        seed_catalog(disk)
+        self.catalog = seed_catalog(disk)
         disk.close()
         self.server = create_server(self.db_path, port=0)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -74,6 +74,27 @@ class RecommendationApiTests(unittest.TestCase):
         self.assertEqual(400, error.exception.code)
         payload = json.loads(error.exception.read())
         self.assertIn('supported numeric range', payload['error'])
+
+    def test_post_allocates_devices_through_the_local_api(self):
+        body = json.dumps({
+            'selectedUps': {
+                'mode': 'fixed',
+                'models': [{'productId': self.catalog['products'][0], 'quantity': 1}],
+            },
+            'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 3}],
+        }).encode('utf-8')
+        request = Request(self.url + '/api/allocations', data=body,
+                          headers={'Content-Type': 'application/json'}, method='POST')
+        try:
+            with urlopen(request, timeout=3) as response:
+                self.assertEqual(200, response.status)
+                result = json.loads(response.read())
+        except HTTPError as error:
+            self.fail(f'allocation endpoint returned HTTP {error.code}: {error.read()}')
+        self.assertTrue(result['validation']['isValid'])
+        self.assertEqual(1, len(result['deviceAllocations']))
+        self.assertEqual(1, len(result['outletAllocations']))
 
 
 if __name__ == '__main__':
