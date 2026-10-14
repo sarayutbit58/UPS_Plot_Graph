@@ -6,196 +6,430 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UPS Picker - เครื่องคำนวณเลือก UPS</title>
     <meta name="description" content="เครื่องมือคำนวณขนาด UPS ที่เหมาะสมสำหรับอุปกรณ์ของคุณ">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:,">
     <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        'prompt': ['Prompt', 'sans-serif'],
-                    },
-                    colors: {
-                        primary: {
-                            50: '#eef2ff',
-                            100: '#e0e7ff',
-                            200: '#c7d2fe',
-                            300: '#a5b4fc',
-                            400: '#818cf8',
-                            500: '#6366f1',
-                            600: '#4f46e5',
-                            700: '#4338ca',
-                            800: '#3730a3',
-                            900: '#312e81',
-                        }
-                    }
+        (function () {
+            var supported = typeof BigInt === 'function' && typeof Element !== 'undefined'
+                && typeof Element.prototype.replaceChildren === 'function';
+            if (supported) {
+                try {
+                    new Function('var value = null; value ??= 1; var item = {}; return item?.value ?? (1_000 + 1n);');
+                } catch (error) {
+                    supported = false;
                 }
             }
-        }
+            if (!supported) document.documentElement.className += ' unsupported-browser';
+        }());
     </script>
+    <script async src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles/tailwind.css">
     <style>
-        * {
-            font-family: 'Prompt', sans-serif;
+        :root {
+            color-scheme: light;
+            --ink: #172554;
+            --muted: #52627a;
+            --line: #dbe3ef;
+            --surface: #ffffff;
+            --canvas: #f4f7fb;
+            --brand: #2456d6;
+            --brand-soft: #eaf0ff;
+            --success: #087f5b;
+            --warning: #a85c00;
         }
 
-        .gradient-bg {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
+        * { font-family: 'Prompt', sans-serif; }
+        body { color: var(--ink); background: var(--canvas); }
+        button, input, select { font: inherit; }
+        button { cursor: pointer; }
+        .import-control:focus-within { outline: 3px solid var(--brand); outline-offset: 3px; }
 
-        .card-shadow {
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        .app-header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--line);
         }
-
-        .step-active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .header-inner {
+            max-width: 1600px;
+            min-height: 88px;
+            margin: 0 auto;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
+        .brand-lockup { display: flex; align-items: center; gap: 14px; }
+        .brand-mark {
+            width: 44px;
+            height: 44px;
+            display: grid;
+            place-items: center;
+            border-radius: 12px;
             color: white;
+            background: var(--brand);
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: .04em;
+        }
+        .brand-lockup h1 { margin: 0; color: var(--ink); font-size: 20px; line-height: 1.25; }
+        .brand-lockup p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+        .mode-area { display: flex; align-items: center; gap: 14px; }
+        .mode-caption { color: var(--muted); font-size: 12px; text-align: right; }
+        .mode-switch {
+            display: inline-flex;
+            gap: 4px;
+            padding: 4px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #f8fafc;
+        }
+        .mode-button {
+            min-height: 44px;
+            padding: 8px 16px;
+            border: 0;
+            border-radius: 9px;
+            color: #42526a;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .mode-button[aria-pressed="true"] {
+            color: #fff;
+            background: var(--brand);
+            box-shadow: 0 2px 6px rgb(36 86 214 / 20%);
         }
 
-        .step-completed {
-            background: #10b981;
-            color: white;
+        .dashboard-shell {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px;
+            display: grid;
+            grid-template-columns: 244px minmax(0, 1fr);
+            gap: 24px;
+            align-items: start;
         }
-
-        .step-inactive {
-            background: #e5e7eb;
-            color: #9ca3af;
+        .app-sidebar {
+            position: sticky;
+            top: 20px;
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: var(--surface);
+            box-shadow: 0 4px 16px rgb(23 37 84 / 4%);
         }
-
-        .input-focus:focus {
-            border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        .sidebar-label {
+            margin: 4px 10px 12px;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: .08em;
         }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            transition: all 0.3s ease;
+        .step-nav { display: grid; gap: 6px; }
+        .step-nav-button {
+            width: 100%;
+            min-height: 58px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 9px 10px;
+            border: 1px solid transparent;
+            border-radius: 11px;
+            color: #40516b;
+            background: transparent;
+            text-align: left;
         }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        .step-nav-button:hover { background: #f5f7fb; }
+        .step-nav-button[aria-current="step"] {
+            border-color: #d6e1ff;
+            color: #173eaa;
+            background: var(--brand-soft);
         }
-
-        .btn-danger {
-            background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+        .nav-step {
+            width: 32px;
+            height: 32px;
+            flex: 0 0 32px;
+            display: grid;
+            place-items: center;
+            border: 1px solid #c9d4e4;
+            border-radius: 9px;
+            color: #53647c;
+            background: #fff;
+            font-size: 12px;
+            font-weight: 700;
         }
-
-        .btn-danger:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(244, 63, 94, 0.4);
+        .step-nav-button[aria-current="step"] .nav-step {
+            border-color: var(--brand);
+            color: #fff;
+            background: var(--brand);
         }
-
-        .device-card {
-            animation: slideIn 0.3s ease;
+        .nav-copy { display: grid; gap: 2px; }
+        .nav-copy strong { font-size: 13px; font-weight: 600; }
+        .nav-copy small { color: #5f6b82; font-size: 12px; }
+        .sidebar-note {
+            margin: 16px 2px 2px;
+            padding: 12px;
+            border-radius: 11px;
+            color: #41536e;
+            background: #f6f8fc;
+            font-size: 12px;
+            line-height: 1.6;
         }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+        .dashboard-main { min-width: 0; }
+        .page-heading {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 20px;
+            margin: 2px 0 18px;
         }
-
-        .result-highlight {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-            border-left: 4px solid #f59e0b;
+        .page-heading h2 { margin: 0; color: var(--ink); font-size: 25px; line-height: 1.3; }
+        .page-heading p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+        .estimate-badge {
+            flex: 0 0 auto;
+            padding: 7px 10px;
+            border: 1px solid #f0d7ae;
+            border-radius: 999px;
+            color: #87500b;
+            background: #fff8eb;
+            font-size: 12px;
+            font-weight: 600;
         }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+        .metric-card {
+            min-height: 96px;
+            padding: 16px 18px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: var(--surface);
+            box-shadow: 0 3px 12px rgb(23 37 84 / 3%);
+        }
+        .metric-label { color: var(--muted); font-size: 12px; }
+        .metric-value { margin-top: 7px; color: var(--ink); font-size: 23px; font-weight: 700; line-height: 1.2; }
+        .metric-hint { margin-top: 3px; color: #64748b; font-size: 12px; }
+        .workspace-card {
+            min-width: 0;
+            padding: 24px;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: var(--surface);
+            box-shadow: 0 4px 18px rgb(23 37 84 / 4%);
+        }
+        .step-content h2 { margin-top: 0; color: var(--ink); font-size: 21px; text-align: left; }
+        .step-content > p { color: var(--muted); text-align: left; }
+        .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .field-label { display: block; margin-bottom: 6px; color: #34445e; font-size: 13px; font-weight: 600; }
+        .field-help { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+        .field-error { margin-top: 8px; color: #a12626; font-size: 13px; font-weight: 500; }
+        .input-focus:focus, input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible {
+            outline: 3px solid rgb(36 86 214 / 28%);
+            outline-offset: 2px;
+            border-color: var(--brand);
+        }
+        .btn-primary { background: var(--brand); transition: background-color .18s ease, box-shadow .18s ease; }
+        .btn-primary:hover { background: #1947bd; box-shadow: 0 4px 12px rgb(36 86 214 / 20%); }
+        .btn-danger { min-height: 44px; background: #b93838; }
+        .btn-danger:hover { background: #952b2b; }
+        .device-card { border-color: var(--line); background: #f8fafd; }
+        .result-highlight { border: 1px solid #c8d6ff; border-left: 4px solid var(--brand); background: #f1f5ff; }
+        .summary-card { border: 1px solid #d8e8e1; border-left: 4px solid var(--success); background: #f3faf7; }
+        .estimate-note {
+            margin: 16px 0 0;
+            padding: 12px 14px;
+            border: 1px solid #efd8b7;
+            border-radius: 10px;
+            color: #69430d;
+            background: #fff9ef;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        #runtimeBasisLabel, #runtimeEstimateNote, #summaryRuntimeBasis { overflow-wrap: anywhere; }
+        #summaryDeviceList > div > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+        .data-table-wrap { overflow-x: auto; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .data-table th, .data-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+        .data-table th { color: #40516b; background: #f6f8fc; font-weight: 600; }
+        .enterprise-only { display: none !important; }
+        .enterprise-only.flex { display: none !important; }
+        .basic-only { display: block; }
+        body[data-mode="enterprise"] .enterprise-only { display: block !important; }
+        body[data-mode="enterprise"] .enterprise-only.flex { display: flex !important; }
+        body[data-mode="enterprise"] .enterprise-only.hidden { display: none !important; }
+        body[data-mode="enterprise"] .basic-only { display: none; }
+        body[data-mode="enterprise"] .enterprise-inline { display: inline-flex !important; }
+        body[data-mode="enterprise"] .enterprise-grid { display: grid !important; }
+        body[data-mode="basic"] .device-fields > div:not(.enterprise-only) { grid-column: span 4 / span 4; }
+        .app-footer { max-width: 1600px; margin: 0 auto; padding: 0 24px 24px; color: #5f6b82; font-size: 12px; text-align: right; }
+        .text-amber-500, .text-amber-600 { color: #874500 !important; }
+        .bg-amber-500 { background-color: #a85c00 !important; }
+        .text-green-600 { color: #087f5b !important; }
+        .text-purple-600 { color: #52627a !important; }
+        .text-gray-400 { color: #64748b !important; }
+        #browserCompatibilityNotice { display: none; max-width: 720px; margin: 32px auto; padding: 24px; border: 1px solid #d97706; border-radius: 16px; background: #fffbeb; color: #713f12; }
+        .unsupported-browser #browserCompatibilityNotice { display: block; }
+        .unsupported-browser body > :not(#browserCompatibilityNotice) { display: none !important; }
 
-        .summary-card {
-            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-            border-left: 4px solid #22c55e;
+        @media (max-width: 1000px) {
+            .dashboard-shell { grid-template-columns: 210px minmax(0, 1fr); gap: 16px; padding: 16px; }
+            .app-sidebar { padding: 10px; }
+            .workspace-card { padding: 18px; }
+        }
+        @media (max-width: 760px) {
+            .header-inner { align-items: flex-start; flex-direction: column; gap: 12px; padding: 14px 16px; }
+            .mode-area { width: 100%; align-items: stretch; flex-direction: column; justify-content: flex-start; gap: 8px; }
+            .mode-caption { text-align: left; }
+            .mode-switch { width: 100%; }
+            .mode-button { flex: 1; padding: 8px 12px; white-space: nowrap; }
+            .dashboard-shell { display: block; padding: 12px; }
+            .app-sidebar { position: static; margin-bottom: 14px; padding: 8px; }
+            .sidebar-label, .sidebar-note { display: none; }
+            .step-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+            .step-nav-button { min-height: 52px; flex-direction: column; justify-content: center; gap: 3px; padding: 5px 2px; text-align: center; }
+            .nav-step { width: 22px; height: 22px; flex-basis: 22px; border-radius: 7px; font-size: 10px; }
+            .nav-copy { display: block; }
+            .nav-copy strong { font-size: 10px; }
+            .nav-copy small { display: none; }
+            .page-heading { flex-direction: column; gap: 8px; }
+            .page-heading h2 { font-size: 21px; }
+            .metric-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+            .metric-card { min-height: 82px; padding: 12px; }
+            .metric-card:last-child { grid-column: 1 / -1; }
+            .metric-value { font-size: 20px; }
+            #totalLoad { flex-shrink: 0; font-size: clamp(1.25rem, 5vw, 1.875rem); white-space: nowrap; }
+            .workspace-card { padding: 16px 13px; }
+            .app-footer { padding: 0 12px 18px; text-align: center; }
+        }
+        @media (max-width: 1000px) {
+            .device-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .device-fields > div { grid-column: span 1 !important; }
+            .device-fields > div:last-child { grid-column: 1 / -1 !important; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
         }
     </style>
 </head>
 
-<body class="bg-gray-50 min-h-screen">
-    <!-- Header -->
-    <header class="gradient-bg text-white py-6 shadow-lg">
-        <div class="container mx-auto px-4">
-            <div class="flex items-center justify-center">
-                <div class="text-center">
-                    <h1 class="text-3xl md:text-4xl font-bold mb-2">⚡ UPS Picker</h1>
-                    <p class="text-purple-100 text-sm md:text-base">เครื่องมือช่วยเลือก UPS สำหรับอุปกรณ์ของคุณ</p>
+<body data-mode="basic" class="min-h-screen">
+    <section id="browserCompatibilityNotice" role="alert" aria-labelledby="browserCompatibilityTitle">
+        <h1 id="browserCompatibilityTitle" class="text-xl font-bold">กรุณาอัปเดตเบราว์เซอร์</h1>
+        <p class="mt-2">เบราว์เซอร์นี้ยังไม่รองรับการคำนวณแบบความละเอียดสูงของ UPS Picker กรุณาอัปเดต Safari, Chrome, Edge หรือ Firefox แล้วเปิดหน้านี้อีกครั้ง</p>
+    </section>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand-lockup">
+                <div class="brand-mark" aria-hidden="true">UPS</div>
+                <div>
+                    <h1>UPS Picker</h1>
+                    <p>คำนวณโหลด ขนาดแบตเตอรี่ และเวลาสำรองไฟ</p>
+                </div>
+            </div>
+            <div class="mode-area">
+                <div class="mode-caption">
+                    <div class="font-semibold text-slate-700">เลือกรูปแบบการใช้งาน</div>
+                    <div id="modeDescription">ข้อมูลหลักที่จำเป็นสำหรับการคำนวณ</div>
+                </div>
+                <div class="mode-switch" role="group" aria-label="รูปแบบการใช้งาน">
+                    <button id="basicModeButton" class="mode-button" type="button" aria-pressed="true" onclick="setMode('basic')">พื้นฐาน</button>
+                    <button id="enterpriseModeButton" class="mode-button" type="button" aria-pressed="false" onclick="setMode('enterprise')">Enterprise</button>
                 </div>
             </div>
         </div>
     </header>
 
-    <!-- Progress Steps -->
-    <div class="container mx-auto px-4 py-6">
-        <div class="flex justify-center items-center space-x-2 md:space-x-4 mb-8">
-            <div id="step1-indicator"
-                class="step-indicator step-active w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center font-bold text-lg cursor-pointer transition-all"
-                onclick="goToStep(1)">1</div>
-            <div class="h-1 w-8 md:w-16 bg-gray-300 rounded" id="line1"></div>
-            <div id="step2-indicator"
-                class="step-indicator step-inactive w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center font-bold text-lg cursor-pointer transition-all"
-                onclick="goToStep(2)">2</div>
-            <div class="h-1 w-8 md:w-16 bg-gray-300 rounded" id="line2"></div>
-            <div id="step3-indicator"
-                class="step-indicator step-inactive w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center font-bold text-lg cursor-pointer transition-all"
-                onclick="goToStep(3)">3</div>
-            <div class="h-1 w-8 md:w-16 bg-gray-300 rounded" id="line3"></div>
-            <div id="step4-indicator"
-                class="step-indicator step-inactive w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center font-bold text-lg cursor-pointer transition-all"
-                onclick="goToStep(4)">4</div>
-        </div>
+    <div class="dashboard-shell">
+        <aside class="app-sidebar" aria-label="เมนูขั้นตอนการคำนวณ">
+            <p class="sidebar-label">WORKSPACE</p>
+            <nav class="step-nav" aria-label="ขั้นตอนการคำนวณ">
+                <button id="step1-indicator" class="step-nav-button" type="button" aria-current="step" onclick="goToStep(1)">
+                    <span id="step1-number" class="nav-step">01</span>
+                    <span class="nav-copy"><strong>โหลดอุปกรณ์</strong><small>รายการและกำลังไฟ</small></span>
+                </button>
+                <button id="step2-indicator" class="step-nav-button" type="button" onclick="goToStep(2)">
+                    <span id="step2-number" class="nav-step">02</span>
+                    <span class="nav-copy"><strong>ขนาดแบตเตอรี่</strong><small>ตามเวลาที่ต้องการ</small></span>
+                </button>
+                <button id="step3-indicator" class="step-nav-button" type="button" onclick="goToStep(3)">
+                    <span id="step3-number" class="nav-step">03</span>
+                    <span class="nav-copy"><strong>เวลาสำรองไฟ</strong><small>กราฟ Runtime</small></span>
+                </button>
+                <button id="step4-indicator" class="step-nav-button" type="button" onclick="goToStep(4)">
+                    <span id="step4-number" class="nav-step">04</span>
+                    <span class="nav-copy"><strong>สรุปผล</strong><small>ข้อเสนอแนะการเลือก UPS</small></span>
+                </button>
+            </nav>
+            <div class="sidebar-note">ทำตามลำดับจากโหลดไปยังผลลัพธ์ หรือเลือกขั้นตอนที่ต้องการจากเมนูนี้</div>
+        </aside>
 
-        <!-- Step Labels -->
-        <div class="hidden md:flex justify-center items-center space-x-4 mb-8 text-sm text-gray-600">
-            <span class="w-24 text-center">รายการอุปกรณ์</span>
-            <span class="w-16"></span>
-            <span class="w-24 text-center">คำนวณแบตเตอรี่</span>
-            <span class="w-16"></span>
-            <span class="w-24 text-center">คำนวณเวลาสำรอง</span>
-            <span class="w-16"></span>
-            <span class="w-24 text-center">สรุปผล</span>
-        </div>
+        <main class="dashboard-main">
+            <section class="page-heading" aria-labelledby="pageTitle">
+                <div>
+                    <h2 id="pageTitle">ภาพรวมการคำนวณ UPS</h2>
+                    <p>กรอกข้อมูลตามลำดับ ระบบจะแสดงผลและสมมติฐานให้ตรวจสอบได้</p>
+                </div>
+                <span class="estimate-badge">ผลคำนวณโดยประมาณ</span>
+            </section>
+            <section class="metric-grid" aria-label="สรุปค่าปัจจุบัน">
+                <article class="metric-card">
+                    <div class="metric-label">โหลดรวม</div>
+                    <div id="dashboardLoad" class="metric-value">0 W</div>
+                    <div class="metric-hint">รวมโหลดอุปกรณ์และ Forecast</div>
+                </article>
+                <article class="metric-card">
+                    <div class="metric-label">แบตเตอรี่ที่ต้องการ</div>
+                    <div id="dashboardBattery" class="metric-value">— Ah</div>
+                    <div class="metric-hint">คำนวณจากเวลาสำรองที่ระบุ</div>
+                </article>
+                <article class="metric-card">
+                    <div id="dashboardRuntimeLabel" class="metric-label">Runtime โดยประมาณ</div>
+                    <div id="dashboardRuntime" class="metric-value">— นาที</div>
+                    <div class="metric-hint">ขึ้นกับโหลดและสมมติฐาน UPS</div>
+                </article>
+            </section>
 
-        <!-- Main Content Card -->
-        <div class="max-w-4xl mx-auto bg-white rounded-2xl card-shadow p-6 md:p-8">
+            <div class="workspace-card">
 
             <!-- Step 1: Device List -->
-            <div id="step1" class="step-content">
-                <h2 class="text-2xl font-bold text-primary-700 mb-2 text-center">📋 ขั้นตอนที่ 1: เพิ่มรายการอุปกรณ์
-                </h2>
-                <p class="text-gray-500 text-center mb-6">กรอกรายการอุปกรณ์ที่ต้องการใช้กับ UPS</p>
+            <div id="step1" class="step-content" role="region" aria-labelledby="step1-heading">
+                <h2 id="step1-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">โหลดอุปกรณ์</h2>
+                <p class="text-gray-500 mb-6">เพิ่มอุปกรณ์และระบุกำลังไฟที่ต้องการสำรอง</p>
+                <p class="basic-only field-help mb-4">กรอกกำลังไฟ (W) ของอุปกรณ์แต่ละรายการ หากมีโหลด VA จากข้อมูลเดิม ระบบใช้สมมติฐาน PF 0.8 แปลงเป็น W</p>
 
                 <div id="deviceList" class="space-y-4 mb-6">
                     <!-- Device cards will be added here -->
                 </div>
 
-                <button onclick="addDevice()"
+                <button id="addDeviceBtn" onclick="addDevice()"
                     class="w-full py-3 border-2 border-dashed border-primary-300 text-primary-600 rounded-xl hover:bg-primary-50 transition-all font-medium flex items-center justify-center gap-2">
                     <span class="text-xl">+</span> เพิ่มอุปกรณ์
                 </button>
+                <p id="deviceLimitNotice" class="field-help mt-2 text-amber-700 hidden" role="status" aria-live="polite"></p>
 
                 <!-- Forecast Watt Section -->
-                <div class="mt-6 p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
+                <div class="enterprise-only mt-6 p-4 bg-amber-50 rounded-xl border border-amber-200">
                     <div class="flex flex-col gap-4">
                         <div class="flex flex-col md:flex-row md:items-center gap-4">
                             <div class="flex-1">
-                                <label class="block text-amber-700 font-medium mb-2">⚡ Forecast (เผื่ออนาคต)</label>
+                            <label for="forecastValue" class="block text-amber-700 font-medium mb-2">Forecast (เผื่อการขยายในอนาคต)</label>
                                 <div class="flex items-center gap-2">
-                                    <input type="number" id="forecastValue" placeholder="เช่น 20 หรือ 100" min="0"
-                                        step="1"
-                                        class="flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl input-focus transition-all bg-white"
+                                    <input type="number" id="forecastValue" name="forecastValue" placeholder="เช่น 20 หรือ 100" min="0"
+                                        step="any"
+                                        class="min-w-0 flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl input-focus transition-all bg-white"
                                         oninput="updateTotalLoad()">
                                     <!-- Unit Toggle -->
-                                    <div class="flex rounded-xl overflow-hidden border-2 border-amber-300">
-                                        <button type="button" id="forecastUnitPercent" onclick="setForecastUnit('%')"
+                                    <div class="flex shrink-0 rounded-xl overflow-hidden border-2 border-amber-300">
+                                        <button type="button" id="forecastUnitPercent" aria-pressed="true" onclick="setForecastUnit('%')"
                                             class="px-4 py-3 font-medium transition-all bg-amber-500 text-white">%</button>
-                                        <button type="button" id="forecastUnitWatt" onclick="setForecastUnit('W')"
+                                        <button type="button" id="forecastUnitWatt" aria-pressed="false" onclick="setForecastUnit('W')"
                                             class="px-4 py-3 font-medium transition-all bg-white text-amber-600 hover:bg-amber-50">W</button>
                                     </div>
                                 </div>
-                                <p class="text-xs text-amber-500 mt-1">💡 เลือก <strong>%</strong>
+                                <p class="text-xs text-amber-500 mt-1">เลือก <strong>%</strong>
                                     เพื่อคำนวณเป็นเปอร์เซ็นต์จากโหลดปัจจุบัน หรือ <strong>W</strong> เพื่อใส่ค่า Watt
                                     โดยตรง</p>
                             </div>
@@ -209,14 +443,13 @@
                 </div>
 
                 <div
-                    class="mt-4 p-4 bg-gradient-to-r from-primary-50 to-purple-50 rounded-xl border border-primary-100">
+                    class="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
                     <div class="flex flex-col gap-2">
                         <div class="flex justify-between items-center text-sm">
                             <span class="text-gray-500">โหลดจากอุปกรณ์:</span>
                             <span id="deviceLoadOnly" class="font-medium text-gray-600">0 W</span>
                         </div>
-                        <div class="flex justify-between items-center text-sm" id="forecastRowDisplay"
-                            style="display: none;">
+                        <div class="enterprise-only flex justify-between items-center text-sm hidden" id="forecastRowDisplay">
                             <span class="text-amber-500">+ Forecast (เผื่ออนาคต):</span>
                             <span id="forecastLoadDisplay" class="font-medium text-amber-600">0 W</span>
                         </div>
@@ -226,65 +459,66 @@
                             <span id="totalLoad" class="text-3xl font-bold text-primary-600">0 W</span>
                         </div>
                         <!-- Total Plugs Display -->
-                        <div class="flex justify-between items-center text-sm mt-2 pt-2 border-t border-primary-100">
-                            <span class="text-blue-600 font-medium">🔌 จำนวนรูปลั๊กทั้งหมดที่ต้องใช้:</span>
+                        <div class="enterprise-only flex justify-between items-center text-sm mt-2 pt-2 border-t border-primary-100">
+                            <span class="text-blue-600 font-medium">จำนวนรูปลั๊กทั้งหมดที่ต้องใช้:</span>
                             <span id="totalPlugsDisplay" class="text-2xl font-bold text-blue-600">0 รู</span>
                         </div>
                     </div>
                 </div>
+                <p id="basicContextNote" class="basic-only field-help hidden" role="status"></p>
+                <p id="loadError" class="field-error hidden" role="alert"></p>
 
                 <!-- Import Section on Step 1 -->
-                <div class="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+                <div class="enterprise-only mt-4 p-4 bg-green-50 border border-green-200 rounded-xl">
                     <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
                         <div class="text-green-700 text-sm">
-                            <span class="font-medium">📥 มีข้อมูลที่บันทึกไว้?</span>
+                            <span class="font-medium">มีข้อมูลที่บันทึกไว้?</span>
                             <span class="text-green-600">โหลดไฟล์ JSON เพื่อนำเข้าข้อมูลเดิม</span>
                         </div>
                         <label
-                            class="py-2 px-4 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg font-medium hover:from-green-600 hover:to-teal-600 transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap">
-                            <span>📥</span> Import JSON
-                            <input type="file" accept=".json" onchange="importFromJSON(event)" class="hidden">
+                            class="import-control py-2 px-4 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg font-medium hover:from-green-600 hover:to-teal-600 transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap">
+                            Import JSON
+                            <input type="file" id="importJsonFile" name="importJsonFile" accept=".json" onchange="importFromJSON(event)" class="sr-only">
                         </label>
                     </div>
                 </div>
             </div>
 
             <!-- Step 2: Battery Calculator -->
-            <div id="step2" class="step-content hidden">
-                <h2 class="text-2xl font-bold text-primary-700 mb-2 text-center">🔋 ขั้นตอนที่ 2: คำนวณขนาดแบตเตอรี่
-                </h2>
-                <p class="text-gray-500 text-center mb-6">คำนวณความจุแบตเตอรี่ที่ต้องการ (Ah)</p>
+            <div id="step2" class="step-content hidden" role="region" aria-labelledby="step2-heading">
+                <h2 id="step2-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">ขนาดแบตเตอรี่ที่ต้องการ</h2>
+                <p class="text-gray-500 mb-6">ระบุเวลาสำรองที่ต้องการ แล้วดูความจุแบตเตอรี่ประมาณการ</p>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label class="block text-gray-700 font-medium mb-2">กำลังไฟที่ใช้ (W)</label>
-                        <input type="number" id="batteryPowerW"
+                        <label for="batteryPowerW" class="block text-gray-700 font-medium mb-2">กำลังไฟที่ใช้ (W)</label>
+                        <input type="number" id="batteryPowerW" name="batteryPowerW"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            readonly>
+                            step="any" readonly>
                         <p class="text-xs text-gray-400 mt-1">ดึงจากโหลดรวมในขั้นตอนที่ 1</p>
                     </div>
                     <div>
-                        <label class="block text-gray-700 font-medium mb-2">ระยะเวลาสำรองไฟที่ต้องการ (นาที)</label>
-                        <input type="number" id="backupTimeMin" value="60" min="1"
+                        <label for="backupTimeMin" class="block text-gray-700 font-medium mb-2">ระยะเวลาสำรองไฟที่ต้องการ (นาที)</label>
+                        <input type="number" id="backupTimeMin" name="backupTimeMin" value="60" min="1" step="any"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            oninput="calculateBatteryAh()">
+                            oninput="handleBatterySettingsInput()">
                     </div>
-                    <div>
-                        <label class="block text-gray-700 font-medium mb-2">แรงดันแบตเตอรี่ (V)</label>
-                        <select id="batteryVoltage"
+                    <div class="enterprise-only">
+                        <label for="batteryVoltage" class="block text-gray-700 font-medium mb-2">แรงดันแบตเตอรี่ (V)</label>
+                        <select id="batteryVoltage" name="batteryVoltage"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            oninput="calculateBatteryAh()">
+                            oninput="handleBatterySettingsInput()">
                             <option value="12">12V</option>
                             <option value="24">24V</option>
                             <option value="48">48V</option>
                         </select>
                     </div>
-                    <div>
-                        <label class="block text-gray-700 font-medium mb-2">ประสิทธิภาพ UPS (%)</label>
-                        <input type="number" id="upsEfficiency" value="85" min="50" max="100"
+                    <div class="enterprise-only">
+                        <label for="upsEfficiency" class="block text-gray-700 font-medium mb-2">สมมติฐานประสิทธิภาพ UPS (%)</label>
+                        <input type="number" id="upsEfficiency" name="upsEfficiency" value="85" min="50" max="100" step="any"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            oninput="calculateBatteryAh()">
-                        <p class="text-xs text-gray-400 mt-1">ค่าทั่วไป: 80-90%</p>
+                            oninput="handleBatterySettingsInput()">
+                        <p class="field-help mt-1">ค่าเริ่มต้น 85% เป็นสมมติฐานของสูตร ไม่ใช่ค่าทั่วไปของทุก UPS; ประสิทธิภาพจริงขึ้นกับรุ่นและระดับโหลด</p>
                     </div>
                 </div>
 
@@ -294,42 +528,81 @@
                 </button>
 
                 <div id="batteryResult" class="hidden mt-6 p-6 result-highlight rounded-xl">
-                    <p class="text-gray-700 text-center mb-2">ขนาดแบตเตอรี่ที่ต้องการโดยประมาณ:</p>
-                    <p id="batteryAhResult" class="text-4xl font-bold text-amber-600 text-center">0 Ah</p>
+                    <p class="text-gray-700 mb-2">ขนาดแบตเตอรี่ที่ต้องการโดยประมาณ</p>
+                    <p id="batteryAhResult" class="text-4xl font-bold text-amber-600" aria-live="polite" aria-atomic="true">0 Ah</p>
+                    <p class="basic-only field-help mt-2">ใช้สมมติฐานเริ่มต้น 12 V และประสิทธิภาพ 85% — โหมด Enterprise ปรับค่าเหล่านี้ได้</p>
+                    <p class="field-help mt-2">เป็นค่าประมาณจากสูตรพลังงาน ไม่แทนการเลือกแบตเตอรี่จริง; Runtime ยังขึ้นกับอัตราคายประจุ จุดตัดแรงดัน อายุ และอุณหภูมิ</p>
                 </div>
             </div>
 
             <!-- Step 3: Runtime Calculator -->
-            <div id="step3" class="step-content hidden">
-                <h2 class="text-2xl font-bold text-primary-700 mb-2 text-center">⏱️ ขั้นตอนที่ 3: คำนวณระยะเวลาสำรองไฟ
-                </h2>
-                <p class="text-gray-500 text-center mb-6">ตรวจสอบเวลาสำรองไฟและดูกราฟ</p>
+            <div id="step3" class="step-content hidden" role="region" aria-labelledby="step3-heading">
+                <h2 id="step3-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">เวลาสำรองไฟ</h2>
+                <p class="text-gray-500 mb-6">เลือกสูตรประมาณหรือกราฟ Runtime ที่นำเข้า</p>
+
+                <div class="enterprise-only mb-5">
+                    <label for="runtimeSourceSelect" class="field-label">แหล่งคำนวณ Runtime</label>
+                    <select id="runtimeSourceSelect" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all" onchange="setRuntimeSource(this.value)">
+                        <option value="formula">สูตร Ah (ค่าประมาณ)</option>
+                        <option value="manufacturer">กราฟ Runtime ที่นำเข้า (อ้างอิงผู้ผลิต)</option>
+                    </select>
+                </div>
+
+                <div id="manufacturerCurvePanel" class="enterprise-only hidden mb-5 p-4 rounded-xl border border-indigo-200 bg-indigo-50">
+                    <h3 class="font-semibold text-indigo-900 mb-2">ข้อมูลรุ่นและกราฟ Runtime ที่นำเข้า</h3>
+                    <p class="field-help mb-4">นำเข้า CSV แบบ comma-separated ที่มีหัวตาราง <code>load_w,runtime_minutes</code> และใช้จุดทศนิยม (.) ระบบประมาณด้วยการแทรกเชิงเส้นระหว่างจุดเท่านั้น และไม่คาดคะเนนอกช่วงข้อมูล</p>
+                    <p class="field-help mb-4">รุ่น ชุดแบตเตอรี่ เงื่อนไข และแหล่งอ้างอิงเป็นข้อมูลที่ผู้ใช้ระบุ แอปตรวจรูปแบบและความสอดคล้องของจุดข้อมูล แต่ไม่ได้ยืนยันว่าไฟล์มาจากผู้ผลิตจริง โปรดตรวจเอกสารต้นทางก่อนใช้ตัดสินใจ</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="runtimeCurveModel" class="field-label">รุ่น UPS</label>
+                            <input id="runtimeCurveModel" type="text" maxlength="160" class="w-full px-3 py-2 border border-gray-300 rounded-lg input-focus" placeholder="ผู้ผลิตและรุ่น" oninput="refreshRuntimeCurveMetadata()">
+                        </div>
+                        <div>
+                            <label for="runtimeCurveBatteryConfig" class="field-label">ชุดแบตเตอรี่</label>
+                            <input id="runtimeCurveBatteryConfig" type="text" maxlength="240" class="w-full px-3 py-2 border border-gray-300 rounded-lg input-focus" placeholder="แบตเตอรี่ภายใน / จำนวนตู้เสริม" oninput="refreshRuntimeCurveMetadata()">
+                        </div>
+                        <div>
+                            <label for="runtimeCurveSource" class="field-label">แหล่งอ้างอิงที่ผู้ใช้ระบุ</label>
+                            <input id="runtimeCurveSource" type="text" maxlength="2048" class="w-full px-3 py-2 border border-gray-300 rounded-lg input-focus" placeholder="URL หรือชื่อเอกสาร/เลขหน้า" oninput="refreshRuntimeCurveMetadata()">
+                        </div>
+                        <div>
+                            <label for="runtimeCurveConditions" class="field-label">เงื่อนไขทดสอบ (ถ้ามี)</label>
+                            <input id="runtimeCurveConditions" type="text" maxlength="1024" class="w-full px-3 py-2 border border-gray-300 rounded-lg input-focus" placeholder="เช่น แบตเตอรี่เต็ม, 25 °C" oninput="refreshRuntimeCurveMetadata()">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="runtimeCurveFile" class="field-label">ไฟล์ Runtime CSV</label>
+                            <input id="runtimeCurveFile" type="file" accept=".csv,text/csv" class="block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-4 file:py-2 file:font-semibold" onchange="importRuntimeCurve(event)">
+                        </div>
+                    </div>
+                    <p id="runtimeCurveStatus" class="field-help mt-3" role="status" aria-live="polite">ยังไม่ได้โหลดกราฟ Runtime</p>
+                    <button type="button" class="mt-2 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-700" onclick="clearRuntimeCurve()">ล้างข้อมูลเส้นโค้ง</button>
+                </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-gray-700 font-medium mb-2">ความจุแบตเตอรี่ (Ah)</label>
-                        <input type="number" id="runtimeBatteryAh"
+                    <div class="runtime-formula-field">
+                        <label for="runtimeBatteryAh" class="block text-gray-700 font-medium mb-2">ความจุแบตเตอรี่ (Ah)</label>
+                        <input type="number" id="runtimeBatteryAh" name="runtimeBatteryAh" min="0" step="any"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            oninput="calculateRuntime()">
-                        <p class="text-xs text-gray-400 mt-1">ใส่ค่าจากแบตเตอรี่ที่คุณมีหรือจะซื้อ</p>
+                            oninput="handleRuntimeBatteryInput()">
+                        <p class="text-xs text-gray-400 mt-1">ใส่ Ah รวมของชุดแบตเตอรี่ตามแรงดันระบบ: ต่ออนุกรมเพิ่ม V แต่ Ah เท่าเดิม; ต่อขนานจึงรวม Ah</p>
+                    </div>
+                    <div class="enterprise-only runtime-formula-field">
+                        <label for="runtimeVoltage" class="block text-gray-700 font-medium mb-2">แรงดันแบตเตอรี่ (V)</label>
+                        <input type="number" id="runtimeVoltage" name="runtimeVoltage" value="12"
+                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
+                            step="any" readonly>
+                    </div>
+                    <div class="enterprise-only runtime-formula-field">
+                        <label for="runtimeEfficiency" class="block text-gray-700 font-medium mb-2">สมมติฐานประสิทธิภาพ UPS (%)</label>
+                        <input type="number" id="runtimeEfficiency" name="runtimeEfficiency" value="85"
+                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
+                            step="any" readonly>
                     </div>
                     <div>
-                        <label class="block text-gray-700 font-medium mb-2">แรงดันแบตเตอรี่ (V)</label>
-                        <input type="number" id="runtimeVoltage" value="12"
+                        <label for="runtimePowerW" class="block text-gray-700 font-medium mb-2">กำลังไฟที่ใช้ (W)</label>
+                        <input type="number" id="runtimePowerW" name="runtimePowerW"
                             class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            readonly>
-                    </div>
-                    <div>
-                        <label class="block text-gray-700 font-medium mb-2">ประสิทธิภาพ UPS (%)</label>
-                        <input type="number" id="runtimeEfficiency" value="85"
-                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            readonly>
-                    </div>
-                    <div>
-                        <label class="block text-gray-700 font-medium mb-2">กำลังไฟที่ใช้ (W)</label>
-                        <input type="number" id="runtimePowerW"
-                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl input-focus transition-all"
-                            readonly>
+                            step="any" readonly>
                     </div>
                 </div>
 
@@ -339,41 +612,53 @@
                 </button>
 
                 <div id="runtimeResult" class="hidden mt-6 p-6 result-highlight rounded-xl">
-                    <p class="text-gray-700 text-center mb-2">ระยะเวลาสำรองไฟโดยประมาณสำหรับโหลด <span
+                    <p id="runtimeResultDescription" class="text-gray-700 text-center mb-2">ระยะเวลาสำรองไฟโดยประมาณสำหรับโหลด <span
                             id="runtimeLoadDisplay">0</span> W:</p>
-                    <p id="runtimeMinutes" class="text-4xl font-bold text-amber-600 text-center">0 นาที</p>
+                    <p id="runtimeMinutes" class="text-4xl font-bold text-amber-600 text-center" aria-live="polite" aria-atomic="true">0 นาที</p>
+                    <p id="runtimeBasisLabel" class="field-help mt-2 text-center">ค่าประมาณจากสูตร Ah เชิงเส้น</p>
                 </div>
 
                 <div id="chartContainer" class="hidden mt-8">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-4 text-center">กราฟระยะเวลาสำรองไฟตามโหลดต่างๆ
-                    </h3>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4">Runtime ตามระดับโหลด</h3>
+                    <p id="runtimeChartUnavailable" class="hidden field-help mb-3" role="status">กราฟยังไม่พร้อมใช้งาน แต่ดูค่าประมาณในตารางด้านล่างได้</p>
                     <div class="bg-white p-4 rounded-xl border border-gray-200">
-                        <canvas id="runtimeChart" height="300"></canvas>
+                            <canvas id="runtimeChart" height="300" role="img" aria-label="กราฟกระจายแสดง Runtime โดยประมาณตามโหลดเป็นวัตต์" aria-describedby="runtimeEstimateNote"></canvas>
                     </div>
+                    <p class="field-help">จุดสามเหลี่ยมแสดงโหลดรวมปัจจุบัน ตารางด้านล่างช่วยอ่านค่าตัวเลขโดยไม่ต้องชี้กราฟ</p>
+                    <details class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <summary class="cursor-pointer font-medium text-slate-700">ดูค่ากราฟเป็นตาราง</summary>
+                        <div class="data-table-wrap mt-3">
+                            <table class="data-table">
+                                <caption class="sr-only">ค่าประมาณ Runtime ตามระดับโหลด</caption>
+                                <thead><tr><th scope="col">โหลด (W)</th><th id="runtimeTableValueHeading" scope="col">Runtime โดยประมาณ (นาที)</th></tr></thead>
+                                <tbody id="runtimeDataTable"></tbody>
+                            </table>
+                        </div>
+                    </details>
+                    <p id="runtimeEstimateNote" class="estimate-note">กราฟนี้เป็นค่าประมาณจากสูตร Ah แบบเชิงเส้น ไม่ใช่กราฟทดสอบของ UPS รุ่นใดรุ่นหนึ่ง โหมดพื้นฐานใช้ค่าเริ่มต้น 12 V และประสิทธิภาพ 85% สำหรับยืนยันการใช้งานจริงให้เทียบกราฟ Runtime จากผู้ผลิตตามรุ่นและชุดแบตเตอรี่</p>
                 </div>
             </div>
 
             <!-- Step 4: Summary -->
-            <div id="step4" class="step-content hidden">
-                <h2 class="text-2xl font-bold text-primary-700 mb-2 text-center">📊 ขั้นตอนที่ 4: สรุปข้อมูล UPS</h2>
-                <p class="text-gray-500 text-center mb-6">ข้อมูลสรุปสำหรับเลือกซื้อ UPS</p>
+            <div id="step4" class="step-content hidden" role="region" aria-labelledby="step4-heading">
+                <h2 id="step4-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">สรุปผล</h2>
+                <p class="text-gray-500 mb-6">ทบทวนโหลด ความจุแบตเตอรี่ และข้อเสนอแนะก่อนเลือก UPS</p>
 
                 <div class="summary-card p-6 rounded-xl mb-6">
-                    <h3 class="text-xl font-bold text-green-700 mb-4 flex items-center gap-2">
-                        <span>✅</span> สเปค UPS ที่แนะนำ
-                    </h3>
+                    <h3 class="text-xl font-bold text-green-700 mb-4">สรุปค่าประมาณสำหรับเลือก UPS</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-white p-4 rounded-lg shadow-sm">
+                        <div class="enterprise-only bg-white p-4 rounded-lg shadow-sm">
                             <p class="text-gray-500 text-sm">โหลดรวม</p>
                             <p id="summaryTotalLoad" class="text-2xl font-bold text-gray-800">0 W</p>
                         </div>
                         <div class="bg-white p-4 rounded-lg shadow-sm">
-                            <p class="text-gray-500 text-sm">กำลัง UPS ขั้นต่ำ (แนะนำ +30%)</p>
+                            <p class="text-gray-500 text-sm">VA คัดกรอง (PF 0.8 +30%)</p>
                             <p id="summaryUpsVA" class="text-2xl font-bold text-green-600">0 VA</p>
                         </div>
                         <div class="bg-white p-4 rounded-lg shadow-sm">
-                            <p class="text-gray-500 text-sm">ความจุแบตเตอรี่ที่ต้องการ</p>
+                            <p id="summaryBatteryLabel" class="text-gray-500 text-sm">ความจุแบตเตอรี่ที่ต้องการ</p>
                             <p id="summaryBatteryAh" class="text-2xl font-bold text-gray-800">0 Ah</p>
+                            <p id="summaryBatteryBasis" class="field-help mt-1">ค่าประมาณจากสูตร Ah และสมมติฐานแรงดัน/ประสิทธิภาพ</p>
                         </div>
                         <div class="bg-white p-4 rounded-lg shadow-sm">
                             <p class="text-gray-500 text-sm">แรงดันแบตเตอรี่</p>
@@ -383,42 +668,50 @@
                             <p class="text-gray-500 text-sm">ระยะเวลาสำรองไฟ</p>
                             <p id="summaryRuntime" class="text-2xl font-bold text-amber-600">0 นาที</p>
                         </div>
+                        <div class="bg-white p-4 rounded-lg shadow-sm md:col-span-2">
+                            <p class="text-gray-500 text-sm">แหล่งข้อมูล Runtime</p>
+                            <p id="summaryRuntimeBasis" class="text-sm text-gray-700">สูตร Ah เชิงเส้น (ค่าประมาณ)</p>
+                        </div>
                         <div class="bg-white p-4 rounded-lg shadow-sm">
-                            <p class="text-gray-500 text-sm">ประสิทธิภาพ UPS</p>
+                            <p class="text-gray-500 text-sm">สมมติฐานประสิทธิภาพ UPS</p>
                             <p id="summaryEfficiency" class="text-2xl font-bold text-gray-800">85%</p>
                         </div>
                         <!-- Total Plugs -->
-                        <div class="bg-white p-4 rounded-lg shadow-sm md:col-span-2">
-                            <p class="text-gray-500 text-sm">🔌 จำนวนรูปลั๊กทั้งหมดที่ต้องใช้</p>
+                        <div class="enterprise-only bg-white p-4 rounded-lg shadow-sm md:col-span-2">
+                            <p class="text-gray-500 text-sm">จำนวนรูปลั๊กทั้งหมดที่ต้องใช้</p>
                             <p id="summaryTotalPlugs" class="text-2xl font-bold text-blue-600">0 รู</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-6">
-                    <h4 class="font-bold text-blue-700 mb-2">💡 คำแนะนำในการเลือกซื้อ:</h4>
+                    <h4 class="font-bold text-blue-700 mb-2">ข้อเสนอแนะจากค่าประมาณ</h4>
+                    <p class="field-help mb-3">ใช้เป็นแนวทางคัดกรองเบื้องต้น โปรดตรวจสอบกำลัง W/VA และ Runtime กับข้อมูลผู้ผลิต</p>
                     <ul id="recommendations" class="text-blue-600 text-sm space-y-1">
-                        <li>• เลือก UPS ที่มีกำลังมากกว่าโหลดรวมอย่างน้อย 30%</li>
-                        <li>• พิจารณา UPS แบบ Online สำหรับอุปกรณ์ที่ต้องการความเสถียรสูง</li>
+                        <li>• คัดกรอง VA ด้วยสมมติฐาน PF 0.8 และเผื่อ 30%; ยืนยันพิกัด W/VA กับรุ่นจริง</li>
+                        <li>• เลือก topology ตามความสำคัญ/ความไวของโหลด สภาพไฟ สภาพแวดล้อม และงบประมาณ; ตรวจเวลาถ่ายโอนกับรูปคลื่นตามรุ่นจริง</li>
                         <li>• ตรวจสอบจำนวน Outlet ให้เพียงพอกับอุปกรณ์</li>
                     </ul>
                 </div>
 
-                <div class="bg-gray-50 border border-gray-200 p-4 rounded-xl mb-6">
+                <div class="enterprise-only bg-gray-50 border border-gray-200 p-4 rounded-xl mb-6">
                     <h4 class="font-bold text-gray-700 mb-3">📝 รายการอุปกรณ์ทั้งหมด:</h4>
                     <div id="summaryDeviceList" class="space-y-2 text-sm"></div>
                 </div>
 
                 <!-- Export Section -->
-                <div class="bg-purple-50 border border-purple-200 p-4 rounded-xl">
+                <div class="enterprise-only bg-slate-50 border border-slate-200 p-4 rounded-xl">
                     <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
                         <div class="text-purple-700 text-sm">
-                            <span class="font-medium">💾 บันทึกข้อมูล</span>
+                            <span class="font-medium">บันทึกข้อมูล</span>
                             <span class="text-purple-600">บันทึกเป็นไฟล์ JSON เพื่อใช้ภายหลังหรือแชร์ให้คนอื่น</span>
                         </div>
                         <button onclick="exportToJSON()"
                             class="py-2 px-6 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-lg font-medium hover:from-purple-600 hover:to-indigo-600 transition-all flex items-center gap-2 whitespace-nowrap">
-                            <span>�</span> Export JSON
+                            <svg aria-hidden="true" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14"></path>
+                            </svg>
+                            Export JSON
                         </button>
                     </div>
                 </div>
@@ -432,7 +725,7 @@
                 </button>
                 <button id="nextBtn" onclick="nextStep()"
                     class="px-8 py-3 btn-primary text-white rounded-xl font-medium ml-auto">
-                    ถัดไป →
+                    ถัดไป: ขนาดแบตเตอรี่ →
                 </button>
                 <button id="restartBtn" onclick="restart()"
                     class="px-8 py-3 btn-primary text-white rounded-xl font-medium hidden">
@@ -440,16 +733,26 @@
                 </button>
             </div>
         </div>
-
-        <!-- Footer -->
-        <footer class="text-center mt-8 text-gray-400 text-sm pb-8">
-            <p>UPS Picker © 2026 - เครื่องมือช่วยเลือก UPS อย่างง่าย</p>
-        </footer>
+    </main>
     </div>
 
+    <footer class="app-footer">UPS Picker · ผลลัพธ์เป็นค่าประมาณเพื่อช่วยวางแผนเบื้องต้น</footer>
+
+    <script src="./calculations.js"></script>
     <script>
         // State
         let currentStep = 1;
+        let currentMode = 'basic';
+        let runtimeSource = 'formula';
+        let runtimeCurve = null;
+        let runtimeCurvePoints = [];
+        let runtimeCurveImportVersion = 0;
+        let jsonImportVersion = 0;
+        let loadInputValid = true;
+        let precisionInvalidTarget = null;
+        let invalidPlugIndex = null;
+        let runtimeBatteryWasAutoFilled = false;
+        let enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
         let devices = [];
         let deviceIdCounter = 0;
         let runtimeChart = null;
@@ -466,116 +769,389 @@
             voltage: 12,
             efficiency: 85,
             backupTime: 60,
-            runtime: 0
+            runtime: null
         };
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function () {
             addDevice(); // Add first device
-            updateStepIndicators();
+            setMode('basic');
+            showStep(currentStep);
         });
+
+        function setMode(mode, preserveEnterpriseSettings = false) {
+            const nextMode = mode === 'enterprise' ? 'enterprise' : 'basic';
+            if (currentMode === 'enterprise' && nextMode === 'basic' && !preserveEnterpriseSettings) {
+                enterpriseBatterySettings = {
+                    voltage: Number(document.getElementById('batteryVoltage').value),
+                    efficiency: Number(document.getElementById('upsEfficiency').value),
+                };
+            }
+            if (currentMode === 'basic' && nextMode === 'enterprise') {
+                document.getElementById('batteryVoltage').value = enterpriseBatterySettings.voltage;
+                document.getElementById('upsEfficiency').value = enterpriseBatterySettings.efficiency;
+            }
+            currentMode = nextMode;
+            if (currentMode === 'basic') {
+                document.getElementById('batteryVoltage').value = 12;
+                document.getElementById('upsEfficiency').value = 85;
+                document.getElementById('runtimeVoltage').value = 12;
+                document.getElementById('runtimeEfficiency').value = 85;
+            } else {
+                document.getElementById('runtimeVoltage').value = document.getElementById('batteryVoltage').value;
+                document.getElementById('runtimeEfficiency').value = document.getElementById('upsEfficiency').value;
+            }
+            document.body.dataset.mode = currentMode;
+            document.getElementById('basicModeButton').setAttribute('aria-pressed', currentMode === 'basic');
+            document.getElementById('enterpriseModeButton').setAttribute('aria-pressed', currentMode === 'enterprise');
+            document.getElementById('modeDescription').textContent = currentMode === 'basic'
+                ? 'ข้อมูลหลักที่จำเป็นสำหรับการคำนวณ'
+                : 'ปรับสมมติฐาน Forecast และรายละเอียดโหลดเพิ่มเติม';
+            updateRuntimeSourceControls();
+            document.querySelectorAll('.device-card').forEach(updateDeviceLoadLabel);
+            updateBasicContextNote();
+            if (calculatedData.totalLoad > 0) calculateBatteryAh();
+            const runtimeBattery = document.getElementById('runtimeBatteryAh');
+            if (calculatedData.totalLoad > 0 && (currentStep >= 3 || runtimeBattery.value !== '')) {
+                syncRuntimeBatteryAh();
+                calculateRuntime();
+            }
+            if (currentStep === 4) updateSummary();
+        }
+
+        function updateRuntimeSourceControls() {
+            const useManufacturerCurve = currentMode === 'enterprise' && runtimeSource === 'manufacturer';
+            const sourceSelect = document.getElementById('runtimeSourceSelect');
+            if (sourceSelect) sourceSelect.value = runtimeSource;
+            document.querySelectorAll('.runtime-formula-field').forEach(field => field.classList.toggle('hidden', useManufacturerCurve));
+            const curvePanel = document.getElementById('manufacturerCurvePanel');
+            if (curvePanel) curvePanel.classList.toggle('hidden', !useManufacturerCurve);
+            const basis = useManufacturerCurve
+                ? runtimeCurve
+                    ? `กราฟที่นำเข้า (อ้างอิงผู้ผลิตตามที่ระบุ · แทรกเชิงเส้น) · ${runtimeCurve.model} · ${runtimeCurve.batteryConfig}`
+                    : 'เลือกกราฟ Runtime ที่นำเข้า แต่ยังไม่ได้โหลดข้อมูล'
+                : 'ค่าประมาณจากสูตร Ah เชิงเส้น';
+            const resultBasis = document.getElementById('runtimeBasisLabel');
+            if (resultBasis) resultBasis.textContent = useManufacturerCurve && runtimeCurve
+                ? `${basis} — แทรกเชิงเส้นระหว่างจุดข้อมูล; ไม่มีการคาดคะเนนอกช่วง`
+                : basis;
+            const summaryBasis = document.getElementById('summaryRuntimeBasis');
+            if (summaryBasis) summaryBasis.textContent = useManufacturerCurve && runtimeCurve
+                ? `${basis} · แหล่ง: ${runtimeCurve.source}${runtimeCurve.conditions ? ` · เงื่อนไข: ${runtimeCurve.conditions}` : ''}`
+                : basis;
+            const resultDescription = document.getElementById('runtimeResultDescription');
+            if (resultDescription && resultDescription.firstChild) {
+                resultDescription.firstChild.nodeValue = useManufacturerCurve
+                    ? 'Runtime จากกราฟที่นำเข้าสำหรับโหลด ' : 'ระยะเวลาสำรองไฟโดยประมาณสำหรับโหลด ';
+            }
+            const dashboardLabel = document.getElementById('dashboardRuntimeLabel');
+            if (dashboardLabel) dashboardLabel.textContent = useManufacturerCurve ? 'Runtime จากกราฟที่นำเข้า' : 'Runtime โดยประมาณ';
+            const batteryLabel = document.getElementById('summaryBatteryLabel');
+            if (batteryLabel) batteryLabel.textContent = useManufacturerCurve
+                ? 'ความจุแบตเตอรี่ที่ต้องการ (สูตรประมาณ)'
+                : 'ความจุแบตเตอรี่ที่ต้องการ';
+            const batteryBasis = document.getElementById('summaryBatteryBasis');
+            if (batteryBasis) batteryBasis.textContent = useManufacturerCurve
+                ? 'ค่าประมาณ Ah นี้ยังใช้สูตรเดิม ไม่ได้คำนวณกลับจากชุดแบตเตอรี่ในกราฟที่นำเข้า'
+                : 'ค่าประมาณจากสูตร Ah และสมมติฐานแรงดัน/ประสิทธิภาพ';
+        }
+
+        function setRuntimeSource(source) {
+            if (!['formula', 'manufacturer'].includes(source) || currentMode !== 'enterprise') return;
+            runtimeSource = source;
+            updateRuntimeSourceControls();
+            if (calculatedData.totalLoad > 0 && (currentStep >= 3 || document.getElementById('runtimeBatteryAh').value !== '')) {
+                calculateRuntime();
+            }
+            if (currentStep === 4) updateSummary();
+        }
+
+        function refreshRuntimeCurveMetadata() {
+            if (!runtimeCurve) return;
+            const metadata = {
+                model: document.getElementById('runtimeCurveModel').value,
+                batteryConfig: document.getElementById('runtimeCurveBatteryConfig').value,
+                source: document.getElementById('runtimeCurveSource').value,
+                conditions: document.getElementById('runtimeCurveConditions').value,
+            };
+            if (UPScalculations.runtimeCurveMetadataMatches(runtimeCurve, metadata)) return;
+            runtimeCurveImportVersion++;
+            runtimeCurve = null;
+            runtimeCurvePoints = [];
+            document.getElementById('runtimeCurveStatus').textContent = 'ข้อมูลรุ่นหรือแหล่งอ้างอิงเปลี่ยนแล้ว กรุณานำเข้า CSV ใหม่เพื่อผูกข้อมูลให้ตรงกัน';
+            updateRuntimeSourceControls();
+            if (calculatedData.totalLoad > 0 && currentStep >= 3) calculateRuntime();
+            if (currentStep === 4) updateSummary();
+        }
+
+        function importRuntimeCurve(event) {
+            const requestVersion = ++runtimeCurveImportVersion;
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const selectedMetadata = {
+                model: document.getElementById('runtimeCurveModel').value,
+                batteryConfig: document.getElementById('runtimeCurveBatteryConfig').value,
+                source: document.getElementById('runtimeCurveSource').value,
+                conditions: document.getElementById('runtimeCurveConditions').value,
+            };
+            if (file.size > 256_000) {
+                document.getElementById('runtimeCurveStatus').textContent = UPScalculations.runtimeCurveImportFailureMessage(
+                    new Error('ไฟล์ CSV ต้องไม่เกิน 256 KB'), runtimeCurve && runtimeCurve.model,
+                );
+                event.target.value = '';
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (loadEvent) {
+                if (requestVersion !== runtimeCurveImportVersion) return;
+                try {
+                    const currentMetadata = {
+                        model: document.getElementById('runtimeCurveModel').value,
+                        batteryConfig: document.getElementById('runtimeCurveBatteryConfig').value,
+                        source: document.getElementById('runtimeCurveSource').value,
+                        conditions: document.getElementById('runtimeCurveConditions').value,
+                    };
+                    if (!UPScalculations.runtimeCurveMetadataMatches(selectedMetadata, currentMetadata)) {
+                        document.getElementById('runtimeCurveStatus').textContent = 'ข้อมูลรุ่นหรือแหล่งอ้างอิงเปลี่ยนระหว่างอ่านไฟล์ กรุณานำเข้า CSV อีกครั้ง';
+                        return;
+                    }
+                    const points = UPScalculations.parseRuntimeCurveCsv(String(loadEvent.target.result || ''));
+                    const candidate = UPScalculations.normalizeRuntimeCurveData({
+                        ...selectedMetadata,
+                        points,
+                    });
+                    runtimeCurvePoints = points;
+                    runtimeCurve = candidate;
+                    document.getElementById('runtimeCurveStatus').textContent = `โหลดแล้ว ${points.length} จุด (${points[0].loadW}–${points[points.length - 1].loadW} W)`;
+                    setRuntimeSource(runtimeSource);
+                } catch (error) {
+                    document.getElementById('runtimeCurveStatus').textContent = UPScalculations.runtimeCurveImportFailureMessage(error, runtimeCurve && runtimeCurve.model);
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.onerror = function () {
+                if (requestVersion !== runtimeCurveImportVersion) return;
+                document.getElementById('runtimeCurveStatus').textContent = UPScalculations.runtimeCurveImportFailureMessage(
+                    new Error('อ่านไฟล์ไม่ได้ กรุณาเลือก CSV อีกครั้ง'), runtimeCurve && runtimeCurve.model,
+                );
+                event.target.value = '';
+            };
+            reader.readAsText(file, 'UTF-8');
+            event.target.value = '';
+        }
+
+        function clearRuntimeCurve() {
+            runtimeCurveImportVersion++;
+            runtimeCurve = null;
+            runtimeCurvePoints = [];
+            document.getElementById('runtimeCurveModel').value = '';
+            document.getElementById('runtimeCurveBatteryConfig').value = '';
+            document.getElementById('runtimeCurveSource').value = '';
+            document.getElementById('runtimeCurveConditions').value = '';
+            document.getElementById('runtimeCurveFile').value = '';
+            document.getElementById('runtimeCurveStatus').textContent = 'ยังไม่ได้โหลดกราฟ Runtime';
+            runtimeSource = 'formula';
+            updateRuntimeSourceControls();
+            if (calculatedData.totalLoad > 0 && currentStep >= 3) calculateRuntime();
+            if (currentStep === 4) updateSummary();
+        }
+
+        function updateBasicContextNote() {
+            const notes = [];
+            if (calculatedData.forecastWatt > 0) {
+                notes.push(`มี Forecast ${calculatedData.forecastWatt} W รวมอยู่ในโหลด`);
+            }
+            if (devices.some(device => device.unit === 'VA')) {
+                notes.push('มีโหลด VA ที่แปลงเป็น W ด้วย PF 0.8');
+            }
+            if (calculatedData.totalPlugs > 0) {
+                notes.push(`นับจำนวนปลั๊ก ${calculatedData.totalPlugs} รู; Enterprise แสดงการคัดกรองจำนวนช่อง UPS`);
+            }
+            const note = document.getElementById('basicContextNote');
+            note.textContent = notes.length
+                ? `${notes.join(' และ ')} — เปิด Enterprise เพื่อดูหรือแก้ไขรายละเอียด`
+                : '';
+            note.classList.toggle('hidden', currentMode !== 'basic' || notes.length === 0);
+        }
+
+        function updateDeviceLoadLabel(card) {
+            const label = card.querySelector('.device-load-label');
+            if (!label) return;
+            const unit = card.querySelector('.device-unit')?.value || 'W';
+            label.textContent = currentMode === 'basic' && unit === 'VA'
+                ? 'กำลังไฟ (VA → W)*' : currentMode === 'basic' ? 'กำลังไฟ (W)*' : 'กำลังไฟ*';
+        }
+
+        function updateDashboardMetrics() {
+            document.getElementById('dashboardLoad').textContent = `${calculatedData.totalLoad} W`;
+            document.getElementById('dashboardRuntimeLabel').textContent = currentMode === 'enterprise' && runtimeSource === 'manufacturer'
+                ? 'Runtime จากกราฟที่นำเข้า' : 'Runtime โดยประมาณ';
+            document.getElementById('dashboardBattery').textContent = calculatedData.batteryAh > 0
+                ? `${calculatedData.batteryAh} Ah` : '— Ah';
+            document.getElementById('dashboardRuntime').textContent = Number.isFinite(calculatedData.runtime)
+                ? `${formatRuntimeMinutes(calculatedData.runtime)} นาที` : '— นาที';
+        }
+
+        function formatRuntimeMinutes(minutes) {
+            if (!Number.isFinite(minutes)) return '—';
+            if (minutes > 0 && minutes < 0.01) return '<0.01';
+            return String(minutes);
+        }
+
+        function syncRuntimeBatteryAh() {
+            const runtimeBattery = document.getElementById('runtimeBatteryAh');
+            if (runtimeBatteryWasAutoFilled || !runtimeBattery.value) {
+                runtimeBattery.value = calculatedData.batteryAh > 0 ? calculatedData.batteryAh : '';
+                runtimeBatteryWasAutoFilled = Boolean(runtimeBattery.value);
+            }
+        }
+
+        function handleRuntimeBatteryInput() {
+            runtimeBatteryWasAutoFilled = false;
+            calculateRuntime();
+        }
 
         // Device Management
         function addDevice() {
+            if (document.querySelectorAll('.device-card').length >= UPScalculations.MAX_DEVICES) {
+                const notice = document.getElementById('deviceLimitNotice');
+                notice.textContent = `เพิ่มได้สูงสุด ${UPScalculations.MAX_DEVICES} รายการ เพื่อให้หน้าจอยังตอบสนองได้ดี`;
+                notice.classList.remove('hidden');
+                return;
+            }
+            document.getElementById('deviceLimitNotice').classList.add('hidden');
             deviceIdCounter++;
             const deviceHtml = `
-                <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200">
-                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200" data-converted-from-va="false">
+                <div class="device-fields grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                         <div class="md:col-span-4">
-                            <label class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
-                            <input type="text" placeholder="เช่น PoE Switch, NVR, Router..." class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
+                            <label for="device-${deviceIdCounter}-name" class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
+                            <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" maxlength="160" placeholder="เช่น PoE Switch, NVR, Router..." class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                         </div>
                         <div class="md:col-span-2">
-                            <label class="block text-gray-600 text-sm mb-1">Load*</label>
-                            <input type="number" placeholder="กรอก Watt" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
+                            <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ (W)*</label>
+                            <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" placeholder="เช่น 120" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="any" oninput="updateTotalLoad()">
                         </div>
-                        <div class="md:col-span-2">
-                            <label class="block text-gray-600 text-sm mb-1">หน่วย*</label>
-                            <select class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
+                        <div class="enterprise-only md:col-span-2">
+                            <label for="device-${deviceIdCounter}-unit" class="block text-gray-600 text-sm mb-1">หน่วย*</label>
+                            <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="handleDeviceUnitChange(this)">
                                 <option value="W">W</option>
                                 <option value="VA">VA</option>
                             </select>
                         </div>
-                        <div class="md:col-span-2">
-                            <label class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
-                            <input type="number" placeholder="จำนวนรู" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" value="1" oninput="updateTotalLoad()">
+                        <div class="enterprise-only md:col-span-2">
+                            <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
+                            <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" placeholder="จำนวนรู" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" value="1" oninput="updateTotalLoad()">
                         </div>
                         <div class="md:col-span-2">
-                            <button onclick="removeDevice(${deviceIdCounter})" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
+                            <button onclick="removeDevice(${deviceIdCounter})" aria-label="ลบรายการอุปกรณ์ ${deviceIdCounter}" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
                                 ลบ
                             </button>
                         </div>
                     </div>
+                    <p class="enterprise-only field-help mt-2">ค่า VA จะแปลงเป็น W ด้วยสมมติฐาน PF 0.8</p>
                 </div>
             `;
             document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);
+            updateDeviceLoadLabel(document.getElementById(`device-${deviceIdCounter}`));
         }
 
         function removeDevice(id) {
             const element = document.getElementById(`device-${id}`);
             if (element) {
+                const cards = [...document.querySelectorAll('.device-card')];
+                const cardIndex = cards.indexOf(element);
+                const nextCard = cards[cardIndex + 1] || cards[cardIndex - 1];
                 element.remove();
+                document.getElementById('deviceLimitNotice').classList.add('hidden');
                 updateTotalLoad();
+                (nextCard?.querySelector('.device-load') || document.getElementById('addDeviceBtn')).focus();
             }
         }
 
-        function updateTotalLoad() {
-            let deviceTotal = 0;
-            let totalPlugs = 0;
-            const deviceCards = document.querySelectorAll('.device-card');
+        function handleDeviceUnitChange(select) {
+            updateDeviceLoadLabel(select.closest('.device-card'));
+            updateTotalLoad();
+        }
 
-            devices = [];
+        function updateTotalLoad() {
+            const deviceCards = document.querySelectorAll('.device-card');
+            const enteredDevices = [];
             deviceCards.forEach((card) => {
                 const name = card.querySelector('.device-name').value || 'อุปกรณ์ไม่ระบุชื่อ';
-                const load = parseFloat(card.querySelector('.device-load').value) || 0;
+                const load = card.querySelector('.device-load').value;
                 const unit = card.querySelector('.device-unit').value;
-                const plugs = parseInt(card.querySelector('.device-plugs')?.value) || 1;
-
-                if (load > 0) {
-                    // Convert VA to W if needed (assume 0.8 power factor)
-                    const watts = unit === 'VA' ? load * 0.8 : load;
-                    deviceTotal += watts;
-                    totalPlugs += plugs;
-                    devices.push({ name, load, unit, watts, plugs });
-                }
+                const plugs = card.querySelector('.device-plugs')?.value || 1;
+                enteredDevices.push({ name, load, unit, plugs });
             });
-
-            // Store values separately
-            calculatedData.deviceLoad = Math.round(deviceTotal * 100) / 100;
-            calculatedData.totalPlugs = totalPlugs;
-
-            // Get forecast value and calculate based on unit
-            const forecastValue = parseFloat(document.getElementById('forecastValue').value) || 0;
+            const forecastValue = document.getElementById('forecastValue').value;
             const forecastUnit = calculatedData.forecastUnit || '%';
-            let forecastWatt = 0;
-
-            if (forecastValue > 0) {
-                if (forecastUnit === '%') {
-                    // Calculate percentage of device load
-                    forecastWatt = deviceTotal * (forecastValue / 100);
-                } else {
-                    // Direct watt value
-                    forecastWatt = forecastValue;
+            const breakdown = UPScalculations.calculateLoadBreakdown(enteredDevices, forecastValue, forecastUnit);
+            precisionInvalidTarget = breakdown.precisionInvalidTarget;
+            invalidPlugIndex = breakdown.invalidPlugIndex;
+            if (!breakdown.valid) {
+                loadInputValid = false;
+                devices = [];
+                calculatedData.deviceLoad = 0;
+                calculatedData.totalPlugs = 0;
+                calculatedData.forecastValue = 0;
+                calculatedData.forecastWatt = 0;
+                calculatedData.totalLoad = 0;
+                calculatedData.batteryAh = null;
+                calculatedData.runtime = null;
+                document.getElementById('loadError').textContent = 'ตรวจสอบค่ากำลังไฟ Forecast และจำนวนรูปลั๊กว่าถูกต้องและมีความละเอียดเพียงพอ';
+                document.getElementById('loadError').classList.remove('hidden');
+                document.getElementById('deviceLoadOnly').textContent = '— W';
+                document.getElementById('forecastLoadDisplay').textContent = '— W';
+                document.getElementById('totalLoad').textContent = '— W';
+                document.getElementById('totalPlugsDisplay').textContent = '0 รู';
+                document.getElementById('forecastRowDisplay').classList.add('hidden');
+                document.getElementById('forecastPreview').classList.add('hidden');
+                document.getElementById('forecastPreviewText').textContent = '';
+                updateBasicContextNote();
+                document.getElementById('batteryResult').classList.add('hidden');
+                document.getElementById('runtimeResult').classList.add('hidden');
+                document.getElementById('chartContainer').classList.add('hidden');
+                if (runtimeChart) {
+                    runtimeChart.destroy();
+                    runtimeChart = null;
                 }
+                updateDashboardMetrics();
+                if (currentStep === 4) updateSummary();
+                return;
             }
-
-            calculatedData.forecastValue = forecastValue;
-            calculatedData.forecastWatt = Math.round(forecastWatt * 100) / 100;
-            calculatedData.totalLoad = Math.round((deviceTotal + forecastWatt) * 100) / 100;
+            loadInputValid = true;
+            devices = breakdown.devices;
+            calculatedData.deviceLoad = breakdown.deviceLoad;
+            calculatedData.totalPlugs = breakdown.totalPlugs;
+            calculatedData.forecastValue = Number.isFinite(Number(forecastValue)) && Number(forecastValue) > 0 ? Number(forecastValue) : 0;
+            calculatedData.forecastWatt = breakdown.forecastWatt;
+            calculatedData.totalLoad = breakdown.totalLoad;
+            const deviceTotal = breakdown.deviceLoad;
+            const forecastWatt = breakdown.forecastWatt;
+            updateBasicContextNote();
+            const loadError = document.getElementById('loadError');
+            loadError.textContent = '';
+            loadError.classList.add('hidden');
+            if (currentStep === 1) {
+                calculatedData.batteryAh = 0;
+                calculatedData.runtime = null;
+                document.getElementById('batteryResult').classList.add('hidden');
+                document.getElementById('runtimeResult').classList.add('hidden');
+                document.getElementById('chartContainer').classList.add('hidden');
+            }
 
             // Update display
             document.getElementById('deviceLoadOnly').textContent = `${calculatedData.deviceLoad} W`;
             document.getElementById('forecastLoadDisplay').textContent = `${calculatedData.forecastWatt} W`;
             document.getElementById('totalLoad').textContent = `${calculatedData.totalLoad} W`;
             document.getElementById('totalPlugsDisplay').textContent = `${calculatedData.totalPlugs} รู`;
+            updateDashboardMetrics();
 
             // Show/hide forecast row
             const forecastRow = document.getElementById('forecastRowDisplay');
-            if (forecastWatt > 0) {
-                forecastRow.style.display = 'flex';
-            } else {
-                forecastRow.style.display = 'none';
-            }
+            forecastRow.classList.toggle('hidden', forecastWatt <= 0);
 
             // Update forecast preview
             const forecastPreview = document.getElementById('forecastPreview');
@@ -607,95 +1183,174 @@
                 percentBtn.classList.remove('bg-amber-500', 'text-white');
                 percentBtn.classList.add('bg-white', 'text-amber-600', 'hover:bg-amber-50');
             }
+            percentBtn.setAttribute('aria-pressed', String(unit === '%'));
+            wattBtn.setAttribute('aria-pressed', String(unit === 'W'));
 
             // Recalculate
             updateTotalLoad();
         }
 
         // Battery Calculator
+        function handleBatterySettingsInput() {
+            calculatedData.runtime = null;
+            document.getElementById('runtimeResult').classList.add('hidden');
+            document.getElementById('chartContainer').classList.add('hidden');
+            if (runtimeChart) {
+                runtimeChart.destroy();
+                runtimeChart = null;
+            }
+            calculateBatteryAh();
+        }
+
         function calculateBatteryAh() {
             const powerW = calculatedData.totalLoad;
-            const timeMin = parseFloat(document.getElementById('backupTimeMin').value) || 60;
-            const voltage = parseFloat(document.getElementById('batteryVoltage').value) || 12;
-            const efficiency = parseFloat(document.getElementById('upsEfficiency').value) || 85;
-
-            // Formula: Ah = (Power × Time in hours) / (Voltage × Efficiency)
-            const timeHours = timeMin / 60;
-            const efficiencyDecimal = efficiency / 100;
-
-            const batteryAh = (powerW * timeHours) / (voltage * efficiencyDecimal);
-
-            calculatedData.batteryAh = Math.round(batteryAh * 100) / 100;
+            const timeMin = document.getElementById('backupTimeMin').value;
+            const voltage = currentMode === 'basic' ? 12 : document.getElementById('batteryVoltage').value;
+            const efficiency = currentMode === 'basic' ? 85 : document.getElementById('upsEfficiency').value;
+            const batteryAh = UPScalculations.calculateBatteryAh(powerW, timeMin, voltage, efficiency);
+            if (batteryAh === null) {
+                calculatedData.batteryAh = null;
+                const batteryResultText = document.getElementById('batteryAhResult');
+                const belowResolution = UPScalculations.isBelowAhResolution(powerW, timeMin, voltage, efficiency);
+                const beyondOutputRange = UPScalculations.isAhRequirementBeyondOutputRange(powerW, timeMin, voltage, efficiency);
+                batteryResultText.textContent = belowResolution
+                    ? 'ต่ำกว่าความละเอียดขั้นต่ำ 0.000001 Ah'
+                    : beyondOutputRange
+                        ? 'ผล Ah เกินช่วงตัวเลขที่แอปรองรับ ตรวจหน่วยหรือแบ่งโหลดเป็นรายการย่อย'
+                        : 'ตรวจสอบโหลด เวลา แรงดัน และประสิทธิภาพ';
+                batteryResultText.classList.remove('text-4xl');
+                batteryResultText.classList.add('text-base');
+                document.getElementById('batteryResult').classList.remove('hidden');
+                updateDashboardMetrics();
+                return;
+            }
+            calculatedData.batteryAh = batteryAh;
+            document.getElementById('batteryAhResult').classList.remove('text-base');
+            document.getElementById('batteryAhResult').classList.add('text-4xl');
             calculatedData.voltage = voltage;
             calculatedData.efficiency = efficiency;
-            calculatedData.backupTime = timeMin;
+            calculatedData.backupTime = Number(timeMin);
 
             document.getElementById('batteryAhResult').textContent = `${calculatedData.batteryAh} Ah`;
             document.getElementById('batteryResult').classList.remove('hidden');
+            updateDashboardMetrics();
         }
 
         // Runtime Calculator
         function calculateRuntime() {
-            const batteryAh = parseFloat(document.getElementById('runtimeBatteryAh').value) || calculatedData.batteryAh;
-            const voltage = parseFloat(document.getElementById('runtimeVoltage').value) || calculatedData.voltage;
-            const efficiency = parseFloat(document.getElementById('runtimeEfficiency').value) || calculatedData.efficiency;
+            const capacityInput = document.getElementById('runtimeBatteryAh').value;
+            const batteryAh = capacityInput === '' ? calculatedData.batteryAh : capacityInput;
+            const voltage = currentMode === 'basic' ? 12 : document.getElementById('runtimeVoltage').value;
+            const efficiency = currentMode === 'basic' ? 85 : document.getElementById('runtimeEfficiency').value;
             const powerW = calculatedData.totalLoad;
-
-            // Formula: Runtime (hours) = (Ah × Voltage × Efficiency) / Power
-            const efficiencyDecimal = efficiency / 100;
-            const runtimeHours = (batteryAh * voltage * efficiencyDecimal) / powerW;
-            const runtimeMinutes = Math.round(runtimeHours * 60);
+            const useManufacturerCurve = currentMode === 'enterprise' && runtimeSource === 'manufacturer';
+            const runtimeMinutes = useManufacturerCurve
+                ? runtimeCurve ? UPScalculations.calculateRuntimeFromCurve(runtimeCurve.points, powerW) : null
+                : UPScalculations.calculateRuntimeMinutes(batteryAh, voltage, efficiency, powerW);
+            if (runtimeMinutes === null) {
+                calculatedData.runtime = null;
+                document.getElementById('runtimeMinutes').textContent = powerW <= 0
+                    ? 'ยังคำนวณไม่ได้ — กรอกโหลดก่อน'
+                    : useManufacturerCurve && !runtimeCurve
+                        ? 'กรอกข้อมูลรุ่น/ชุดแบตเตอรี่และนำเข้า CSV ที่อ้างอิงผู้ผลิตก่อน'
+                        : useManufacturerCurve
+                            ? `โหลด ${powerW} W อยู่นอกช่วง ${runtimeCurve.points[0].loadW}–${runtimeCurve.points[runtimeCurve.points.length - 1].loadW} W ของเส้นโค้งนี้`
+                            : 'ตรวจสอบความจุแบตเตอรี่ แรงดัน และประสิทธิภาพ';
+                document.getElementById('runtimeBasisLabel').textContent = useManufacturerCurve
+                    ? 'ใช้เฉพาะจุดและแทรกเชิงเส้นระหว่างจุดที่นำเข้า; ไม่มีการคาดคะเนนอกช่วง'
+                    : 'ค่าประมาณจากสูตร Ah เชิงเส้น';
+                document.getElementById('runtimeResult').classList.remove('hidden');
+                document.getElementById('chartContainer').classList.add('hidden');
+                if (runtimeChart) {
+                    runtimeChart.destroy();
+                    runtimeChart = null;
+                }
+                updateDashboardMetrics();
+                return;
+            }
 
             calculatedData.runtime = runtimeMinutes;
 
-            document.getElementById('runtimeLoadDisplay').textContent = Math.round(powerW);
-            document.getElementById('runtimeMinutes').textContent = `${runtimeMinutes} นาที`;
+            document.getElementById('runtimeLoadDisplay').textContent = powerW;
+            document.getElementById('runtimeMinutes').textContent = `${formatRuntimeMinutes(runtimeMinutes)} นาที`;
+            document.getElementById('runtimeBasisLabel').textContent = useManufacturerCurve && runtimeCurve
+                ? `ข้อมูลที่นำเข้า ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · แทรกเชิงเส้นระหว่างจุดเท่านั้น`
+                : 'ค่าประมาณจากสูตร Ah เชิงเส้น';
             document.getElementById('runtimeResult').classList.remove('hidden');
+            updateDashboardMetrics();
 
             // Generate chart
-            generateChart(batteryAh, voltage, efficiency);
+            generateChart(batteryAh, voltage, efficiency, useManufacturerCurve);
         }
 
-        function generateChart(batteryAh, voltage, efficiency) {
-            const efficiencyDecimal = efficiency / 100;
-            const dataPoints = [];
-            const labels = [];
+        function generateChart(batteryAh, voltage, efficiency, useManufacturerCurve = false) {
+            const curve = useManufacturerCurve && runtimeCurve
+                ? UPScalculations.buildManufacturerRuntimeCurve(runtimeCurve.points, calculatedData.totalLoad)
+                : UPScalculations.buildRuntimeCurve(batteryAh, voltage, efficiency, calculatedData.totalLoad);
+            const validPowerLevels = curve.map(point => point.loadW);
+            const dataPoints = curve.map(point => point.runtimeMinutes);
 
-            // Generate data points for different power loads
-            const powerLevels = [50, 100, 150, 200, 250, 300, Math.round(calculatedData.totalLoad)];
-            powerLevels.sort((a, b) => a - b);
-
-            powerLevels.forEach(power => {
-                const runtime = (batteryAh * voltage * efficiencyDecimal) / power * 60;
-                labels.push(`${power} W`);
-                dataPoints.push(Math.round(runtime));
+            const tableBody = document.getElementById('runtimeDataTable');
+            tableBody.replaceChildren();
+            validPowerLevels.forEach((power, index) => {
+                const row = document.createElement('tr');
+                const loadCell = document.createElement('td');
+                const runtimeCell = document.createElement('td');
+                loadCell.textContent = `${power} W`;
+                runtimeCell.textContent = `${formatRuntimeMinutes(dataPoints[index])} นาที`;
+                row.append(loadCell, runtimeCell);
+                tableBody.appendChild(row);
             });
+
+            const sourceNote = useManufacturerCurve && runtimeCurve
+                ? `กราฟที่นำเข้า ${runtimeCurve.model} · ${runtimeCurve.batteryConfig} · อ้างอิงที่ผู้ใช้ระบุ: ${runtimeCurve.source}${runtimeCurve.conditions ? ` · เงื่อนไข: ${runtimeCurve.conditions}` : ''} (แทรกเชิงเส้นเฉพาะระหว่างจุด; กราฟใช้ค่าก่อนปัด จึงอาจละเอียดกว่าตัวเลขสรุป)`
+                : 'กราฟนี้เป็นค่าประมาณจากสูตร Ah แบบเชิงเส้น ไม่ใช่กราฟทดสอบของ UPS รุ่นใดรุ่นหนึ่ง โหมดพื้นฐานใช้ค่าเริ่มต้น 12 V และประสิทธิภาพ 85% สำหรับยืนยันการใช้งานจริงให้เทียบกราฟ Runtime จากผู้ผลิตตามรุ่นและชุดแบตเตอรี่';
+            document.getElementById('runtimeEstimateNote').textContent = sourceNote;
+            document.getElementById('runtimeChart').setAttribute('aria-label', useManufacturerCurve
+                ? `กราฟ Runtime ที่นำเข้า ${runtimeCurve.model} ตามโหลดเป็นวัตต์`
+                : 'กราฟกระจายแสดง Runtime โดยประมาณตามโหลดเป็นวัตต์');
+            document.getElementById('runtimeTableValueHeading').textContent = useManufacturerCurve
+                ? 'Runtime จากกราฟที่นำเข้า (นาที)' : 'Runtime โดยประมาณ (นาที)';
+            document.getElementById('runtimeChartUnavailable').textContent = useManufacturerCurve
+                ? 'กราฟยังไม่พร้อมใช้งาน แต่ดูจุดข้อมูลที่นำเข้าในตารางด้านล่างได้'
+                : 'กราฟยังไม่พร้อมใช้งาน แต่ดูค่าประมาณในตารางด้านล่างได้';
 
             document.getElementById('chartContainer').classList.remove('hidden');
 
             // Destroy existing chart if exists
             if (runtimeChart) {
                 runtimeChart.destroy();
+                runtimeChart = null;
             }
+            if (typeof Chart === 'undefined') {
+                document.getElementById('runtimeChart').classList.add('hidden');
+                document.getElementById('runtimeChartUnavailable').classList.remove('hidden');
+                return;
+            }
+            document.getElementById('runtimeChart').classList.remove('hidden');
+            document.getElementById('runtimeChartUnavailable').classList.add('hidden');
 
             const ctx = document.getElementById('runtimeChart').getContext('2d');
             runtimeChart = new Chart(ctx, {
-                type: 'line',
+                type: 'scatter',
                 data: {
-                    labels: labels,
                     datasets: [{
                         label: 'ระยะเวลาสำรองไฟ (นาที)',
-                        data: dataPoints,
+                        data: curve.map(point => ({ x: point.loadW, y: point.runtimeMinutes })),
+                        showLine: true,
                         borderColor: '#6366f1',
                         backgroundColor: 'rgba(99, 102, 241, 0.1)',
                         borderWidth: 3,
-                        fill: true,
-                        tension: 0.4,
+                        fill: false,
+                        tension: 0,
                         pointBackgroundColor: dataPoints.map((_, i) =>
-                            powerLevels[i] === Math.round(calculatedData.totalLoad) ? '#ef4444' : '#6366f1'
+                            curve[i].currentLoad ? '#ef4444' : '#2456d6'
                         ),
                         pointRadius: dataPoints.map((_, i) =>
-                            powerLevels[i] === Math.round(calculatedData.totalLoad) ? 8 : 5
+                            curve[i].currentLoad ? 8 : 5
+                        ),
+                        pointStyle: dataPoints.map((_, i) =>
+                            curve[i].currentLoad ? 'triangle' : 'circle'
                         ),
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2
@@ -718,7 +1373,7 @@
                         tooltip: {
                             callbacks: {
                                 label: function (context) {
-                                    return `${context.parsed.y} นาที`;
+                                    return `${context.parsed.x} W · ${formatRuntimeMinutes(context.parsed.y)} นาที`;
                                 }
                             }
                         }
@@ -736,6 +1391,8 @@
                             }
                         },
                         x: {
+                            type: 'linear',
+                            beginAtZero: true,
                             title: {
                                 display: true,
                                 text: 'กำลังไฟที่ใช้ (W)',
@@ -743,11 +1400,16 @@
                                     family: 'Prompt',
                                     weight: 'bold'
                                 }
-                            }
+                            },
+                            ticks: { callback: value => `${value} W` }
                         }
                     }
                 }
             });
+        }
+
+        function escapeHtml(value) {
+            return UPScalculations.escapeHtml(value);
         }
 
         // Summary
@@ -760,17 +1422,20 @@
             document.getElementById('summaryTotalLoad').innerHTML = totalLoadText;
 
             // Recommended UPS VA (add 30% headroom)
-            const recommendedVA = Math.ceil(calculatedData.totalLoad * 1.3 / 100) * 100;
-            document.getElementById('summaryUpsVA').textContent = `${recommendedVA} VA`;
+            const recommendedVA = UPScalculations.recommendUpsVA(calculatedData.totalLoad);
+            document.getElementById('summaryUpsVA').textContent = Number.isFinite(recommendedVA)
+                ? `${recommendedVA} VA` : '— VA';
 
             // Battery Ah
-            document.getElementById('summaryBatteryAh').textContent = `${calculatedData.batteryAh} Ah`;
+            document.getElementById('summaryBatteryAh').textContent = Number.isFinite(calculatedData.batteryAh)
+                ? `${calculatedData.batteryAh} Ah` : '— Ah';
 
             // Voltage
             document.getElementById('summaryVoltage').textContent = `${calculatedData.voltage} V`;
 
             // Runtime
-            document.getElementById('summaryRuntime').textContent = `${calculatedData.runtime} นาที`;
+            document.getElementById('summaryRuntime').textContent = Number.isFinite(calculatedData.runtime)
+                ? `${formatRuntimeMinutes(calculatedData.runtime)} นาที` : '— นาที';
 
             // Efficiency
             document.getElementById('summaryEfficiency').textContent = `${calculatedData.efficiency}%`;
@@ -782,8 +1447,8 @@
             // Device List with Forecast
             let deviceListHtml = devices.map(d =>
                 `<div class="flex justify-between py-2 px-3 bg-white rounded-lg">
-                    <span class="text-gray-700">${d.name}</span>
-                    <span class="font-medium text-gray-800">${d.load} ${d.unit} (${d.watts.toFixed(2)} W) - ${d.plugs || 1} รู</span>
+                    <span class="text-gray-700">${escapeHtml(d.name)}</span>
+                    <span class="font-medium text-gray-800">${escapeHtml(d.load)} ${escapeHtml(d.unit)} (${escapeHtml(String(d.watts))} W) - ${escapeHtml(d.plugs || 1)} รู</span>
                 </div>`
             ).join('');
 
@@ -791,65 +1456,82 @@
             if (calculatedData.forecastWatt > 0) {
                 deviceListHtml += `
                     <div class="flex justify-between py-2 px-3 bg-amber-50 rounded-lg border border-amber-200 mt-2">
-                        <span class="text-amber-700">⚡ Forecast (เผื่ออนาคต)</span>
+                        <span class="text-amber-700">Forecast (เผื่ออนาคต)</span>
                         <span class="font-medium text-amber-600">+${calculatedData.forecastWatt} W</span>
                     </div>`;
             }
 
             document.getElementById('summaryDeviceList').innerHTML = deviceListHtml || '<p class="text-gray-400">ไม่มีอุปกรณ์</p>';
 
-            // Update recommendations based on load and plugs
+            // Keep the Basic summary focused; expose existing screening guidance in Enterprise.
             const recommendations = [];
-            recommendations.push(`• เลือก UPS ขนาด ${recommendedVA} VA ขึ้นไป`);
-
-            if (calculatedData.totalLoad > 500) {
-                recommendations.push('• พิจารณา UPS แบบ Online Double Conversion สำหรับอุปกรณ์สำคัญ');
+            if (Number.isFinite(recommendedVA)) {
+                recommendations.push(`ขนาด VA คัดกรอง: ${recommendedVA} VA ขึ้นไป`);
+                recommendations.push('คำนวณจากโหลด W ÷ 0.8 × 1.3 แล้วปัดขึ้นทีละ 100 VA; ตรวจพิกัด VA/W และกราฟ Runtime ของ UPS รุ่นจริงก่อนเลือก');
             } else {
-                recommendations.push('• UPS แบบ Line Interactive เพียงพอสำหรับโหลดนี้');
+                recommendations.push('ค่ากำลังไฟอยู่นอกขอบเขตที่ใช้คัดกรองขนาด UPS');
             }
 
-            if (calculatedData.runtime < 30) {
-                recommendations.push('• ⚠️ เวลาสำรองน้อย พิจารณาแบตเตอรี่ที่มีความจุมากขึ้น');
+            if (Number.isFinite(calculatedData.runtime) && calculatedData.runtime < 30) {
+                recommendations.push(currentMode === 'enterprise' && runtimeSource === 'manufacturer' && runtimeCurve
+                    ? 'Runtime จากกราฟที่นำเข้านี้ต่ำกว่า 30 นาที — ตรวจรุ่นหรือชุดแบตเตอรี่ทางเลือกจากกราฟที่ตรงกัน'
+                    : 'Runtime ต่ำกว่า 30 นาทีตามค่าประมาณนี้ — พิจารณาเพิ่มความจุแบตเตอรี่');
             }
 
-            if (calculatedData.forecastWatt > 0) {
-                recommendations.push(`• 📈 รวม Forecast ${calculatedData.forecastWatt}W สำหรับการขยายในอนาคตแล้ว`);
-            }
-
-            // UPS Outlet recommendations based on total plugs
-            recommendations.push(`• 🔌 ต้องใช้รูปลั๊กทั้งหมด ${totalPlugs} รู`);
-            
-            if (totalPlugs > 0) {
-                // Common UPS outlet counts: 4, 6, 8, 10, 12
-                const upsOutletConfigs = [4, 6, 8, 10, 12];
-                let requiredUpsCount = 1;
-                let outletsPerUps = 0;
-                
-                for (let outlets of upsOutletConfigs) {
-                    if (outlets >= totalPlugs) {
-                        outletsPerUps = outlets;
-                        break;
-                    }
+            if (currentMode === 'enterprise') {
+                recommendations.push('ยังไม่มีข้อมูลความสำคัญของโหลดหรือคุณภาพไฟ จึงไม่เลือก Online หรือ Line-interactive จาก W อย่างเดียว');
+                if (calculatedData.forecastWatt > 0) {
+                    recommendations.push(`รวม Forecast ${calculatedData.forecastWatt} W สำหรับการขยายในอนาคตแล้ว`);
+                    recommendations.push('Forecast เพิ่มเฉพาะกำลังไฟ; จำนวนรูปลั๊กนับจากอุปกรณ์ที่ระบุเท่านั้น');
                 }
-                
+
+                // Preserve the existing outlet-count screening logic in Enterprise.
+                recommendations.push(`ต้องใช้รูปลั๊กทั้งหมด ${totalPlugs} รู`);
+            }
+
+            if (currentMode === 'enterprise' && totalPlugs > 0) {
+                // Common UPS outlet counts: 4, 6, 8, 10, 12
+                const { requiredUpsCount, outletsPerUps } = UPScalculations.planOutlets(totalPlugs);
                 if (outletsPerUps === 0) {
-                    // Need multiple UPS
-                    requiredUpsCount = Math.ceil(totalPlugs / 12); // Max 12 outlets per UPS
-                    recommendations.push(`• ⚠️ ต้องใช้ ${requiredUpsCount} เครื่อง UPS เนื่องจากจำนวนรูปลั๊ก (${totalPlugs} รู) เกินกว่าที่ UPS เดียวจะรองรับได้`);
+                    recommendations.push(`ต้องใช้ UPS ประมาณ ${requiredUpsCount} เครื่อง เนื่องจากจำนวนรูปลั๊ก (${totalPlugs} รู) เกินกว่าที่ UPS เดียวจะรองรับได้`);
                 } else {
-                    recommendations.push(`• ✅ UPS 1 เครื่องที่มี ${outletsPerUps} รูปลั๊กเพียงพอสำหรับอุปกรณ์ทั้งหมด`);
+                    recommendations.push(`UPS 1 เครื่องที่มี ${outletsPerUps} รูปลั๊กเพียงพอตามการคัดกรองจำนวนช่อง`);
                 }
             }
 
             document.getElementById('recommendations').innerHTML = recommendations.map(r => `<li>${r}</li>`).join('');
+            updateDashboardMetrics();
         }
 
         // Navigation
         function nextStep() {
             if (currentStep === 1) {
                 updateTotalLoad();
+                if (!loadInputValid) {
+                    focusInvalidLoadInput();
+                    return;
+                }
                 if (calculatedData.totalLoad <= 0) {
-                    alert('กรุณาเพิ่มอุปกรณ์และกรอก Load อย่างน้อย 1 รายการ');
+                    currentStep = 1;
+                    showStep(1);
+                    const loadError = document.getElementById('loadError');
+                    loadError.textContent = 'กรอกกำลังไฟมากกว่า 0 W อย่างน้อยหนึ่งรายการก่อนดำเนินการต่อ';
+                    loadError.classList.remove('hidden');
+                    focusInvalidLoadInput();
+                    return;
+                }
+            }
+            if (currentStep === 2) {
+                calculateBatteryAh();
+                if (!Number.isFinite(calculatedData.batteryAh)) {
+                    document.getElementById('backupTimeMin').focus();
+                    return;
+                }
+            }
+            if (currentStep === 3) {
+                calculateRuntime();
+                if (!Number.isFinite(calculatedData.runtime)) {
+                    focusRuntimeIssue();
                     return;
                 }
             }
@@ -857,22 +1539,62 @@
 
             if (currentStep < 4) {
                 currentStep++;
-                showStep(currentStep);
+                showStep(currentStep, true);
             }
         }
 
         function prevStep() {
             if (currentStep > 1) {
                 currentStep--;
-                showStep(currentStep);
+                showStep(currentStep, true);
             }
         }
 
         function goToStep(step) {
-            if (step <= currentStep || (step === currentStep + 1 && validateCurrentStep())) {
-                currentStep = step;
-                showStep(step);
+            if (step < 1 || step > 4) return;
+            if (step > 1) {
+                updateTotalLoad();
+                if (!loadInputValid) {
+                    currentStep = 1;
+                    showStep(1);
+                    focusInvalidLoadInput();
+                    return;
+                }
+                if (calculatedData.totalLoad <= 0) {
+                    currentStep = 1;
+                    showStep(1);
+                    const loadError = document.getElementById('loadError');
+                    loadError.textContent = 'กรอกกำลังไฟมากกว่า 0 W อย่างน้อยหนึ่งรายการก่อนดำเนินการต่อ';
+                    loadError.classList.remove('hidden');
+                    focusInvalidLoadInput();
+                    return;
+                }
             }
+            if (step >= 3) {
+                document.getElementById('batteryPowerW').value = calculatedData.totalLoad;
+                calculateBatteryAh();
+                if (!Number.isFinite(calculatedData.batteryAh)) {
+                    currentStep = 2;
+                    showStep(2);
+                    document.getElementById('backupTimeMin').focus();
+                    return;
+                }
+            }
+            if (step === 4) {
+                syncRuntimeBatteryAh();
+                document.getElementById('runtimeVoltage').value = calculatedData.voltage;
+                document.getElementById('runtimeEfficiency').value = calculatedData.efficiency;
+                document.getElementById('runtimePowerW').value = calculatedData.totalLoad;
+                calculateRuntime();
+                if (!Number.isFinite(calculatedData.runtime)) {
+                    currentStep = 3;
+                    showStep(3);
+                    focusRuntimeIssue();
+                    return;
+                }
+            }
+            currentStep = step;
+            showStep(step, true);
         }
 
         function validateCurrentStep() {
@@ -882,7 +1604,55 @@
             return true;
         }
 
-        function showStep(step) {
+        function focusRuntimeIssue() {
+            if (currentMode === 'enterprise' && runtimeSource === 'manufacturer') {
+                document.getElementById(runtimeCurve ? 'runtimeSourceSelect' : 'runtimeCurveFile').focus();
+                return;
+            }
+            document.getElementById('runtimeBatteryAh').focus();
+        }
+
+        function focusInvalidLoadInput() {
+            const loadInputs = [...document.querySelectorAll('.device-load')];
+            if (loadInputs.length === 0) {
+                document.getElementById('addDeviceBtn').focus();
+                return;
+            }
+            const invalidLoad = loadInputs.find(input => input.value !== '' && (!Number.isFinite(Number(input.value)) || Number(input.value) < 0));
+            if (invalidLoad) {
+                invalidLoad.focus();
+                return;
+            }
+            if (invalidPlugIndex !== null) {
+                document.querySelectorAll('.device-plugs')[invalidPlugIndex]?.focus();
+                return;
+            }
+            const invalidPlugs = [...document.querySelectorAll('.device-plugs')].find(input => {
+                if (input.value === '') return false;
+                const value = Number(input.value);
+                return !Number.isSafeInteger(value) || value < 1;
+            });
+            if (invalidPlugs) {
+                invalidPlugs.focus();
+                return;
+            }
+            const forecast = document.getElementById('forecastValue');
+            if (forecast.value !== '' && (!Number.isFinite(Number(forecast.value)) || Number(forecast.value) < 0)) {
+                forecast.focus();
+                return;
+            }
+            if (precisionInvalidTarget?.type === 'device-load') {
+                loadInputs[precisionInvalidTarget.index]?.focus();
+                return;
+            }
+            if (precisionInvalidTarget?.type === 'forecast') {
+                forecast.focus();
+                return;
+            }
+            (loadInputs[0] || forecast).focus();
+        }
+
+        function showStep(step, moveFocus = false) {
             // Hide all steps
             document.querySelectorAll('.step-content').forEach(el => el.classList.add('hidden'));
 
@@ -894,9 +1664,12 @@
             document.getElementById('nextBtn').classList.toggle('hidden', step === 4);
             document.getElementById('restartBtn').classList.toggle('hidden', step !== 4);
 
-            if (step < 4) {
-                document.getElementById('nextBtn').textContent = 'ถัดไป →';
-            }
+            const nextLabels = {
+                1: 'ถัดไป: ขนาดแบตเตอรี่ →',
+                2: 'ถัดไป: Runtime →',
+                3: 'ถัดไป: สรุปผล →'
+            };
+            if (step < 4) document.getElementById('nextBtn').textContent = nextLabels[step];
 
             // Auto-calculate when entering each step
             if (step === 2) {
@@ -906,7 +1679,7 @@
                 document.getElementById('batteryResult').classList.remove('hidden');
             } else if (step === 3) {
                 // Pre-fill and auto-calculate runtime
-                document.getElementById('runtimeBatteryAh').value = calculatedData.batteryAh;
+                syncRuntimeBatteryAh();
                 document.getElementById('runtimeVoltage').value = calculatedData.voltage;
                 document.getElementById('runtimeEfficiency').value = calculatedData.efficiency;
                 document.getElementById('runtimePowerW').value = calculatedData.totalLoad;
@@ -917,40 +1690,30 @@
             }
 
             updateStepIndicators();
+            if (moveFocus) document.getElementById(`step${step}-heading`).focus();
         }
 
         function updateStepIndicators() {
             for (let i = 1; i <= 4; i++) {
                 const indicator = document.getElementById(`step${i}-indicator`);
-                indicator.classList.remove('step-active', 'step-completed', 'step-inactive');
-
-                if (i < currentStep) {
-                    indicator.classList.add('step-completed');
-                    indicator.innerHTML = '✓';
-                } else if (i === currentStep) {
-                    indicator.classList.add('step-active');
-                    indicator.innerHTML = i;
-                } else {
-                    indicator.classList.add('step-inactive');
-                    indicator.innerHTML = i;
-                }
-            }
-
-            // Update progress lines
-            for (let i = 1; i <= 3; i++) {
-                const line = document.getElementById(`line${i}`);
-                if (i < currentStep) {
-                    line.classList.remove('bg-gray-300');
-                    line.classList.add('bg-green-500');
-                } else {
-                    line.classList.add('bg-gray-300');
-                    line.classList.remove('bg-green-500');
-                }
+                indicator.setAttribute('aria-current', i === currentStep ? 'step' : 'false');
+                document.getElementById(`step${i}-number`).textContent = i < currentStep
+                    ? '✓' : String(i).padStart(2, '0');
             }
         }
 
         function restart() {
+            runtimeCurveImportVersion++;
+            jsonImportVersion++;
             currentStep = 1;
+            loadInputValid = true;
+            precisionInvalidTarget = null;
+            invalidPlugIndex = null;
+            runtimeBatteryWasAutoFilled = false;
+            runtimeSource = 'formula';
+            runtimeCurve = null;
+            runtimeCurvePoints = [];
+            enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
             devices = [];
             calculatedData = {
                 totalLoad: 0,
@@ -962,7 +1725,7 @@
                 voltage: 12,
                 efficiency: 85,
                 backupTime: 60,
-                runtime: 0
+                runtime: null
             };
 
             // Clear device list
@@ -973,22 +1736,37 @@
             document.getElementById('totalLoad').textContent = '0 W';
             document.getElementById('deviceLoadOnly').textContent = '0 W';
             document.getElementById('forecastLoadDisplay').textContent = '0 W';
-            document.getElementById('forecastRowDisplay').style.display = 'none';
+            document.getElementById('forecastRowDisplay').classList.add('hidden');
             document.getElementById('forecastPreview').classList.add('hidden');
             document.getElementById('batteryResult').classList.add('hidden');
             document.getElementById('runtimeResult').classList.add('hidden');
             document.getElementById('chartContainer').classList.add('hidden');
+            document.getElementById('runtimeBatteryAh').value = '';
+            document.getElementById('runtimeCurveModel').value = '';
+            document.getElementById('runtimeCurveBatteryConfig').value = '';
+            document.getElementById('runtimeCurveSource').value = '';
+            document.getElementById('runtimeCurveConditions').value = '';
+            document.getElementById('runtimeCurveFile').value = '';
+            document.getElementById('runtimeCurveStatus').textContent = 'ยังไม่ได้โหลดกราฟ Runtime';
+            document.getElementById('runtimeDataTable').replaceChildren();
+            if (runtimeChart) {
+                runtimeChart.destroy();
+                runtimeChart = null;
+            }
 
             // Reset inputs
             document.getElementById('forecastValue').value = '';
             document.getElementById('backupTimeMin').value = 60;
             document.getElementById('batteryVoltage').value = 12;
             document.getElementById('upsEfficiency').value = 85;
+            updateDashboardMetrics();
 
             // Reset forecast unit toggle to default (%)
             setForecastUnit('%');
+            updateRuntimeSourceControls();
 
             showStep(1);
+            document.querySelector('.device-load')?.focus();
         }
 
         // Export to JSON
@@ -996,24 +1774,37 @@
         async function exportToJSON() {
             // Update data before export
             updateTotalLoad();
+            if (!loadInputValid) {
+                alert('❌ ยังส่งออกไม่ได้ กรุณาแก้ค่ากำลังไฟ Forecast หรือจำนวนรูปลั๊กที่ไม่ถูกต้อง');
+                return;
+            }
 
-            const exportData = {
-                version: '1.2',
-                appName: 'UPS Picker',
-                exportDate: new Date().toISOString(),
-                devices: devices,
-                calculatedData: calculatedData,
-                forecast: {
-                    value: calculatedData.forecastValue,
-                    unit: calculatedData.forecastUnit,
-                    watt: calculatedData.forecastWatt
-                },
+            const exportData = UPScalculations.buildExportData({
+                mode: currentMode,
+                devices,
+                calculatedData,
                 settings: {
-                    backupTime: parseFloat(document.getElementById('backupTimeMin').value) || 60,
-                    voltage: parseFloat(document.getElementById('batteryVoltage').value) || 12,
-                    efficiency: parseFloat(document.getElementById('upsEfficiency').value) || 85
-                }
-            };
+                    backupTime: document.getElementById('backupTimeMin').value,
+                    voltage: currentMode === 'basic' ? enterpriseBatterySettings.voltage : document.getElementById('batteryVoltage').value,
+                    efficiency: currentMode === 'basic' ? enterpriseBatterySettings.efficiency : document.getElementById('upsEfficiency').value,
+                    runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : document.getElementById('runtimeBatteryAh').value,
+                },
+                calculationSettings: {
+                    backupTime: document.getElementById('backupTimeMin').value,
+                    voltage: currentMode === 'basic' ? 12 : document.getElementById('batteryVoltage').value,
+                    efficiency: currentMode === 'basic' ? 85 : document.getElementById('upsEfficiency').value,
+                    runtimeBatteryAh: document.getElementById('runtimeBatteryAh').value === '' ? null : document.getElementById('runtimeBatteryAh').value,
+                },
+                runtimeBatteryWasAutoFilled,
+                runtimeSource: currentMode === 'enterprise' ? runtimeSource : 'formula',
+                runtimeCurve,
+            });
+            try {
+                UPScalculations.normalizeImportData(exportData);
+            } catch (error) {
+                alert('❌ ยังส่งออกไม่ได้ กรุณาตรวจสอบเวลา แรงดัน ประสิทธิภาพ และความจุแบตเตอรี่');
+                return;
+            }
 
             const jsonString = JSON.stringify(exportData, null, 2);
 
@@ -1024,6 +1815,8 @@
                 String(now.getDate()).padStart(2, '0');
             const filename = 'ups-config-' + dateStr + '.json';
 
+            let writable = null;
+            let fileWasSelected = false;
             try {
                 // Method 1: File System Access API (Modern Browsers) - Best for saving files
                 if (window.showSaveFilePicker) {
@@ -1034,18 +1827,29 @@
                             accept: { 'application/json': ['.json'] },
                         }],
                     });
-                    const writable = await handle.createWritable();
+                    fileWasSelected = true;
+                    writable = await handle.createWritable();
                     await writable.write(jsonString);
                     await writable.close();
                     alert('✅ บันทึกไฟล์สำเร็จ!');
                     return;
                 }
             } catch (err) {
+                if (writable) {
+                    try {
+                        await writable.abort();
+                    } catch (_) {
+                        // The failed stream may already be errored or closed.
+                    }
+                }
                 // User cancelled or not supported
                 if (err.name !== 'AbortError') {
                     console.warn('File System Access API rejected, falling back to legacy download', err);
                 } else {
-                    return; // User cancelled
+                    if (fileWasSelected) {
+                        alert('❌ บันทึกไฟล์ไม่สำเร็จ: เบราว์เซอร์ยกเลิกการเขียน กรุณาตรวจข้อความแจ้งเตือนของเบราว์เซอร์แล้วลองใหม่');
+                    }
+                    return;
                 }
             }
 
@@ -1070,89 +1874,108 @@
 
         // Import from JSON
         function importFromJSON(event) {
+            const requestVersion = ++jsonImportVersion;
             const file = event.target.files[0];
             if (!file) return;
+            if (file.size > UPScalculations.MAX_IMPORT_FILE_BYTES) {
+                alert('❌ ไฟล์ JSON ต้องมีขนาดไม่เกิน 1 MB');
+                event.target.value = '';
+                return;
+            }
 
             const reader = new FileReader();
             reader.onload = function (e) {
+                if (requestVersion !== jsonImportVersion) return;
                 try {
-                    const importData = JSON.parse(e.target.result);
-
-                    // Validate data
-                    if (!importData.devices || !importData.calculatedData) {
-                        throw new Error('Invalid file format');
+                    const importData = UPScalculations.parseImportJson(String(e.target.result || ''));
+                    // Validate the complete payload before changing application state or DOM.
+                    const normalized = UPScalculations.normalizeImportData(importData);
+                    runtimeCurveImportVersion++;
+                    currentStep = 1;
+                    devices = normalized.devices;
+                    runtimeSource = normalized.runtimeSource;
+                    runtimeCurve = normalized.runtimeCurve;
+                    runtimeCurvePoints = runtimeCurve ? runtimeCurve.points : [];
+                    const importedMode = normalized.mode || currentMode;
+                    const activeSettings = UPScalculations.resolveActiveBatterySettings(importedMode, normalized.settings);
+                    calculatedData = {
+                        totalLoad: 0, deviceLoad: 0, totalPlugs: 0,
+                        forecastValue: normalized.forecast.value,
+                        forecastUnit: normalized.forecast.unit,
+                        forecastWatt: 0, batteryAh: 0,
+                        voltage: activeSettings.voltage,
+                        efficiency: activeSettings.efficiency,
+                        backupTime: normalized.settings.backupTime,
+                        runtime: null,
+                    };
+                    enterpriseBatterySettings = { voltage: normalized.settings.voltage, efficiency: normalized.settings.efficiency };
+                    if (importedMode === 'enterprise') {
+                        document.getElementById('batteryVoltage').value = normalized.settings.voltage;
+                        document.getElementById('upsEfficiency').value = normalized.settings.efficiency;
                     }
-
-                    // Restore devices
-                    devices = importData.devices;
-                    calculatedData = importData.calculatedData;
+                    document.getElementById('runtimeCurveModel').value = runtimeCurve ? runtimeCurve.model : '';
+                    document.getElementById('runtimeCurveBatteryConfig').value = runtimeCurve ? runtimeCurve.batteryConfig : '';
+                    document.getElementById('runtimeCurveSource').value = runtimeCurve ? runtimeCurve.source : '';
+                    document.getElementById('runtimeCurveConditions').value = runtimeCurve ? runtimeCurve.conditions : '';
+                    document.getElementById('runtimeCurveFile').value = '';
+                    document.getElementById('runtimeCurveStatus').textContent = runtimeCurve
+                        ? `โหลดแล้ว ${runtimeCurve.points.length} จุด (${runtimeCurve.points[0].loadW}–${runtimeCurve.points[runtimeCurve.points.length - 1].loadW} W)`
+                        : 'ยังไม่ได้โหลดกราฟ Runtime';
+                    setMode(importedMode, true);
+                    updateRuntimeSourceControls();
+                    document.getElementById('runtimeBatteryAh').value = normalized.settings.runtimeBatteryAh ?? '';
+                    runtimeBatteryWasAutoFilled = false;
 
                     // Clear and rebuild device list
                     document.getElementById('deviceList').innerHTML = '';
+                    document.getElementById('deviceLimitNotice').classList.add('hidden');
                     deviceIdCounter = 0;
 
                     devices.forEach(device => {
                         deviceIdCounter++;
                         const deviceHtml = `
                             <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200">
-                                <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                                    <div class="device-fields grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                                     <div class="md:col-span-4">
-                                        <label class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
-                                        <input type="text" value="${device.name}" class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
+                                        <label for="device-${deviceIdCounter}-name" class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
+                                        <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" maxlength="160" value="${escapeHtml(device.name)}" class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                                     </div>
                                     <div class="md:col-span-2">
-                                        <label class="block text-gray-600 text-sm mb-1">Load*</label>
-                                        <input type="number" value="${device.load}" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="0.01" oninput="updateTotalLoad()">
+                            <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ*</label>
+                                    <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" value="${escapeHtml(device.load)}" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="any" oninput="updateTotalLoad()">
                                     </div>
-                                    <div class="md:col-span-2">
-                                        <label class="block text-gray-600 text-sm mb-1">หน่วย*</label>
-                                        <select class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
+                                    <div class="enterprise-only md:col-span-2">
+                                        <label for="device-${deviceIdCounter}-unit" class="block text-gray-600 text-sm mb-1">หน่วย*</label>
+                                        <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="handleDeviceUnitChange(this)">
                                             <option value="W" ${device.unit === 'W' ? 'selected' : ''}>W</option>
                                             <option value="VA" ${device.unit === 'VA' ? 'selected' : ''}>VA</option>
                                         </select>
                                     </div>
-                                    <div class="md:col-span-2">
-                                        <label class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
-                                        <input type="number" value="${device.plugs || 1}" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="updateTotalLoad()">
+                                    <div class="enterprise-only md:col-span-2">
+                                        <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
+                                        <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" value="${escapeHtml(device.plugs)}" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="updateTotalLoad()">
                                     </div>
                                     <div class="md:col-span-2">
-                                        <button onclick="removeDevice(${deviceIdCounter})" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
+                                        <button onclick="removeDevice(${deviceIdCounter})" aria-label="ลบรายการอุปกรณ์ ${deviceIdCounter}" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
                                             ลบ
                                         </button>
                                     </div>
                                 </div>
+                                <p class="enterprise-only field-help mt-2">ค่า VA จะแปลงเป็น W ด้วยสมมติฐาน PF 0.8</p>
                             </div>
                         `;
                         document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);
+                        updateDeviceLoadLabel(document.getElementById(`device-${deviceIdCounter}`));
                     });
 
                     // Restore settings
-                    if (importData.settings) {
-                        document.getElementById('backupTimeMin').value = importData.settings.backupTime;
-                        document.getElementById('batteryVoltage').value = importData.settings.voltage;
-                        document.getElementById('upsEfficiency').value = importData.settings.efficiency;
-                    }
-
-                    // Restore forecast (support v1.2 and older formats)
-                    if (importData.forecast) {
-                        // New v1.2 format with value and unit
-                        calculatedData.forecastValue = importData.forecast.value || 0;
-                        calculatedData.forecastUnit = importData.forecast.unit || '%';
-                        document.getElementById('forecastValue').value = importData.forecast.value > 0 ? importData.forecast.value : '';
-                        setForecastUnit(importData.forecast.unit || '%');
-                    } else {
-                        // Old format - forecastWatt only (assume W mode)
-                        const forecastWatt = importData.forecastWatt || (importData.calculatedData && importData.calculatedData.forecastWatt) || 0;
-                        if (forecastWatt > 0) {
-                            calculatedData.forecastValue = forecastWatt;
-                            calculatedData.forecastUnit = 'W';
-                            document.getElementById('forecastValue').value = forecastWatt;
-                            setForecastUnit('W');
-                        } else {
-                            document.getElementById('forecastValue').value = '';
-                            setForecastUnit('%');
-                        }
-                    }
+                    document.getElementById('backupTimeMin').value = normalized.settings.backupTime;
+                    document.getElementById('batteryVoltage').value = activeSettings.voltage;
+                    document.getElementById('upsEfficiency').value = activeSettings.efficiency;
+                    document.getElementById('runtimeVoltage').value = activeSettings.voltage;
+                    document.getElementById('runtimeEfficiency').value = activeSettings.efficiency;
+                    document.getElementById('forecastValue').value = normalized.forecast.value || '';
+                    setForecastUnit(normalized.forecast.unit);
 
                     // Recalculate total load from DOM (not from cached data)
                     updateTotalLoad();
@@ -1164,16 +1987,23 @@
 
                     // Go to step 1 to review
                     currentStep = 1;
-                    showStep(1);
+                    showStep(1, true);
 
                 } catch (error) {
-                    alert('❌ ไม่สามารถโหลดไฟล์ได้ กรุณาตรวจสอบไฟล์ JSON');
-                    console.error('Import error:', error);
+                    const reason = error instanceof SyntaxError
+                        ? 'รูปแบบ JSON ไม่ถูกต้อง'
+                        : error.name === 'InvalidImportDataError' ? error.message : 'ตรวจสอบไฟล์ JSON';
+                    alert(`❌ ไม่สามารถโหลดไฟล์ได้: ${reason}`);
+                    if (!(error instanceof SyntaxError) && error.name !== 'InvalidImportDataError') {
+                        console.error('Unexpected import failure:', error);
+                    }
                 }
             };
+            reader.onerror = function () {
+                if (requestVersion !== jsonImportVersion) return;
+                alert('❌ อ่านไฟล์ไม่ได้ กรุณาเลือกไฟล์ JSON อีกครั้ง');
+            };
             reader.readAsText(file);
-
-            // Reset file input
             event.target.value = '';
         }
     </script>
