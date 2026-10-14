@@ -14,6 +14,23 @@ test('converts VA with the existing 0.8 PF assumption and applies Forecast to de
     assert.equal(result.totalPlugs, 3);
 });
 
+test('multiplies per-device W and VA by device quantity before Forecast and outlet totals', () => {
+    const result = calculations.calculateLoadBreakdown([
+        { name: 'Switch', load: 120, unit: 'W', quantity: 3, plugs: 2 },
+        { name: 'Router', load: 125, unit: 'VA', quantity: 2, plugs: 1 },
+    ], 10, '%');
+
+    assert.equal(result.valid, true);
+    assert.equal(result.deviceLoad, 560);
+    assert.equal(result.forecastWatt, 56);
+    assert.equal(result.totalLoad, 616);
+    assert.equal(result.totalPlugs, 8);
+    assert.deepEqual(result.devices.map(({ quantity, watts, plugs }) => ({ quantity, watts, plugs })), [
+        { quantity: 3, watts: 120, plugs: 2 },
+        { quantity: 2, watts: 100, plugs: 1 },
+    ]);
+});
+
 test('keeps displayed load, Forecast, and total aligned at six-decimal precision', () => {
     const roundedComponents = calculations.calculateLoadBreakdown([
         { name: 'Precise', load: 100.0000004, unit: 'W', plugs: 1 },
@@ -214,6 +231,32 @@ test('rejects plug counts whose decimal source is changed by Number conversion',
     assert.equal(calculations.normalizeImportData({
         devices: [{ ...device, plugs: '1.0' }], calculatedData: {},
     }).devices[0].plugs, 1);
+});
+
+test('requires a positive exact integer device quantity and defaults legacy imports to one', () => {
+    for (const quantity of [0, -1, 1.5, '', '1.00000000000000001', Number.MAX_SAFE_INTEGER + 1]) {
+        const result = calculations.calculateLoadBreakdown([
+            { name: 'Router', load: 100, unit: 'W', quantity },
+        ], 0, '%');
+        assert.equal(result.valid, false, `quantity ${String(quantity)} should be invalid`);
+        assert.equal(result.invalidQuantityIndex, 0);
+        assert.throws(() => calculations.normalizeImportData({
+            devices: [{ name: 'Router', load: 100, unit: 'W', quantity }], calculatedData: {},
+        }), { name: 'InvalidImportDataError' });
+    }
+
+    const accepted = calculations.calculateLoadBreakdown([
+        { name: 'Router', load: 100, unit: 'W', quantity: '2.0' },
+    ], 0, '%');
+    assert.equal(accepted.valid, true);
+    assert.equal(accepted.deviceLoad, 200);
+    assert.equal(accepted.devices[0].quantity, 2);
+
+    const legacy = calculations.normalizeImportData({
+        version: '1.5', devices: [{ name: 'Legacy router', load: 100, unit: 'W' }], calculatedData: {},
+    });
+    assert.equal(legacy.devices[0].quantity, 1);
+    assert.equal(calculations.calculateLoadBreakdown(legacy.devices, 0, '%').deviceLoad, 100);
 });
 
 test('calculates required Ah and rejects invalid sizing inputs', () => {
@@ -749,7 +792,7 @@ test('preserves Basic or Enterprise mode across export and import', () => {
             },
         });
 
-        assert.equal(exported.version, '1.5');
+        assert.equal(exported.version, '1.6');
         assert.equal(exported.mode, mode);
         assert.equal(calculations.normalizeImportData(exported).mode, mode);
     }

@@ -263,7 +263,10 @@
         body[data-mode="enterprise"] .basic-only { display: none; }
         body[data-mode="enterprise"] .enterprise-inline { display: inline-flex !important; }
         body[data-mode="enterprise"] .enterprise-grid { display: grid !important; }
-        body[data-mode="basic"] .device-fields > div:not(.enterprise-only) { grid-column: span 4 / span 4; }
+        body[data-mode="basic"] .device-fields > div:not(.enterprise-only) { grid-column: span 3 / span 3; }
+        @media (max-width: 767px) {
+            body[data-mode="basic"] .device-fields > div:not(.enterprise-only) { grid-column: span 1 / span 1; }
+        }
         .app-footer { max-width: 1600px; margin: 0 auto; padding: 0 24px 24px; color: #5f6b82; font-size: 12px; text-align: right; }
         .text-amber-500, .text-amber-600 { color: #874500 !important; }
         .bg-amber-500 { background-color: #a85c00 !important; }
@@ -783,6 +786,7 @@
         let loadInputValid = true;
         let precisionInvalidTarget = null;
         let invalidPlugIndex = null;
+        let invalidQuantityIndex = null;
         let runtimeBatteryWasAutoFilled = false;
         let enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
         let devices = [];
@@ -1018,7 +1022,7 @@
             if (!label) return;
             const unit = card.querySelector('.device-unit')?.value || 'W';
             label.textContent = currentMode === 'basic' && unit === 'VA'
-                ? 'กำลังไฟ (VA → W)*' : currentMode === 'basic' ? 'กำลังไฟ (W)*' : 'กำลังไฟ*';
+                ? 'กำลังไฟต่อเครื่อง (VA → W)*' : currentMode === 'basic' ? 'กำลังไฟต่อเครื่อง (W)*' : 'กำลังไฟต่อเครื่อง*';
         }
 
         function updateDashboardMetrics() {
@@ -1062,33 +1066,37 @@
             deviceIdCounter++;
             const deviceHtml = `
                 <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200" data-converted-from-va="false">
-                <div class="device-fields grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                        <div class="md:col-span-4">
+                <div class="device-fields grid grid-cols-1 md:grid-cols-6 xl:grid-cols-12 gap-4 items-end">
+                        <div class="md:col-span-2 xl:col-span-3">
                             <label for="device-${deviceIdCounter}-name" class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
-                            <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" maxlength="160" placeholder="เช่น PoE Switch, NVR, Router..." class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
+                            <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" maxlength="160" placeholder="เช่น PoE Switch, NVR, Router..." class="device-name min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                         </div>
-                        <div class="md:col-span-2">
+                        <div class="md:col-span-2 xl:col-span-2">
+                            <label for="device-${deviceIdCounter}-quantity" class="block text-gray-600 text-sm mb-1">จำนวนอุปกรณ์</label>
+                            <input type="number" id="device-${deviceIdCounter}-quantity" name="deviceQuantities[]" class="device-quantity min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" value="1" inputmode="numeric" oninput="updateTotalLoad()">
+                        </div>
+                        <div class="md:col-span-2 xl:col-span-2">
                             <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ (W)*</label>
-                            <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" placeholder="เช่น 120" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="any" oninput="updateTotalLoad()">
+                            <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" placeholder="เช่น 120" class="device-load min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="any" oninput="updateTotalLoad()">
                         </div>
-                        <div class="enterprise-only md:col-span-2">
+                        <div class="enterprise-only md:col-span-2 xl:col-span-2">
                             <label for="device-${deviceIdCounter}-unit" class="block text-gray-600 text-sm mb-1">หน่วย*</label>
-                            <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="handleDeviceUnitChange(this)">
+                            <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="handleDeviceUnitChange(this)">
                                 <option value="W">W</option>
                                 <option value="VA">VA</option>
                             </select>
                         </div>
-                        <div class="enterprise-only md:col-span-2">
-                            <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
-                            <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" placeholder="จำนวนรู" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" value="1" oninput="updateTotalLoad()">
+                        <div class="enterprise-only md:col-span-2 xl:col-span-2">
+                            <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก/เครื่อง</label>
+                            <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" placeholder="จำนวนรู" class="device-plugs min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" value="1" oninput="updateTotalLoad()">
                         </div>
-                        <div class="md:col-span-2">
+                        <div class="md:col-span-2 xl:col-span-1">
                             <button onclick="removeDevice(${deviceIdCounter})" aria-label="ลบรายการอุปกรณ์ ${deviceIdCounter}" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
                                 ลบ
                             </button>
                         </div>
                     </div>
-                    <p class="enterprise-only field-help mt-2">ค่า VA จะแปลงเป็น W ด้วยสมมติฐาน PF 0.8</p>
+                    <p class="field-help mt-2">กำลังไฟคิดต่อเครื่องและคูณตามจำนวนอุปกรณ์<span class="enterprise-only enterprise-inline">; รูปลั๊กคิดต่อเครื่อง; ค่า VA แปลงเป็น W ด้วยสมมติฐาน PF 0.8</span></p>
                 </div>
             `;
             document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);
@@ -1120,14 +1128,16 @@
                 const name = card.querySelector('.device-name').value || 'อุปกรณ์ไม่ระบุชื่อ';
                 const load = card.querySelector('.device-load').value;
                 const unit = card.querySelector('.device-unit').value;
+                const quantity = card.querySelector('.device-quantity').value;
                 const plugs = card.querySelector('.device-plugs')?.value || 1;
-                enteredDevices.push({ name, load, unit, plugs });
+                enteredDevices.push({ name, load, unit, quantity, plugs });
             });
             const forecastValue = document.getElementById('forecastValue').value;
             const forecastUnit = calculatedData.forecastUnit || '%';
             const breakdown = UPScalculations.calculateLoadBreakdown(enteredDevices, forecastValue, forecastUnit);
             precisionInvalidTarget = breakdown.precisionInvalidTarget;
             invalidPlugIndex = breakdown.invalidPlugIndex;
+            invalidQuantityIndex = breakdown.invalidQuantityIndex;
             if (!breakdown.valid) {
                 loadInputValid = false;
                 devices = [];
@@ -1138,7 +1148,7 @@
                 calculatedData.totalLoad = 0;
                 calculatedData.batteryAh = null;
                 calculatedData.runtime = null;
-                document.getElementById('loadError').textContent = 'ตรวจสอบค่ากำลังไฟ Forecast และจำนวนรูปลั๊กว่าถูกต้องและมีความละเอียดเพียงพอ';
+                document.getElementById('loadError').textContent = 'ตรวจสอบจำนวนอุปกรณ์ กำลังไฟ Forecast และจำนวนรูปลั๊กว่าถูกต้องและมีความละเอียดเพียงพอ';
                 document.getElementById('loadError').classList.remove('hidden');
                 document.getElementById('deviceLoadOnly').textContent = '— W';
                 document.getElementById('forecastLoadDisplay').textContent = '— W';
@@ -1486,12 +1496,15 @@
             document.getElementById('summaryTotalPlugs').textContent = `${totalPlugs} รู`;
 
             // Device List with Forecast
-            let deviceListHtml = devices.map(d =>
-                `<div class="flex justify-between py-2 px-3 bg-white rounded-lg">
+            let deviceListHtml = devices.map(d => {
+                const quantity = d.quantity || 1;
+                const totalDeviceWatts = Number((d.watts * quantity).toFixed(6));
+                const totalDevicePlugs = quantity * (d.plugs || 1);
+                return `<div class="flex justify-between py-2 px-3 bg-white rounded-lg">
                     <span class="text-gray-700">${escapeHtml(d.name)}</span>
-                    <span class="font-medium text-gray-800">${escapeHtml(d.load)} ${escapeHtml(d.unit)} (${escapeHtml(String(d.watts))} W) - ${escapeHtml(d.plugs || 1)} รู</span>
-                </div>`
-            ).join('');
+                    <span class="font-medium text-gray-800">${escapeHtml(String(quantity))} เครื่อง × ${escapeHtml(d.load)} ${escapeHtml(d.unit)}/เครื่อง = ${escapeHtml(String(totalDeviceWatts))} W · ${escapeHtml(String(totalDevicePlugs))} รู</span>
+                </div>`;
+            }).join('');
 
             // Add forecast watt row if exists
             if (calculatedData.forecastWatt > 0) {
@@ -1557,7 +1570,7 @@
             if (currentMode !== 'enterprise') return;
             updateTotalLoad();
             if (!loadInputValid || calculatedData.totalLoad <= 0) {
-                document.getElementById('optimizationStatus').textContent = 'ตรวจสอบโหลดและจำนวนปลั๊กก่อนค้นหา';
+                document.getElementById('optimizationStatus').textContent = 'ตรวจสอบจำนวนอุปกรณ์ โหลด และจำนวนปลั๊กก่อนค้นหา';
                 return;
             }
             const button = document.getElementById('runOptimizationButton');
@@ -1573,6 +1586,7 @@
                     name: card.querySelector('.device-name').value || 'อุปกรณ์ไม่ระบุชื่อ',
                     load: card.querySelector('.device-load').value,
                     unit: card.querySelector('.device-unit').value,
+                    quantity: card.querySelector('.device-quantity').value,
                     plugs: card.querySelector('.device-plugs')?.value || 1,
                 }));
                 const request = UPSOptimization.buildRequest(
@@ -1719,6 +1733,10 @@
                 document.querySelectorAll('.device-plugs')[invalidPlugIndex]?.focus();
                 return;
             }
+            if (invalidQuantityIndex !== null) {
+                document.querySelectorAll('.device-quantity')[invalidQuantityIndex]?.focus();
+                return;
+            }
             const invalidPlugs = [...document.querySelectorAll('.device-plugs')].find(input => {
                 if (input.value === '') return false;
                 const value = Number(input.value);
@@ -1801,6 +1819,7 @@
             loadInputValid = true;
             precisionInvalidTarget = null;
             invalidPlugIndex = null;
+            invalidQuantityIndex = null;
             runtimeBatteryWasAutoFilled = false;
             runtimeSource = 'formula';
             runtimeCurve = null;
@@ -1867,7 +1886,7 @@
             // Update data before export
             updateTotalLoad();
             if (!loadInputValid) {
-                alert('❌ ยังส่งออกไม่ได้ กรุณาแก้ค่ากำลังไฟ Forecast หรือจำนวนรูปลั๊กที่ไม่ถูกต้อง');
+                alert('❌ ยังส่งออกไม่ได้ กรุณาแก้จำนวนอุปกรณ์ กำลังไฟ Forecast หรือจำนวนรูปลั๊กที่ไม่ถูกต้อง');
                 return;
             }
 
@@ -2027,33 +2046,37 @@
                         deviceIdCounter++;
                         const deviceHtml = `
                             <div id="device-${deviceIdCounter}" class="device-card bg-gray-50 p-4 rounded-xl border border-gray-200">
-                                    <div class="device-fields grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                                    <div class="md:col-span-4">
+                                    <div class="device-fields grid grid-cols-1 md:grid-cols-6 xl:grid-cols-12 gap-4 items-end">
+                                    <div class="md:col-span-2 xl:col-span-3">
                                         <label for="device-${deviceIdCounter}-name" class="block text-gray-600 text-sm mb-1">ชื่ออุปกรณ์ (ถ้ามี)</label>
-                                        <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" maxlength="160" value="${escapeHtml(device.name)}" class="device-name w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
+                                        <input type="text" id="device-${deviceIdCounter}-name" name="deviceNames[]" maxlength="160" value="${escapeHtml(device.name)}" class="device-name min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm">
                                     </div>
-                                    <div class="md:col-span-2">
-                            <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟ*</label>
-                                    <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" value="${escapeHtml(device.load)}" class="device-load w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="any" oninput="updateTotalLoad()">
+                                    <div class="md:col-span-2 xl:col-span-2">
+                                        <label for="device-${deviceIdCounter}-quantity" class="block text-gray-600 text-sm mb-1">จำนวนอุปกรณ์</label>
+                                        <input type="number" id="device-${deviceIdCounter}-quantity" name="deviceQuantities[]" value="${escapeHtml(device.quantity)}" class="device-quantity min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" inputmode="numeric" oninput="updateTotalLoad()">
                                     </div>
-                                    <div class="enterprise-only md:col-span-2">
+                                    <div class="md:col-span-2 xl:col-span-2">
+                                        <label for="device-${deviceIdCounter}-load" class="field-label device-load-label">กำลังไฟต่อเครื่อง*</label>
+                                        <input type="number" id="device-${deviceIdCounter}-load" name="deviceLoads[]" value="${escapeHtml(device.load)}" class="device-load min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="0" step="any" oninput="updateTotalLoad()">
+                                    </div>
+                                    <div class="enterprise-only md:col-span-2 xl:col-span-2">
                                         <label for="device-${deviceIdCounter}-unit" class="block text-gray-600 text-sm mb-1">หน่วย*</label>
-                                        <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="handleDeviceUnitChange(this)">
+                                        <select id="device-${deviceIdCounter}-unit" name="deviceUnits[]" class="device-unit min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" onchange="handleDeviceUnitChange(this)">
                                             <option value="W" ${device.unit === 'W' ? 'selected' : ''}>W</option>
                                             <option value="VA" ${device.unit === 'VA' ? 'selected' : ''}>VA</option>
                                         </select>
                                     </div>
-                                    <div class="enterprise-only md:col-span-2">
-                                        <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก</label>
-                                        <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" value="${escapeHtml(device.plugs)}" class="device-plugs w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="updateTotalLoad()">
+                                    <div class="enterprise-only md:col-span-2 xl:col-span-2">
+                                        <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก/เครื่อง</label>
+                                        <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" value="${escapeHtml(device.plugs)}" class="device-plugs min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="updateTotalLoad()">
                                     </div>
-                                    <div class="md:col-span-2">
+                                    <div class="md:col-span-2 xl:col-span-1">
                                         <button onclick="removeDevice(${deviceIdCounter})" aria-label="ลบรายการอุปกรณ์ ${deviceIdCounter}" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
                                             ลบ
                                         </button>
                                     </div>
                                 </div>
-                                <p class="enterprise-only field-help mt-2">ค่า VA จะแปลงเป็น W ด้วยสมมติฐาน PF 0.8</p>
+                                <p class="field-help mt-2">กำลังไฟคิดต่อเครื่องและคูณตามจำนวนอุปกรณ์<span class="enterprise-only enterprise-inline">; รูปลั๊กคิดต่อเครื่อง; ค่า VA แปลงเป็น W ด้วยสมมติฐาน PF 0.8</span></p>
                             </div>
                         `;
                         document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);
