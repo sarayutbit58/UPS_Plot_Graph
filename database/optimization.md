@@ -27,6 +27,10 @@ On the dashboard, `จำนวนอุปกรณ์` counts identical physic
 
 ## Constraint solver
 
+The Summary catalog browser provides user filters, explicit nearby/unknown results and manual model selection. Optional `selectedProductIds` limits the optimizer's allowed model pool; it does not bypass technical eligibility. The response lists selected IDs excluded for unknown W, VA, outlets or runtime curves in `selectionDiagnostics`. Filter controls used for browsing do not change the solver's strict engineering limits.
+
+Runtime at a partial placement below the first published curve point is provisional during search, so several devices can accumulate into a valid in-range unit load. Final nonzero unit loads must have an interpolated runtime meeting the target; no below/above-range extrapolation is introduced.
+
 The engine uses a deterministic constraint satisfaction search (CSP). Each design chooses integer counts of eligible UPS models and then places device instances onto units. A model is eligible only when its source-backed W, VA, outlet count and runtime curve are all present. The engine reuses the allocation placement checks, including a minimum 20% W/VA engineering margin and runtime interpolation only within published curve points.
 
 The search is deliberately bounded for a local service: at most 12 UPS units per design and never more units than physical outlet instances, up to three distinct model types per design, a 2,000 fleet-candidate cap, a 250,000 total assignment-node cap, and a 1,000-node cap per fleet. Device placement uses backtracking with symmetric-unit pruning for up to 200 physical device instances per fleet. Larger requests use deterministic best-fit placement and are marked incomplete. If an assignment-node or fleet-candidate limit is reached, `search.isComplete` is false and the response identifies results as best among the explored designs.

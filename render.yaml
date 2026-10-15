@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: ups-team-selector
+    runtime: python
+    plan: free
+    autoDeploy: false
+    buildCommand: python -c "import ast,pathlib; [ast.parse(p.read_text(encoding='utf-8')) for p in pathlib.Path('database').glob('*.py')]"
+    startCommand: python database/cloud_api.py serve
+    healthCheckPath: /health
+    envVars:
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: UPS_USERS_JSON
+        sync: false

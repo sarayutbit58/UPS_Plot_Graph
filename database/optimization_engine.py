@@ -295,7 +295,7 @@ def _fleet_can_cover(parsed, fleet, candidates):
     for device in parsed['devices']:
         if device['watt_each'] == 0 and device['va_each'] == 0:
             continue
-        if not any(not _placement(_new_unit(model, 1, False), device, parsed['runtime_required'])[0]
+        if not any(not _optimizer_placement(_new_unit(model, 1, False), device, parsed['runtime_required'])[0]
                    for model in models):
             return False
     return True
@@ -303,7 +303,20 @@ def _fleet_can_cover(parsed, fleet, candidates):
 
 def _optimizer_placement(unit, device, runtime_required):
     if device['watt_each'] != 0 or device['va_each'] != 0:
-        return _placement(unit, device, runtime_required)
+        reasons, runtime, utilization = _placement(unit, device, runtime_required)
+        curve = unit.get('runtime_curve')
+        watts = unit['used_w'] + device['watt_each']
+        # Partial assignments may later accumulate into the supported interval.
+        # No runtime value is invented; completed fleets are checked separately.
+        if curve and watts < min(point['loadW'] for point in curve['points']):
+            reasons = [reason for reason in reasons if reason != 'runtime_unknown']
+            if not reasons:
+                safe_w = unit['rating_w'] / (1 + float(MIN_ENGINEERING_MARGIN))
+                safe_va = unit['rating_va'] / (1 + float(MIN_ENGINEERING_MARGIN))
+                utilization = max(watts / safe_w,
+                    (unit['used_va'] + device['va_each']) / safe_va,
+                    (len(unit['outlets']) + 1) / unit['outlet_count'])
+        return reasons, runtime, utilization
     outlet_number = len(unit['outlets']) + 1
     reasons = []
     if unit['outlet_count'] is None:
@@ -364,7 +377,10 @@ def _greedy_assignment(parsed, fleet, candidates):
                 unit['outlets'].append(len(unit['outlets']) + 1)
             if not success:
                 break
-        if success:
+        if success and all(
+                (runtime := _interpolate_runtime(unit['runtime_curve']['points'], unit['used_w'])) is not None
+                and runtime + 1e-9 >= parsed['runtime_required']
+                for unit in trial_units if unit['used_w'] > 0):
             return trial_units
     return None
 
@@ -414,8 +430,9 @@ def _exact_assignment(parsed, fleet, candidates, node_limit, initial_units=None)
             _interpolate_runtime(unit['runtime_curve']['points'], unit['used_w'])
             for unit in units if unit['used_w'] > 0
         ]
-        if (best_runtime is not None and active_runtimes
-                and min(active_runtimes) + 1e-9 < best_runtime):
+        known_runtimes = [runtime for runtime in active_runtimes if runtime is not None]
+        if (best_runtime is not None and known_runtimes
+                and min(known_runtimes) + 1e-9 < best_runtime):
             return
 
         if device_index >= len(instances):
@@ -610,7 +627,37 @@ def _rank_key(solution, scenario, price_comparable):
 
 def optimize_from_connection(connection, request, curve_catalog=None):
     """Find source-backed fleet designs and rank them under five planning scenarios."""
+    if not isinstance(request, dict):
+        raise OptimizationInputError('Request body must be a JSON object')
+    selected_ids = request.get('selectedProductIds')
+    if selected_ids is not None:
+        if (not isinstance(selected_ids, list) or not 1 <= len(selected_ids) <= 100
+                or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0
+                       for value in selected_ids)
+                or len(set(selected_ids)) != len(selected_ids)):
+            raise OptimizationInputError('selectedProductIds must contain 1 to 100 unique positive integers')
     candidates = _candidate_models(connection, curve_catalog)
+    excluded_selected = []
+    if selected_ids is not None:
+        eligible_ids = {candidate['product_id'] for candidate in candidates}
+        missing_ids = set(selected_ids) - eligible_ids
+        if missing_ids:
+            inventory = _build_inventory(connection)
+            _apply_manufacturer_curves(inventory, _read_curve_catalog(curve_catalog))
+            by_id = {product['id']: product for product in inventory}
+            for product_id in selected_ids:
+                if product_id not in missing_ids:
+                    continue
+                product = by_id.get(product_id)
+                if product is None or product.get('non_ups_reason'):
+                    reasons = ['not_an_available_ups']
+                else:
+                    reasons = [reason for key, reason in (
+                        ('rating_w', 'watt_capacity_unknown'), ('rating_va', 'va_capacity_unknown'),
+                        ('outlet_count', 'outlet_unknown'), ('runtime_curve', 'runtime_unknown'))
+                        if product.get(key) is None]
+                excluded_selected.append({'productId': product_id, 'reasons': reasons})
+        candidates = [candidate for candidate in candidates if candidate['product_id'] in selected_ids]
     parsed = _parse_optimization_request(request, candidates)
     (price_comparable, price_reason_code, price_reason, price_currency,
      price_currency_source, missing_currency_offers, comparable_vat,
@@ -752,6 +799,8 @@ def optimize_from_connection(connection, request, curve_catalog=None):
         notes.append('ไม่พบ fleet ที่ผ่านข้อจำกัดทั้งหมดในขอบเขตการค้นหานี้')
     return {
         'solver': 'CSP',
+        'selectionDiagnostics': {'selectedProductIds': selected_ids,
+            'excludedModels': excluded_selected, 'candidateModelCount': len(candidates)},
         'search': {'candidateModelCount': candidate_count, 'minimumUnitsByCapacity': minimum_units,
                    'maxUnitsPerDesign': max_units_per_design,
                    'configuredMaxUnitsPerDesign': MAX_SEARCH_UNITS,

@@ -3,6 +3,23 @@ const test = require('node:test');
 
 const { buildRequest } = require('./optimization.js');
 
+test('optimizer calls the hosted same-origin API without a localhost restriction', async t => {
+    const previousFetch = global.fetch;
+    const previousLocation = global.location;
+    t.after(() => { global.fetch = previousFetch; global.location = previousLocation; });
+    global.location = { hostname: 'ups.example.test' };
+    let sent;
+    global.fetch = async (url, options) => {
+        sent = { url, ...options };
+        return { status: 200, ok: true, json: async () => ({ validDesignCount: 1 }) };
+    };
+    const result = await require('./optimization.js').optimize({ selectedProductIds: [11] });
+    assert.equal(result.validDesignCount, 1);
+    assert.equal(sent.url, '/api/optimizations');
+    assert.equal(sent.credentials, 'same-origin');
+    assert.deepEqual(JSON.parse(sent.body).selectedProductIds, [11]);
+});
+
 test('optimizer request preserves outlet count and applies forecast load without adding outlets', () => {
     const request = buildRequest([
         { name: 'Server', load: 100, unit: 'W', plugs: 2 },
