@@ -49,6 +49,21 @@ class RecommendationApiTests(unittest.TestCase):
         self.assertEqual(5, len(result['recommendations']))
         self.assertIn('rankingFormula', result)
 
+    def test_catalog_search_returns_bounded_rows_without_raw_source_records(self):
+        body = json.dumps({'mode': 'nearby', 'includeUnknown': True,
+            'requiredWatts': 50, 'requiredVa': 62.5, 'requiredOutlets': 2,
+            'runtimeRequirementMinutes': 10, 'pageSize': 2}).encode()
+        request = Request(self.url + '/api/catalog/search', data=body,
+            headers={'Content-Type': 'application/json'}, method='POST')
+        with urlopen(request, timeout=3) as response:
+            payload = json.loads(response.read())
+        self.assertEqual(2, len(payload['models']))
+        self.assertGreater(payload['total'], 2)
+        self.assertNotIn('raw_json', json.dumps(payload))
+        self.assertNotIn('synthetic/', json.dumps(payload))
+        with urlopen(self.url + '/catalog.js', timeout=3) as response:
+            self.assertEqual(200, response.status)
+
     def test_invalid_input_returns_a_json_400_error(self):
         body = b'{"devices":[],"powerFactor":0.8,"runtimeRequirementMinutes":10}'
         request = Request(self.url + '/api/recommendations', data=body,

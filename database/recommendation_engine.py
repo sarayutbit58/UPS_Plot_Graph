@@ -349,6 +349,12 @@ def _is_ups_cost_source(relative_path, locator, raw_text):
 
 
 def _build_inventory(connection):
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='published_models'").fetchone():
+        try:
+            from .published_catalog import load_published_inventory
+        except ImportError:
+            from published_catalog import load_published_inventory
+        return load_published_inventory(connection)
     products = {}
     query = '''SELECT p.id,p.manufacturer_id,p.model,p.sku,p.description,p.product_type,m.name AS manufacturer,
         ps.id AS source_id,ps.raw_json,ps.raw_text,ps.source_locator,sf.relative_path,

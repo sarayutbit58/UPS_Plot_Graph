@@ -702,6 +702,46 @@
                     </ul>
                 </div>
 
+                <section id="catalogWorkspace" class="bg-slate-50 border border-slate-200 p-4 rounded-xl mb-6" aria-labelledby="catalogHeading">
+                    <h3 id="catalogHeading" class="text-lg font-bold text-slate-800">ค้นหารุ่น UPS และเลือกตัวกรอง</h3>
+                    <p id="catalogRequirements" class="field-help mt-2">ค้นหาตามโหลดรวมและเวลาสำรองจากสรุปปัจจุบัน</p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                        <div><label for="catalogQuery" class="field-label">ชื่อรุ่น / SKU</label><input id="catalogQuery" type="search" maxlength="160" class="w-full min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg" placeholder="เช่น SMT1000"></div>
+                        <div><label for="catalogManufacturer" class="field-label">ผู้ผลิต</label><select id="catalogManufacturer" class="w-full min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg"><option value="">ทุกผู้ผลิต</option></select></div>
+                        <div><label for="catalogMatchMode" class="field-label">ผลที่ต้องการ</label><select id="catalogMatchMode" onchange="syncCatalogFilterControls()" class="w-full min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg"><option value="nearby">รวมรุ่นใกล้เคียง</option><option value="strict">ผ่านทุกตัวกรองที่เปิดใช้</option></select></div>
+                    </div>
+                    <details class="mt-4">
+                        <summary class="min-h-[44px] py-2 cursor-pointer font-medium text-slate-700">ตัวกรองเพิ่มเติม</summary>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
+                            <div><label for="catalogHeadroom" class="field-label">เผื่อกำลัง W/VA (%)</label><input id="catalogHeadroom" type="number" min="0" max="50" step="1" value="20" class="w-full min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg"></div>
+                            <div><label for="catalogTolerance" class="field-label">ยอมให้ขาดได้ไม่เกิน (%)</label><input id="catalogTolerance" type="number" min="0" max="50" step="1" value="20" class="w-full min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg"><p class="field-help">ใช้กับโหมดใกล้เคียง และยังระบุข้อที่ไม่ผ่าน</p></div>
+                            <div><label for="catalogBudget" class="field-label">งบต่อเครื่อง ไม่รวม VAT</label><input id="catalogBudget" type="number" min="0.01" step="any" class="w-full min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg" placeholder="บาท · ไม่จำกัด"><p class="field-help">กรองเฉพาะราคาที่เทียบฐาน VAT ได้</p></div>
+                            <div><label for="catalogExpansion" class="field-label">แบตเตอรี่เสริม</label><select id="catalogExpansion" class="w-full min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg"><option value="any">ไม่จำกัด</option><option value="supported">เฉพาะรุ่นที่ยืนยันว่ารองรับ</option></select></div>
+                        </div>
+                        <div class="flex flex-wrap gap-4 mt-3 text-sm">
+                            <label class="flex items-center gap-2 min-h-[44px]"><input id="catalogRequireRuntime" type="checkbox" checked class="w-5 h-5">ใช้ Runtime เป็นตัวกรอง</label>
+                            <label class="flex items-center gap-2 min-h-[44px]"><input id="catalogRequireOutlets" type="checkbox" checked class="w-5 h-5">ใช้จำนวนเต้ารับเป็นตัวกรอง</label>
+                            <label class="flex items-center gap-2 min-h-[44px]"><input id="catalogIncludeUnknown" type="checkbox" checked class="w-5 h-5">แสดงรุ่นข้อมูลไม่ครบในโหมดใกล้เคียง</label>
+                        </div>
+                    </details>
+                    <p class="field-help mt-3">ตัวกรองใช้สำรวจรุ่นและแสดงข้อที่ไม่ผ่าน การจัดสรรอัตโนมัติยังต้องผ่านกำลังเผื่อ 20%, เต้ารับ และ Runtime ที่ยืนยันจากกราฟ</p>
+                    <div class="flex flex-wrap justify-between items-center gap-3 mt-4">
+                        <p id="catalogStatus" class="field-help" role="status" aria-live="polite">กดค้นหาเพื่อดูรุ่นและเหตุผลที่ผ่านหรือไม่ผ่าน</p>
+                        <button id="catalogSearchButton" type="button" onclick="searchCatalogModels(1)" class="min-h-[44px] px-5 py-2 btn-primary text-white rounded-lg">ค้นหารุ่น UPS</button>
+                    </div>
+                    <div class="bg-white border border-slate-200 rounded-lg p-3 my-4">
+                        <p id="catalogSelectionSummary" class="text-sm text-slate-700">ยังไม่เลือกรุ่น · การจัดสรรจะค้นหาทุกรุ่นที่ข้อมูลครบ</p>
+                        <ul id="catalogSelectedModels" class="flex flex-wrap gap-2 mt-2 text-sm"></ul>
+                        <button type="button" onclick="clearCatalogSelection()" class="min-h-[44px] text-sm text-blue-700 underline">ล้างรุ่นที่เลือก</button>
+                    </div>
+                    <div id="catalogResults" class="space-y-3"></div>
+                    <div class="flex flex-wrap justify-between items-center gap-3 mt-4">
+                        <button id="catalogPrevPage" type="button" onclick="searchCatalogModels(catalogSearchPage - 1)" disabled class="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50">← ก่อนหน้า</button>
+                        <span id="catalogPageInfo" class="text-sm text-slate-600">ครั้งละไม่เกิน 25 รุ่น</span>
+                        <button id="catalogNextPage" type="button" onclick="searchCatalogModels(catalogSearchPage + 1)" disabled class="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50">ถัดไป →</button>
+                    </div>
+                </section>
+
                 <div class="enterprise-only bg-gray-50 border border-gray-200 p-4 rounded-xl mb-6">
                     <h4 class="font-bold text-gray-700 mb-3">📝 รายการอุปกรณ์ทั้งหมด:</h4>
                     <div id="summaryDeviceList" class="space-y-2 text-sm"></div>
@@ -735,6 +775,8 @@
             <div id="step5" class="step-content hidden enterprise-only" role="region" aria-labelledby="step5-heading">
                 <h2 id="step5-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">เปรียบเทียบแบบจัดสรร UPS</h2>
                 <p class="text-gray-500 mb-6">ระบบค้นหาแบบผสมหลายรุ่น และตรวจ W, VA, Runtime, Outlet ก่อนแสดงแบบที่ผ่านทุกข้อกำหนด</p>
+                <p id="optimizerPoolStatus" class="text-sm text-slate-700 mb-2">ใช้ทุกรุ่นที่มีข้อมูลครบ</p>
+                <button type="button" onclick="goToStep(4)" class="min-h-[44px] text-blue-700 underline mb-4">เปลี่ยนตัวกรองหรือเลือกรุ่นที่หน้าสรุป</button>
                 <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-5">
                     <p class="font-semibold text-blue-800">เกณฑ์ค้นหา</p>
                     <p class="text-sm text-blue-700 mt-1">Best Overall ให้ความสำคัญกับจำนวน UPS ต่ำก่อน และจัดลำดับ Runtime reserve ต่อเมื่อผ่านข้อจำกัดวิศวกรรมครบ</p>
@@ -774,6 +816,7 @@
 
     <script src="./calculations.js"></script>
     <script src="./optimization.js"></script>
+    <script src="./catalog.js"></script>
     <script>
         // State
         let currentStep = 1;
@@ -787,6 +830,11 @@
         let precisionInvalidTarget = null;
         let invalidPlugIndex = null;
         let invalidQuantityIndex = null;
+        const catalogSelection = UPSCatalog.createSelection();
+        let catalogSearchVersion = 0;
+        let catalogSearchPage = 1;
+        let catalogLoadKey = '';
+        let catalogLastResult = null;
         let runtimeBatteryWasAutoFilled = false;
         let enterpriseBatterySettings = { voltage: 12, efficiency: 85 };
         let devices = [];
@@ -814,6 +862,13 @@
             addDevice(); // Add first device
             setMode('basic');
             showStep(currentStep);
+            ['catalogQuery', 'catalogManufacturer', 'catalogMatchMode', 'catalogHeadroom',
+                'catalogTolerance', 'catalogBudget', 'catalogExpansion', 'catalogRequireRuntime',
+                'catalogRequireOutlets', 'catalogIncludeUnknown'].forEach(id => {
+                    const control = document.getElementById(id);
+                    control.addEventListener('input', catalogFiltersChanged);
+                    control.addEventListener('change', catalogFiltersChanged);
+                });
         });
 
         function setMode(mode, preserveEnterpriseSettings = false) {
@@ -1026,6 +1081,7 @@
         }
 
         function updateDashboardMetrics() {
+            invalidateCatalogForLoad();
             document.getElementById('dashboardLoad').textContent = `${calculatedData.totalLoad} W`;
             document.getElementById('dashboardRuntimeLabel').textContent = currentMode === 'enterprise' && runtimeSource === 'manufacturer'
                 ? 'Runtime จากกราฟที่นำเข้า' : 'Runtime โดยประมาณ';
@@ -1557,6 +1613,147 @@
             updateDashboardMetrics();
         }
 
+        function getCatalogLoad() {
+            return {
+                watts: calculatedData.totalLoad,
+                va: calculatedData.totalLoad / 0.8,
+                outlets: calculatedData.totalPlugs,
+                runtime: Number(document.getElementById('backupTimeMin').value || 0),
+            };
+        }
+
+        function invalidateCatalogForLoad() {
+            const load = getCatalogLoad();
+            const key = JSON.stringify(load);
+            const requirementText = document.getElementById('catalogRequirements');
+            if (requirementText) requirementText.textContent = 'ใช้โหลดรวม ' + load.watts + ' W / '
+                + Number(load.va.toFixed(6)) + ' VA · ' + load.outlets + ' เต้ารับ · ต้องการ ' + load.runtime + ' นาที';
+            if (key === catalogLoadKey) return;
+            catalogLoadKey = key;
+            catalogSearchVersion++;
+            catalogLastResult = null;
+            document.getElementById('catalogResults')?.replaceChildren();
+            const status = document.getElementById('catalogStatus');
+            if (status) status.textContent = 'โหลดหรือเวลาสำรองเปลี่ยนแล้ว กดค้นหาเพื่อดูรุ่นตามค่าปัจจุบัน';
+            const searchButton = document.getElementById('catalogSearchButton');
+            if (searchButton) searchButton.disabled = false;
+            ['catalogPrevPage', 'catalogNextPage'].forEach(id => {
+                const button = document.getElementById(id);
+                if (button) button.disabled = true;
+            });
+        }
+
+        function syncCatalogFilterControls() {
+            const strict = document.getElementById('catalogMatchMode').value === 'strict';
+            document.getElementById('catalogTolerance').disabled = strict;
+            document.getElementById('catalogIncludeUnknown').disabled = strict;
+        }
+
+        function catalogFiltersChanged() {
+            catalogSearchVersion++;
+            catalogLastResult = null;
+            document.getElementById('catalogResults').replaceChildren();
+            document.getElementById('catalogSearchButton').disabled = false;
+            document.getElementById('catalogPrevPage').disabled = true;
+            document.getElementById('catalogNextPage').disabled = true;
+            document.getElementById('catalogPageInfo').textContent = 'ค้นหาใหม่เพื่อใช้ตัวกรองปัจจุบัน';
+            document.getElementById('catalogStatus').textContent = 'ตัวกรองเปลี่ยนแล้ว กดค้นหาเพื่ออัปเดตผล';
+        }
+
+        function catalogSelectionChanged() {
+            const selected = catalogSelection.entries();
+            document.getElementById('catalogSelectionSummary').textContent = selected.length
+                ? 'เลือก ' + selected.length + ' รุ่น · การจัดสรรจะใช้เฉพาะรุ่นที่เลือกและตรวจเกณฑ์วิศวกรรมอีกครั้ง'
+                : 'ยังไม่เลือกรุ่น · การจัดสรรจะค้นหาทุกรุ่นที่ข้อมูลครบ';
+            document.getElementById('optimizerPoolStatus').textContent = selected.length
+                ? 'จัดสรรเฉพาะ ' + selected.length + ' รุ่นที่เลือกไว้'
+                : 'ใช้ทุกรุ่นที่มีข้อมูลครบ';
+            const target = document.getElementById('catalogSelectedModels');
+            target.replaceChildren();
+            selected.forEach(([id, label]) => {
+                const item = document.createElement('li');
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'min-h-[44px] px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-blue-800';
+                remove.textContent = label + ' ×';
+                remove.setAttribute('aria-label', 'นำ ' + label + ' ออกจากรุ่นที่เลือก');
+                remove.addEventListener('click', () => {
+                    catalogSelection.toggle(id, label, false);
+                    catalogSelectionChanged();
+                });
+                item.appendChild(remove); target.appendChild(item);
+            });
+            if (catalogLastResult) UPSCatalog.render(document.getElementById('catalogResults'), catalogLastResult,
+                catalogSelection, catalogSelectionChanged, message => document.getElementById('catalogStatus').textContent = message);
+            invalidateOptimizationResults();
+        }
+
+        function clearCatalogSelection() {
+            catalogSelection.clear();
+            catalogSelectionChanged();
+        }
+
+        async function searchCatalogModels(page = 1) {
+            updateTotalLoad();
+            const status = document.getElementById('catalogStatus');
+            if (!loadInputValid) {
+                status.textContent = 'กรุณาแก้จำนวนอุปกรณ์ โหลด และเต้ารับก่อนค้นหา';
+                focusInvalidLoadInput();
+                return;
+            }
+            const button = document.getElementById('catalogSearchButton');
+            const version = ++catalogSearchVersion;
+            try {
+                syncCatalogFilterControls();
+                const request = UPSCatalog.buildSearchRequest({
+                    query: document.getElementById('catalogQuery').value,
+                    manufacturer: document.getElementById('catalogManufacturer').value,
+                    mode: document.getElementById('catalogMatchMode').value,
+                    headroomPercent: document.getElementById('catalogHeadroom').value,
+                    nearbyTolerancePercent: document.getElementById('catalogTolerance').value,
+                    maxPriceTHB: document.getElementById('catalogBudget').value,
+                    expansion: document.getElementById('catalogExpansion').value,
+                    requireRuntime: document.getElementById('catalogRequireRuntime').checked,
+                    requireOutlets: document.getElementById('catalogRequireOutlets').checked,
+                    includeUnknown: document.getElementById('catalogIncludeUnknown').checked,
+                    page,
+                }, getCatalogLoad());
+                button.disabled = true;
+                status.textContent = 'กำลังค้นหารุ่นและตรวจข้อมูลตามตัวกรอง…';
+                const result = await UPSCatalog.search(request);
+                if (version !== catalogSearchVersion) return;
+                catalogSearchPage = result.page;
+                catalogLastResult = result;
+                const manufacturer = document.getElementById('catalogManufacturer');
+                const previousBrand = manufacturer.value;
+                manufacturer.replaceChildren();
+                ['', ...result.facets.manufacturers].forEach(value => {
+                    const option = document.createElement('option');
+                    option.value = value; option.textContent = value || 'ทุกผู้ผลิต'; manufacturer.appendChild(option);
+                });
+                manufacturer.value = previousBrand;
+                const coverage = result.coverage;
+                status.textContent = 'พบ ' + result.total + ' รุ่นตามตัวกรอง จากฐาน ' + coverage.totalModels
+                    + ' รุ่น · มี W/VA ครบ ' + coverage.capacityKnown + ' รุ่น · พร้อมตรวจจัดสรร ' + coverage.optimizerEligible + ' รุ่น';
+                if (result.dataset && result.dataset.omitted_missing_capacity_count) {
+                    status.textContent += ' · ฐานย่อจาก UPS ' + result.dataset.original_model_count
+                        + ' รุ่น โดยละ ' + result.dataset.omitted_missing_capacity_count + ' รุ่นที่ยังขาดข้อมูลกำลังไฟ';
+                }
+                if (coverage.budgetExcludedUnknownPrice) status.textContent += ' · ไม่นำราคาไม่ทราบฐาน VAT '
+                    + coverage.budgetExcludedUnknownPrice + ' รุ่นมาเทียบงบ';
+                UPSCatalog.render(document.getElementById('catalogResults'), result, catalogSelection,
+                    catalogSelectionChanged, message => status.textContent = message);
+                const pages = Math.max(1, Math.ceil(result.total / result.pageSize));
+                document.getElementById('catalogPageInfo').textContent = result.total + ' รุ่น · หน้า ' + result.page + ' / ' + pages;
+                document.getElementById('catalogPrevPage').disabled = result.page <= 1;
+                document.getElementById('catalogNextPage').disabled = result.page >= pages;
+            } catch (error) {
+                if (version === catalogSearchVersion) status.textContent = error.message || 'ค้นหาไม่สำเร็จ';
+            } finally {
+                if (version === catalogSearchVersion) button.disabled = false;
+            }
+        }
+
         function invalidateOptimizationResults() {
             optimizationRequestVersion++;
             const results = document.getElementById('optimizationResults');
@@ -1595,6 +1792,7 @@
                     calculatedData.deviceLoad,
                     calculatedData.totalLoad,
                 );
+                if (catalogSelection.ids().length) request.selectedProductIds = catalogSelection.ids();
                 const response = await UPSOptimization.optimize(request);
                 if (requestVersion !== optimizationRequestVersion) return;
                 UPSOptimization.render(results, response);
@@ -1813,6 +2011,8 @@
         }
 
         function restart() {
+            catalogSelection.clear();
+            catalogSelectionChanged();
             runtimeCurveImportVersion++;
             jsonImportVersion++;
             currentStep = 1;
@@ -2001,6 +2201,8 @@
                     const importData = UPScalculations.parseImportJson(String(e.target.result || ''));
                     // Validate the complete payload before changing application state or DOM.
                     const normalized = UPScalculations.normalizeImportData(importData);
+                    catalogSelection.clear();
+                    catalogSelectionChanged();
                     runtimeCurveImportVersion++;
                     currentStep = 1;
                     devices = normalized.devices;

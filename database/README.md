@@ -1,6 +1,6 @@
 # UPS product database foundation
 
-This is the local database and decision-engine layer for UPS Picker. It keeps the existing calculator formulas while adding source-backed recommendation, allocation and bounded optimization services.
+This is the database and decision-engine layer for UPS Picker. Raw source material stays local. An optional compact Turso catalog supports a private hosted API while retaining the existing calculator formulas and bounded Python solver.
 
 ## Deliverables
 
@@ -59,6 +59,18 @@ Prices are exact decimal strings. Currency, VAT, dates and ratings stay unknown 
 ## Latest reconciliation (2026-10-14)
 
 The catalog first reconciled 136 cosmetic model variants, then removed 454 products with no price offers. The resulting database has 1,094 products (817 UPS), 7,506 source assertions/specifications, and all 7,084 price offers, 1,612 source files, and 7,386 rejections. No products without at least one price offer remain. Structural validation passed with SQLite integrity `ok` and no foreign-key violations. See `database/local/deduplication.md`, `database/local/unpriced-pruning.md`, and `database/local/validation.md` for the separate reports.
+
+## Filtered model selection and private cloud (2026-10-15)
+
+`POST /api/catalog/search` adds text/manufacturer search, strict or nearby matches, optional runtime/outlet requirements, 0–50% exploratory capacity headroom, 0–50% nearby shortfall tolerance, battery-expansion preference and an optional comparable pre-VAT THB budget. Results contain at most 25 models per page. Enabled dimensions report pass, fail or unknown with required/available values; runtime remains unknown outside published curve bounds. Within the same evidence/shortfall class, models closest to the required W/VA capacity come first. The browser labels disabled filters and missing data and ignores responses to superseded loads or filters.
+
+Both UI modes can browse models from Summary. Manual model checkboxes define the allowed pool for Enterprise optimization through optional `selectedProductIds` (1–100 unique IDs). With none selected, the solver uses all technically eligible models. Selected models lacking mandatory evidence are reported explicitly. Exploratory filters never relax the automatic solver's 20% W/VA margin, physical outlet limit or final in-range runtime requirement.
+
+Fixed a false-negative search prune: eight 50 W devices were rejected individually below a curve's minimum load even when their final 400 W total was valid. Partial placements below a curve's lower bound are now provisional; completed units still require in-range runtime meeting the target. The dated raw/compact regression produces one SMC1000IC at 11 minutes for a 10-minute target.
+
+`published_catalog.py` derives the small hosted database after normalization and manufacturer overlays. By default it exports only real UPS with known W and VA; prices require explicit `--include-prices`. Raw documents, filenames and private file locators are removed. The local Turso MCP can inspect a copy of this file; that alone does not create a Turso Cloud database. `turso_store.py` provides bounded HTTPS SQL-over-HTTP reads and a cached read-only snapshot for the engines. `publish_turso.py` validates a nonempty dedicated catalog and refreshes it transactionally.
+
+`cloud_api.py` protects the app and API with individual password hashes and HTTPS authentication; Turso tokens stay on the server. `render.yaml` is a manual-deployment Free-plan example for a cloud Python runtime. Accounts, database provisioning, secret configuration and live deployment are still external setup steps; see [cloud.md](cloud.md). The local service remains loopback-only.
 
 ## UPS recommendations (2026-10-14)
 

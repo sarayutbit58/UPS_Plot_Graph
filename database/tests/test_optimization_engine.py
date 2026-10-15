@@ -18,6 +18,54 @@ except ImportError:
 
 
 class OptimizationEngineTests(unittest.TestCase):
+    def test_selected_product_ids_restrict_solver_and_report_unavailable_models(self):
+        selected = self.catalog['products'][0]
+        result = optimize_from_connection(self.connection, {
+            'selectedProductIds': [selected, 2147483647],
+            'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 50}],
+        }, curve_catalog=self.curves)
+        self.assertEqual(1, result['search']['candidateModelCount'])
+        self.assertEqual([{'productId': 2147483647, 'reasons': ['not_an_available_ups']}],
+                         result['selectionDiagnostics']['excludedModels'])
+        self.assertTrue(all(m['productId'] == selected for m in result['bestSolution']['models']))
+
+    def test_rejects_invalid_selected_product_ids(self):
+        for selected in ([], [True], [0], [1, 1], ['1'], list(range(1, 102))):
+            with self.subTest(selected=selected), self.assertRaises(OptimizationInputError):
+                optimize_from_connection(self.connection, {'selectedProductIds': selected},
+                                         curve_catalog=self.curves)
+
+    def test_selected_model_without_runtime_is_diagnosed_without_guessing(self):
+        selected = self.catalog['products'][0]
+        self.connection.execute('UPDATE product_sources SET raw_text=?', ('no runtime facts',))
+        result = optimize_from_connection(self.connection, {
+            'selectedProductIds': [selected], 'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 50}],
+        }, curve_catalog=[])
+        self.assertIsNone(result['bestSolution'])
+        self.assertEqual(0, result['search']['candidateModelCount'])
+        reasons = result['selectionDiagnostics']['excludedModels'][0]['reasons']
+        self.assertIn('runtime_unknown', reasons)
+
+    def test_small_devices_can_accumulate_into_supported_runtime_range(self):
+        self.connection.execute("UPDATE products SET product_type='accessory' WHERE model!='UPS-1'")
+        self.curves[0]['points'] = [{'loadW': 300, 'runtimeMinutes': 20}, {'loadW': 700, 'runtimeMinutes': 10}]
+        result = self.optimize(devices=[
+            {'name': 'Camera', 'quantity': 8, 'watt': 50, 'va': 62.5, 'priority': 50},
+        ])
+        self.assertIsNotNone(result['bestSolution'])
+        self.assertEqual(1, result['bestSolution']['unitCount'])
+        self.assertGreaterEqual(result['bestSolution']['minimumEstimatedRuntimeMinutes'], 10)
+
+    def test_final_load_below_curve_range_remains_invalid(self):
+        self.connection.execute("UPDATE products SET product_type='accessory' WHERE model!='UPS-1'")
+        self.curves[0]['points'] = [{'loadW': 300, 'runtimeMinutes': 20}, {'loadW': 700, 'runtimeMinutes': 10}]
+        result = self.optimize(devices=[
+            {'name': 'Camera', 'quantity': 1, 'watt': 50, 'va': 62.5, 'priority': 50},
+        ])
+        self.assertIsNone(result['bestSolution'])
+
     def setUp(self):
         self.connection = sqlite3.connect(':memory:', isolation_level=None)
         self.catalog = seed_catalog(self.connection)

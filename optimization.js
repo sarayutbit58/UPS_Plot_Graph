@@ -64,21 +64,20 @@
     }
 
     async function optimize(request) {
-        if (typeof fetch !== 'function') throw new Error('เบราว์เซอร์นี้ไม่รองรับการเชื่อมต่อกับ local optimizer');
-        const hostname = typeof location === 'undefined' ? '' : location.hostname;
-        if (!['127.0.0.1', 'localhost', '::1'].includes(hostname)) {
-            throw new Error('การค้นหาใช้ catalog ในเครื่องเพื่อรักษาข้อมูลราคา กรุณาเปิดแอปผ่าน http://127.0.0.1:8000');
-        }
+        if (typeof fetch !== 'function') throw new Error('เบราว์เซอร์นี้ไม่รองรับการเชื่อมต่อกับบริการจัดสรร');
         let response;
         try {
             response = await fetch('/api/optimizations', {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(request),
             });
         } catch (error) {
-            throw new Error('เชื่อมต่อ local optimizer ไม่ได้ กรุณาเริ่ม recommendation service แล้วเปิด http://127.0.0.1:8000');
+            throw new Error('เชื่อมต่อบริการจัดสรรไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่');
         }
+        if (response.status === 401) throw new Error('กรุณาเข้าสู่ระบบเว็บนี้ก่อนคำนวณการจัดสรร');
+        if (response.status === 404) throw new Error('เว็บนี้ยังไม่ได้เชื่อมบริการจัดสรร กรุณาเปิด URL ของบริการที่เชื่อม Turso');
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || `Optimizer ตอบกลับ HTTP ${response.status}`);
         return payload;
@@ -111,9 +110,9 @@
         Object.entries(evidence || {}).forEach(([kind, items]) => {
             (Array.isArray(items) ? items : []).forEach(item => {
                 if (!item) return;
-                const reference = item.path
+                const reference = item.url || item.title || item.sourceId || (item.path
                     ? `${item.path}${item.locator ? ` · ${item.locator}` : ''}`
-                    : item.url || '';
+                    : '');
                 if (reference) references.push(`${kind}: ${reference}`);
             });
         });
@@ -173,6 +172,14 @@
 
     function render(target, result) {
         target.replaceChildren();
+        const excluded = result.selectionDiagnostics && result.selectionDiagnostics.excludedModels || [];
+        if (excluded.length) {
+            const reasons = { not_an_available_ups: 'ไม่พบรุ่น UPS ในฐานข้อมูล', watt_capacity_unknown: 'ไม่ทราบ W',
+                va_capacity_unknown: 'ไม่ทราบ VA', outlet_unknown: 'ไม่ทราบเต้ารับ', runtime_unknown: 'ไม่มีกราฟ Runtime' };
+            target.appendChild(element('p', 'bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800',
+                'รุ่นที่เลือกยังใช้จัดสรรไม่ได้: ' + excluded.map(item => '#' + item.productId + ' (' +
+                    item.reasons.map(reason => reasons[reason] || reason).join(', ') + ')').join(' · ')));
+        }
         const note = (result.notes || []).join(' ');
         if (note) target.appendChild(element('p', 'bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800', note));
         if (!result.bestSolution) {

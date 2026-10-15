@@ -1,6 +1,7 @@
 """Local-only HTTP API for the UPS recommendation engine."""
 
 import argparse
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -8,10 +9,12 @@ import sqlite3
 from urllib.parse import urlsplit
 
 try:
+    from .catalog_search import search_catalog
     from .allocation_engine import AllocationInputError, allocate
     from .optimization_engine import optimize
     from .recommendation_engine import RecommendationInputError, recommend
 except ImportError:  # Running this file directly keeps the database folder on sys.path.
+    from catalog_search import search_catalog
     from allocation_engine import AllocationInputError, allocate
     from optimization_engine import optimize
     from recommendation_engine import RecommendationInputError, recommend
@@ -25,6 +28,7 @@ STATIC_FILES = {
     '/index.html': ('index.html', 'text/html; charset=utf-8'),
     '/calculations.js': ('calculations.js', 'text/javascript; charset=utf-8'),
     '/optimization.js': ('optimization.js', 'text/javascript; charset=utf-8'),
+    '/catalog.js': ('catalog.js', 'text/javascript; charset=utf-8'),
     '/styles/tailwind.css': ('styles/tailwind.css', 'text/css; charset=utf-8'),
 }
 
@@ -94,8 +98,10 @@ def create_server(database_path, port=8000):
                 self._send_json(404, {'error': 'Not found'})
                 return
             try:
-                with sqlite3.connect(str(path), timeout=5) as connection:
-                    count = connection.execute("SELECT count(*) FROM products WHERE product_type='UPS'").fetchone()[0]
+                with closing(sqlite3.connect(str(path), timeout=5)) as connection:
+                    compact = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='published_models'").fetchone()
+                    count = connection.execute('SELECT count(*) FROM published_models' if compact
+                        else "SELECT count(*) FROM products WHERE product_type='UPS'").fetchone()[0]
                 self._send_json(200, {'status': 'ok', 'upsProducts': count})
             except sqlite3.Error:
                 self._send_json(503, {'error': 'Recommendation database is unavailable'})
@@ -104,7 +110,7 @@ def create_server(database_path, port=8000):
             if not self._is_local_request():
                 self._send_json(403, {'error': 'Local API only accepts loopback Host and Origin values'})
                 return
-            if self.path not in {'/api/recommendations', '/api/allocations', '/api/optimizations'}:
+            if self.path not in {'/api/recommendations', '/api/allocations', '/api/optimizations', '/api/catalog/search'}:
                 self._send_json(404, {'error': 'Not found'})
                 return
             content_type = self.headers.get('Content-Type', '').split(';', 1)[0].strip().casefold()
@@ -121,7 +127,9 @@ def create_server(database_path, port=8000):
                 return
             try:
                 payload = json.loads(self.rfile.read(content_length).decode('utf-8'))
-                if self.path == '/api/allocations':
+                if self.path == '/api/catalog/search':
+                    result = search_catalog(path, payload)
+                elif self.path == '/api/allocations':
                     result = allocate(path, payload)
                 elif self.path == '/api/optimizations':
                     result = optimize(path, payload)
