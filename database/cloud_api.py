@@ -33,6 +33,7 @@ ROUTES = {'/api/recommendations': recommend_from_connection,
           '/api/allocations': allocate_from_connection,
           '/api/optimizations': optimize_from_connection,
           '/api/catalog/search': search_catalog_from_connection}
+AUTH_WAIT_SECONDS = 10
 
 
 def hash_password(password, iterations=600000):
@@ -170,22 +171,28 @@ def create_cloud_server(store, users_json, allowed_host, port=10000,
                 self._send(401, {'error': 'Authentication required'}, challenge=True)
                 return False
             address = self.client_address[0]
-            if throttled(address) or not auth_slots.acquire(blocking=False):
+            # A page loads several protected assets concurrently. Queue that
+            # ordinary burst while keeping expensive password hashing bounded.
+            if throttled(address) or not auth_slots.acquire(timeout=AUTH_WAIT_SECONDS):
                 self._send(429, {'error': 'Service busy; retry shortly'})
                 return False
             try:
-                scheme, encoded = authorization.split(' ', 1)
-                if scheme.lower() != 'basic' or len(encoded) > 4096:
-                    raise ValueError
-                username, password = base64.b64decode(encoded, validate=True).decode('utf-8').split(':', 1)
-                iterations, salt, expected = users.get(username, next(iter(users.values())))
-                actual = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
-                authenticated = hmac.compare_digest(actual, expected) and username in users
-            except (ValueError, UnicodeError, binascii.Error):
-                authenticated = False
+                if throttled(address):
+                    self._send(429, {'error': 'Service busy; retry shortly'})
+                    return False
+                try:
+                    scheme, encoded = authorization.split(' ', 1)
+                    if scheme.lower() != 'basic' or len(encoded) > 4096:
+                        raise ValueError
+                    username, password = base64.b64decode(encoded, validate=True).decode('utf-8').split(':', 1)
+                    iterations, salt, expected = users.get(username, next(iter(users.values())))
+                    actual = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
+                    authenticated = hmac.compare_digest(actual, expected) and username in users
+                except (ValueError, UnicodeError, binascii.Error):
+                    authenticated = False
+                record_auth(address, authenticated)
             finally:
                 auth_slots.release()
-            record_auth(address, authenticated)
             if not authenticated:
                 self._send(401, {'error': 'Authentication required'}, challenge=True)
             return authenticated
