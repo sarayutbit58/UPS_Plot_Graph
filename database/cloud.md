@@ -1,6 +1,14 @@
 # Private team hosting
 
-Prepared 2026-10-15. The code and deployment blueprint are ready for review; no account, database, or hosted service has been created. This service runs on cloud Python and uses Turso for persistence. The laptop does not need to remain awake after deployment.
+Deployed 2026-10-15. The private service is available at https://ups-team-selector.onrender.com and runs on cloud Python with Turso persistence. The laptop does not need to remain awake. The reusable deployment blueprint remains in `render.yaml`.
+
+## Deployment record - 2026-10-15
+
+- Render Free web service in Singapore, deployed from `feat/catalog-filters-turso` at commit `7b1c44e10e9e6f42bcbaa250569e98d52f94644c`; automatic deployment is off. PR #5 remains separate from this deployment.
+- Dedicated Turso database in Tokyo contains the reviewed private projection: 223 models. A remote SQL count and a snapshot load with the application's read-only token both returned 223.
+- Three Render environment secrets are configured: database URL, read-only database token, and one user-supplied login hash. No passwords, tokens, or private projection files are committed. The import token expires after one day; the application token expires after one year and must be rotated before expiry.
+- Render reported `Deploy succeeded | Live`. HTTPS checks returned 200 for `/health` and 401 with the `UPS Team` authentication challenge for `/`, `/catalog.js`, and POST `/api/catalog/search` without credentials.
+- Successful login and authenticated hosted calculations still require the user's acceptance check; the deployment agent did not receive the user's plaintext password.
 
 ## 1. Create the catalog database
 
