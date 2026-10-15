@@ -148,13 +148,50 @@ class CloudApiTests(unittest.TestCase):
             self.assertEqual(401, self.request(Authorization=wrong)[0])
         self.assertEqual(200, self.request()[0])
 
-    def test_authentication_hashing_has_two_concurrent_slots(self):
+    def test_authenticated_asset_burst_waits_for_two_hashing_slots(self):
         import cloud_api
         original = cloud_api.hashlib.pbkdf2_hmac
         entered, release = threading.Event(), threading.Event()
         lock = threading.Lock()
-        calls = []
+        active = 0
+        peak = 0
         responses = []
+        def slow_hash(*args, **kwargs):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+                if active == 2:
+                    entered.set()
+            try:
+                release.wait(3)
+                return original(*args, **kwargs)
+            finally:
+                with lock:
+                    active -= 1
+        with patch('cloud_api.hashlib.pbkdf2_hmac', side_effect=slow_hash):
+            paths = ['/calculations.js', '/optimization.js', '/catalog.js', '/styles/tailwind.css']
+            threads = [threading.Thread(target=lambda path=path: responses.append(self.request(path=path)[0]))
+                       for path in paths]
+            for thread in threads:
+                thread.start()
+            try:
+                self.assertTrue(entered.wait(2))
+                self.assertEqual(2, peak)
+            finally:
+                release.set()
+                for thread in threads:
+                    thread.join(timeout=4)
+        self.assertEqual([200] * len(paths), sorted(responses))
+        self.assertEqual(2, peak)
+
+    def test_authentication_wait_timeout_still_returns_busy(self):
+        import cloud_api
+        original = cloud_api.hashlib.pbkdf2_hmac
+        entered, release = threading.Event(), threading.Event()
+        lock = threading.Lock()
+        calls, responses = [], []
+
         def slow_hash(*args, **kwargs):
             with lock:
                 calls.append(1)
@@ -162,7 +199,9 @@ class CloudApiTests(unittest.TestCase):
                     entered.set()
             release.wait(3)
             return original(*args, **kwargs)
-        with patch('cloud_api.hashlib.pbkdf2_hmac', side_effect=slow_hash):
+
+        with patch('cloud_api.hashlib.pbkdf2_hmac', side_effect=slow_hash), \
+                patch('cloud_api.AUTH_WAIT_SECONDS', 0.05):
             threads = [threading.Thread(target=lambda: responses.append(self.request()[0])) for _ in range(2)]
             for thread in threads:
                 thread.start()
