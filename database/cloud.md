@@ -10,6 +10,12 @@ Deployed 2026-10-15. The private service is available at https://ups-team-select
 - Render reported `Deploy succeeded | Live`. HTTPS checks returned 200 for `/health` and 401 with the `UPS Team` authentication challenge for `/`, `/catalog.js`, and POST `/api/catalog/search` without credentials.
 - Successful login and authenticated hosted calculations still require the user's acceptance check; the deployment agent did not receive the user's plaintext password.
 
+## Release validation and promotion - 2026-10-15
+
+Before promoting PR #5, a fresh verification run passed all 156 Python tests (`python -B -X utf8 -m unittest discover -s database/tests`), all 68 JavaScript tests (`npm test`), the CSS build (`npm run build:css`), and `git diff --check`. The CSS build retained the existing outdated Browserslist-data warning. GitHub reported no combined commit statuses, so these are local verification results rather than a GitHub CI claim.
+
+After merging the reviewed PR, configure Render's deployment branch as `main` and manually deploy its merged commit. Keep automatic deployment off. Confirm Render reports the expected commit as Live, then repeat HTTPS health and unauthenticated access checks. The initial feature-branch deployment above remains the historical setup record.
+
 ## 1. Create the catalog database
 
 Create a Turso account and a dedicated empty database for this application. Keep it separate from unrelated customer or business data. Export the derived catalog with `published_catalog.py`, then publish that export with `publish_turso.py --db <curated-export.sqlite3>`. Check each tool's `--help` for the current export arguments. Include dealer prices only in the private team export; original documents, raw extraction text, and private file paths must not be uploaded.
