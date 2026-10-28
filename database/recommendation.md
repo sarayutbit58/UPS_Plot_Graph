@@ -50,22 +50,22 @@ The factors and weights are:
 |---|---:|---|
 | Capacity fitness | 35% | Formula above |
 | Runtime fitness | 30% | `min(100, estimated runtime / requested runtime * 100)` |
-| Outlet fitness | 15% | `min(100, source outlet count / required device outlets * 100)` |
+| Outlet fitness | 15% | `min(100, verified battery-backed socket count / required device outlets * 100)` |
 | Price efficiency | 10% | Lowest comparable-currency reseller amount per rated watt receives 100; remaining candidates scale relative to it |
 | Expansion capability | 10% | 100 when external batteries are explicitly supported; 0 when explicitly unsupported |
 
 The weighted score is the weighted mean of known factor scores. Unknown factors are omitted and their weight is reflected in `evidenceCoveragePercent`. Candidates sort by runtime status first (`meets_runtime`, `unknown`, then `below_runtime_requirement`), then weighted score and evidence coverage. Capacity candidates whose known runtime is below target remain in the top five with an explicit below-target status.
 
-On the local catalog snapshot inspected on 2026-10-14, the API forms 806 recommendation identities from 817 UPS product rows by consolidating 11 exact model-to-manufacturer-SKU aliases. Runtime curves are available for 68 identities (including 12 exact APC matches from the official overlay); outlet counts for 40; expansion capability for 87; and explicit NDP/Dealer amounts for 758. None of the reseller price observations has a recorded currency, so every live price-efficiency score is currently unknown.
+Catalog coverage depends on the current private snapshot. Legacy counts of total outlets or dealer-source runtime curves are not counts of manufacturer-verified backup sockets or battery configurations.
 
 ## Evidence and limits
 
-- Ratings, price offers, technical source rows, and source locations are read from SQLite. If source ratings conflict, the engine uses the lowest recorded VA/W ratings and warns.
+- Ratings, price offers and technical source rows are read from SQLite. Automatic recommendations require a verified manufacturer identity and manufacturer-sourced W/VA; unresolved manufacturer conflicts are not silently resolved by picking a value. Legacy source observations and prices remain available for audit.
 - UPS-typed product identities whose product description clearly identifies a battery pack/module or replacement battery are excluded before source rows are combined. This prevents an accessory SKU and its price from being paired with runtime/capacity evidence for the UPS it supports; complete UPS systems sold with an external battery pack remain eligible. The count appears under `excludedProductCount.nonUpsAccessory`.
-- Runtime uses exact manufacturer-key/model or SKU matching. The engine uses its APC runtime overlay in [manufacturer_runtime_curves.json](manufacturer_runtime_curves.json) plus eligible Full load/Half load points stored in `product_sources.raw_text`. It interpolates only between known points and never extrapolates. Each runtime result includes its source URL or local source path and row locator. The APC overlay is from Schneider Electric's [Smart-UPS SMC/SMT technical specification](https://ckm-content.se.com/ckmContent/sfc/servlet.shepherd/document/download/069Kj00000UXGLEIA5), published in 2018; table test conditions are not specified there.
-- Outlet counts and external-battery support are scored only when a source row states them. The engine compares outlet counts only; it does not allocate equipment to receptacle types.
-- Estimated reseller cost uses explicit NDP or Dealer Price rows and excludes SRP, end-user, warranty-upgrade, and pack-tier rows. It preserves the source amount and VAT treatment. The current database has no explicit currency or offer date, so `currency` and `sourceDate` remain null and price efficiency is not scored. The amount is a historical source observation, not a current quotation.
-- The local catalog has 817 UPS rows; exact SKU aliases are grouped for ranking where a model-only row matches one explicit manufacturer SKU. This creates one recommendation per exact product identity without fuzzy-name joining.
+- Runtime uses manufacturer-sourced points bound to an explicit product and battery configuration. When more than one configuration is available the caller must select one for a definite runtime; interpolation is inside known points only, with no extrapolation.
+- Outlet scoring uses only groups explicitly verified as battery-backed. Total sockets, surge-only sockets and hardwired terminals are not interchangeable with battery-backed plug sockets.
+- Estimated reseller cost uses explicit NDP or Dealer Price rows and excludes SRP, end-user, warranty-upgrade, and pack-tier rows. It preserves the source amount and VAT treatment. This single-model ranking scores only prices explicitly marked VAT-exclusive; inclusive or unknown treatments receive no price score. Fleet cost comparison has a separate policy that can normalize an inclusive offer when its effective dates and VAT rate are verified. When extra battery packs have no verified price, UPS-only prices are not ranked as complete configuration costs. Amounts are historical observations, not current quotations.
+- Historic model-only/SKU merges are quarantined from automatic recommendations until the bundle identity is verified; the original offers and source references are retained.
 - Load inputs that cannot be represented as finite JSON numbers are rejected with HTTP 400. Runtime estimates, scores, and the API serializer reject non-finite values rather than returning invalid JSON.
 
 ## Test cases

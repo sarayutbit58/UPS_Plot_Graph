@@ -1,17 +1,27 @@
 """User-controlled, non-commercial exploration of source-backed UPS models."""
 
 import math
+import re
 from contextlib import closing
 from pathlib import Path
 import sqlite3
 
 try:
+    from .verified_evidence import is_manufacturer_url, has_unverified_bundle, _lifecycle_observation
+except ImportError:
+    from verified_evidence import is_manufacturer_url, has_unverified_bundle, _lifecycle_observation
+
+try:
     from .recommendation_engine import (RecommendationInputError, _build_inventory,
-        _apply_manufacturer_curves, _read_curve_catalog, _interpolate_runtime)
+        _apply_manufacturer_curves, _read_curve_catalog, _interpolate_runtime,
+        _verified_battery_outlet_count, _verified_runtime_curve, _verified_runtime_curves, _verified_rating,
+        _verified_identity, _verified_outlet_groups)
     from .optimization_engine import _price_comparison_basis
 except ImportError:
     from recommendation_engine import (RecommendationInputError, _build_inventory,
-        _apply_manufacturer_curves, _read_curve_catalog, _interpolate_runtime)
+        _apply_manufacturer_curves, _read_curve_catalog, _interpolate_runtime,
+        _verified_battery_outlet_count, _verified_runtime_curve, _verified_runtime_curves, _verified_rating,
+        _verified_identity, _verified_outlet_groups)
     from optimization_engine import _price_comparison_basis
 
 
@@ -45,6 +55,26 @@ def _check(required, available, reason=None):
     shortfall = max(0, required - available)
     return {'status': 'pass' if shortfall <= 1e-9 else 'fail', 'required': required,
             'available': available, 'shortfall': round(shortfall, 6)}
+
+
+def _public_evidence(product, source):
+    if not isinstance(source, dict) or not is_manufacturer_url(product.get('manufacturer'), source.get('url')):
+        return None
+    result = {'url': source['url']}
+    if isinstance(source.get('page'), int) and not isinstance(source['page'], bool) and source['page'] > 0:
+        result['page'] = source['page']
+    return result
+
+
+def _public_crosswalk(product):
+    value = product.get('identity_crosswalk')
+    if not isinstance(value, dict) or not _verified_identity(product):
+        return None
+    source_id, url = value.get('sourceId'), value.get('manufacturerUrl')
+    if (not isinstance(source_id, str) or not re.fullmatch(r'[0-9a-f]{24}', source_id)
+            or not is_manufacturer_url(product.get('manufacturer'), url)):
+        return None
+    return {'sourceId': source_id, 'manufacturerUrl': url}
 
 
 def _dataset_metadata(connection):
@@ -110,16 +140,25 @@ def search_catalog_from_connection(connection, request, curve_catalog=None):
     inventory = [p for p in inventory if not p.get('non_ups_reason')]
     manufacturers = sorted({p['manufacturer'] for p in inventory if p.get('manufacturer')})
     coverage = {'totalModels': len(inventory), 'capacityKnown': 0, 'outletsKnown': 0,
+                'totalOutletsKnown': 0,
                 'runtimeCurveKnown': 0, 'optimizerEligible': 0,
                 'matches': 0, 'nearby': 0, 'unknown': 0,
                 'budgetExcludedUnknownPrice': 0, 'budgetExcludedOverPrice': 0}
     rows = []
     for product in inventory:
-        capacity_known = product['rating_w'] is not None and product['rating_va'] is not None
-        can_optimize = capacity_known and product['outlet_count'] is not None and product['runtime_curve'] is not None
+        rating_w = _verified_rating(product, 'rating_w')
+        rating_va = _verified_rating(product, 'rating_va')
+        capacity_known = rating_w is not None and rating_va is not None
+        identity_verified = _verified_identity(product)
+        backed_outlets = _verified_battery_outlet_count(product)
+        curves = _verified_runtime_curves(product)
+        curve = curves[0] if len(curves) == 1 else None
+        can_optimize = (identity_verified and capacity_known and bool(backed_outlets)
+                        and bool(curves))
         coverage['capacityKnown'] += int(capacity_known)
-        coverage['outletsKnown'] += int(product['outlet_count'] is not None)
-        coverage['runtimeCurveKnown'] += int(product['runtime_curve'] is not None)
+        coverage['outletsKnown'] += int(backed_outlets is not None)
+        coverage['totalOutletsKnown'] += int(product['outlet_count'] is not None)
+        coverage['runtimeCurveKnown'] += int(bool(curves))
         coverage['optimizerEligible'] += int(can_optimize)
         if manufacturer and (product.get('manufacturer') or '').casefold() != manufacturer.casefold():
             continue
@@ -131,6 +170,10 @@ def search_catalog_from_connection(connection, request, curve_catalog=None):
         price_basis = _price_comparison_basis([price_candidate])
         price = ({'amount': float(price_candidate['_cost']), 'currency': 'THB',
                   'vatBasis': 'exclusive'} if price_basis[0] else None)
+        price_reason = price_basis[1]
+        if has_unverified_bundle(product):
+            price = None
+            price_reason = 'bundle_identity_unverified'
         if budget is not None:
             if price is None:
                 coverage['budgetExcludedUnknownPrice'] += 1
@@ -138,21 +181,30 @@ def search_catalog_from_connection(connection, request, curve_catalog=None):
             if price['amount'] > budget:
                 coverage['budgetExcludedOverPrice'] += 1
                 continue
-        curve = product['runtime_curve']
-        minutes = _interpolate_runtime(curve['points'], required_w) if curve and required_w > 0 else None
+        config_minutes = [(_interpolate_runtime(item['points'], required_w) if required_w > 0 else None)
+                          for item in curves]
+        known_minutes = [value for value in config_minutes if value is not None]
+        minutes = config_minutes[0] if len(config_minutes) == 1 else None
+        best_minutes = max(known_minutes) if known_minutes else None
         runtime_reason = 'missing_runtime_curve'
-        if curve:
+        if curves:
             if required_w <= 0:
                 runtime_reason = 'load_not_specified'
-            elif required_w < min(point['loadW'] for point in curve['points']):
+            elif all(required_w < min(point['loadW'] for point in item['points']) for item in curves):
                 runtime_reason = 'load_below_curve_range'
-            elif required_w > max(point['loadW'] for point in curve['points']):
+            elif all(required_w > max(point['loadW'] for point in item['points']) for item in curves):
                 runtime_reason = 'load_above_curve_range'
+            else:
+                runtime_reason = 'configuration_load_range_unknown'
+        runtime_available = best_minutes
+        if (runtime > 0 and best_minutes is not None and best_minutes < runtime
+                and any(value is None for value in config_minutes)):
+            runtime_available = None
         checks = {
-            'capacityWatts': _check(required_w * (1 + headroom / 100), product['rating_w']),
-            'capacityVa': _check(required_va * (1 + headroom / 100), product['rating_va']),
-            'outlets': _check(outlets, product['outlet_count']),
-            'runtime': _check(runtime, minutes, runtime_reason),
+            'capacityWatts': _check(required_w * (1 + headroom / 100), rating_w, 'capacity_not_verified'),
+            'capacityVa': _check(required_va * (1 + headroom / 100), rating_va, 'capacity_not_verified'),
+            'outlets': _check(outlets, backed_outlets, 'battery_backup_outlets_unknown'),
+            'runtime': _check(runtime, runtime_available, runtime_reason),
         }
         checks['capacityWatts']['enabled'] = required_w > 0
         checks['capacityVa']['enabled'] = required_va > 0
@@ -161,6 +213,8 @@ def search_catalog_from_connection(connection, request, curve_catalog=None):
         active = [v for v in checks.values() if v['enabled']]
         failures = [v for v in active if v['status'] == 'fail']
         unknowns = [v for v in active if v['status'] == 'unknown']
+        if not identity_verified:
+            unknowns.append({'status': 'unknown', 'reason': 'identity_unverified'})
         deficits = [v['shortfall'] / v['required'] * 100 for v in failures]
         status = 'unknown' if unknowns else 'nearby' if failures else 'matches'
         coverage[status] += 1
@@ -169,25 +223,50 @@ def search_catalog_from_connection(connection, request, curve_catalog=None):
         if mode == 'nearby' and (unknowns and not include_unknown or any(d > tolerance + 1e-9 for d in deficits)):
             continue
         warnings = []
+        if not identity_verified:
+            warnings.append('Product identity has not been verified against a manufacturer SKU.')
         if unknowns:
             warnings.append('Required technical evidence is unknown; this model is not a verified match.')
         if failures:
             warnings.append('One or more requirements fail; review the explicit shortfalls.')
-        if minutes is None and runtime > 0:
+        if len(curves) > 1:
+            warnings.append('Runtime depends on the selected battery configuration.')
+        if runtime_available is None and runtime > 0:
             warnings.append('Runtime was not extrapolated beyond source curve points.')
         row = {
             'productId': product['id'], 'manufacturer': product['manufacturer'],
             'model': product['model'], 'sku': product['sku'],
+            'identityVerified': identity_verified,
             'ratings': {'watts': product['rating_w'], 'va': product['rating_va']},
+            'ratingsVerified': {'watts': rating_w is not None, 'va': rating_va is not None},
+            'technicalEvidence': {
+                'identity': _public_evidence(product, product.get('identity_source')) if identity_verified else None,
+                'ratingWatts': _public_evidence(product, product.get('rating_w_source')) if rating_w is not None else None,
+                'ratingVa': _public_evidence(product, product.get('rating_va_source')) if rating_va is not None else None,
+                'identityCrosswalk': _public_crosswalk(product),
+            },
             'outletCount': product['outlet_count'],
+            'batteryBackupOutletCount': backed_outlets,
+            'outletGroups': _verified_outlet_groups(product),
+            'lifecycleObservations': [
+                observation for value in (product.get('lifecycle_observations') or [])
+                if (observation := _lifecycle_observation(value, product.get('manufacturer')))
+            ] if isinstance(product.get('manufacturer'), str) else [],
+            'batteryConfigurations': [{
+                'id': item['configurationId'], 'label': item['batteryConfiguration'],
+                'includedPacks': item['includedPacks'], 'extraPacks': item['extraPacks'],
+                'runtimeMinutes': None if value is None else round(value, 4),
+                'source': item['source'],
+            } for item, value in zip(curves, config_minutes)],
             'runtimeMinutes': None if minutes is None else round(minutes, 4),
             'runtimeLoadRangeWatts': None if not curve else {
                 'minimum': min(p['loadW'] for p in curve['points']),
                 'maximum': max(p['loadW'] for p in curve['points'])},
             'status': status, 'checks': checks, 'warnings': warnings,
-            'hasSourceConflicts': any('conflict' in warning.casefold() or 'disagree' in warning.casefold()
-                                      for warning in product.get('warnings', [])),
-            'price': price, 'priceUnavailableReason': None if price else price_basis[1],
+            'hasSourceConflicts': bool(product.get('manufacturer_conflicts') or product.get('original_source_ratings'))
+                or any(any(term in warning.casefold() for term in ('conflict', 'disagree', 'differ'))
+                       for warning in product.get('warnings', [])),
+            'price': price, 'priceUnavailableReason': None if price else price_reason,
             'canOptimize': can_optimize,
             'expansion': {'supported': product['external_battery_supported'],
                           'maxBatteryPacks': product['max_external_battery_packs']},

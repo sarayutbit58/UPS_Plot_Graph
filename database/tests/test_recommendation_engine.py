@@ -5,9 +5,30 @@ from pathlib import Path
 import sqlite3
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from recommendation_engine import RecommendationInputError, recommend_from_connection
+from verified_evidence import MANUFACTURER_DOMAINS
+from verified_fixture import verified_curve
+
+
+def add_model_only_alias(connection, manufacturer_id, source_file_id):
+    """Add an intentionally unresolved bundle/alias only in the targeted tests."""
+    alias_id = connection.execute('''INSERT INTO products
+        (manufacturer_id,identity_key,model,sku,product_type) VALUES (?,?,?,?,?)''',
+        (manufacturer_id, 'model-only-alias:UPS-1', 'UPS-1', None, 'UPS')).lastrowid
+    alias_raw = {'manufacturer': 'Test Vendor', 'model': 'UPS-1', 'product_type': 'UPS',
+                 'source_path': 'SYNTHETIC/catalog.xlsx', 'source_locator': 'sheet:Alias;row:1'}
+    alias_source = connection.execute('''INSERT INTO product_sources
+        (product_id,source_file_id,source_locator,raw_text,raw_json) VALUES (?,?,?,?,?)''',
+        (alias_id, source_file_id, alias_raw['source_locator'], 'model-only alias',
+         json.dumps(alias_raw, ensure_ascii=False))).lastrowid
+    connection.execute('''INSERT INTO product_specifications
+        (product_source_id,rating_va,rating_w,topology,form_factor) VALUES (?,?,?,?,?)''',
+        (alias_source, 900, 700, 'line-interactive', 'tower'))
+    return alias_id
 
 
 def seed_catalog(connection):
@@ -91,25 +112,21 @@ def seed_catalog(connection):
     connection.execute('''INSERT INTO price_offers
         (product_source_id,amount_decimal,currency,vat_treatment,price_type)
         VALUES (?,?,?,?,?)''', (total_source, '2', None, 'unknown', 'source-marked'))
-    alias_id = connection.execute('''INSERT INTO products
-        (manufacturer_id,identity_key,model,sku,product_type) VALUES (?,?,?,?,?)''',
-        (manufacturer_id, 'model-only-alias:UPS-1', 'UPS-1', None, 'UPS')).lastrowid
-    alias_raw = {'manufacturer': 'Test Vendor', 'model': 'UPS-1', 'product_type': 'UPS',
-                 'source_path': 'SYNTHETIC/catalog.xlsx', 'source_locator': 'sheet:Alias;row:1'}
-    alias_source = connection.execute('''INSERT INTO product_sources
-        (product_id,source_file_id,source_locator,raw_text,raw_json) VALUES (?,?,?,?,?)''',
-        (alias_id, source_file_id, alias_raw['source_locator'], 'model-only alias',
-         json.dumps(alias_raw, ensure_ascii=False))).lastrowid
-    connection.execute('''INSERT INTO product_specifications
-        (product_source_id,rating_va,rating_w,topology,form_factor) VALUES (?,?,?,?,?)''',
-        (alias_source, 900, 700, 'line-interactive', 'tower'))
     return {'products': products, 'manufacturer_id': manufacturer_id, 'source_file_id': source_file_id}
 
 
 class RecommendationEngineTests(unittest.TestCase):
     def setUp(self):
+        domains = patch.dict(MANUFACTURER_DOMAINS, {'test vendor': ('vendor.example',)})
+        domains.start()
+        self.addCleanup(domains.stop)
         self.connection = sqlite3.connect(':memory:', isolation_level=None)
         self.catalog = seed_catalog(self.connection)
+        self.curves = [verified_curve(
+            f'UPS-{index + 1}', 700 + 100 * index, 900 + 100 * index, 4 + index,
+            [{'loadW': (700 + 100 * index) / 2, 'runtimeMinutes': 14 + index},
+             {'loadW': 700 + 100 * index, 'runtimeMinutes': 6 + index}],
+        ) for index in range(6)]
 
     def tearDown(self):
         self.connection.close()
@@ -123,8 +140,57 @@ class RecommendationEngineTests(unittest.TestCase):
         value.update(updates)
         return value
 
+    def recommend(self, request, curves=None):
+        return recommend_from_connection(self.connection, request,
+            curve_catalog=self.curves if curves is None else curves)
+
+    def test_recommendation_does_not_certify_legacy_runtime_without_battery_setup(self):
+        curve = {'manufacturer': 'Test Vendor', 'model': 'UPS-1', 'sku': 'UPS-1',
+                 'identityVerified': True,
+                 'ratingWattsVerified': True, 'ratedWatts': 700,
+                 'ratingVaVerified': True, 'ratedVa': 900,
+                 'points': [{'loadW': 100, 'runtimeMinutes': 30},
+                            {'loadW': 700, 'runtimeMinutes': 10}],
+                 'outletGroups': [{'type': 'IEC_C13', 'power': 'battery', 'count': 4}],
+                 'source': {'url': 'https://vendor.example/ups-1.pdf'}}
+        result = recommend_from_connection(self.connection, self.request(), curve_catalog=[curve])
+        candidate = next(row for row in result['recommendations'] if row['model'] == 'UPS-1')
+        self.assertEqual('unknown', candidate['runtimeStatus'])
+        self.assertIsNone(candidate['estimatedRuntimeMinutes'])
+
+    def test_unverified_models_do_not_appear_as_recommendations(self):
+        result = recommend_from_connection(self.connection, self.request(), curve_catalog=[])
+        self.assertEqual([], result['recommendations'])
+
+    def test_recommendation_does_not_use_unverified_legacy_capacity(self):
+        curve = {'manufacturer': 'Test Vendor', 'model': 'UPS-1', 'sku': 'UPS-1',
+                 'identityVerified': True,
+                 'points': [{'loadW': 100, 'runtimeMinutes': 30}, {'loadW': 700, 'runtimeMinutes': 10}],
+                 'source': {'url': 'https://vendor.example/ups-1.pdf'}}
+        result = recommend_from_connection(self.connection, self.request(), curve_catalog=[curve])
+        self.assertEqual([], result['recommendations'])
+
+    def test_recommendation_does_not_rank_base_price_as_total_with_extra_battery(self):
+        self.connection.execute("UPDATE price_offers SET currency='THB'")
+        curve = {'manufacturer': 'Test Vendor', 'model': 'UPS-1', 'sku': 'UPS-1',
+                 'identityVerified': True, 'ratingWattsVerified': True, 'ratedWatts': 700,
+                 'ratingVaVerified': True, 'ratedVa': 900,
+                 'points': [{'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+                 'outletGroups': [{'type': 'IEC_C13', 'power': 'battery',
+                                   'manufacturer_verified': True, 'count': 4}],
+                 'batteryConfigurations': [{
+                     'id': 'plus-one', 'label': 'One extra battery', 'manufacturer_verified': True,
+                     'points': [{'loadW': 1, 'runtimeMinutes': 60},
+                                {'loadW': 700, 'runtimeMinutes': 20}],
+                     'includedPacks': [], 'extraPacks': [{'sku': 'EBM-1', 'quantity': 1}],
+                 }], 'source': {'url': 'https://vendor.example/ups-1.pdf'}}
+        result = recommend_from_connection(self.connection, self.request(), curve_catalog=[curve])
+        candidate = next(row for row in result['recommendations'] if row['model'] == 'UPS-1')
+        self.assertIsNone(candidate['scores']['price'])
+        self.assertTrue(any('battery' in warning.casefold() for warning in candidate['warnings']))
+
     def test_returns_top_five_explainable_recommendations_and_preserves_provenance(self):
-        result = recommend_from_connection(self.connection, self.request())
+        result = self.recommend(self.request())
         self.assertEqual(5, len(result['recommendations']))
         self.assertEqual(6, result['eligibleProductCount'])
         first = result['recommendations'][0]
@@ -137,9 +203,15 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(2, result['load']['requiredOutlets'])
         self.assertTrue(first['technicalEvidence']['ratingVa'])
         self.assertTrue(first['technicalEvidence']['runtimeCurve'])
+        for field in ('ratingVa', 'ratingWatts', 'outlets', 'runtimeCurve'):
+            with self.subTest(field=field):
+                self.assertTrue(first['technicalEvidence'][field])
+                self.assertTrue(all(source['url'].startswith('https://vendor.example/')
+                                    for source in first['technicalEvidence'][field]))
+                self.assertNotIn('synthetic/', json.dumps(first['technicalEvidence'][field]).casefold())
 
     def test_does_not_treat_warranty_upgrade_price_as_ups_reseller_cost(self):
-        result = recommend_from_connection(self.connection, self.request())
+        result = self.recommend(self.request())
         candidate = next(row for row in result['recommendations'] if row['model'] == 'UPS-1')
         self.assertEqual('9000', candidate['estimatedResellerCost']['amount'])
         self.assertNotIn('Warranty upgrade', candidate['estimatedResellerCost']['source']['locator'])
@@ -147,17 +219,20 @@ class RecommendationEngineTests(unittest.TestCase):
 
     def test_price_efficiency_is_scored_only_when_currency_is_comparable(self):
         self.connection.execute("UPDATE price_offers SET currency='THB'")
-        result = recommend_from_connection(self.connection, self.request())
+        result = self.recommend(self.request())
         self.assertTrue(all(row['scores']['price'] is not None for row in result['recommendations']))
         self.assertEqual('THB', result['recommendations'][0]['estimatedResellerCost']['currency'])
 
-    def test_exact_model_to_manufacturer_sku_alias_is_not_recommended_twice(self):
-        result = recommend_from_connection(self.connection, self.request())
-        self.assertEqual(1, sum(row['model'] == 'UPS-1' for row in result['recommendations']))
-        self.assertEqual(6, result['eligibleProductCount'])
+    def test_model_only_alias_is_not_recommended_until_bundle_identity_is_confirmed(self):
+        add_model_only_alias(self.connection, self.catalog['manufacturer_id'],
+                             self.catalog['source_file_id'])
+        result = self.recommend(self.request())
+        self.assertNotIn('UPS-1', [row['model'] for row in result['recommendations']])
+        self.assertEqual(5, result['eligibleProductCount'])
+        self.assertGreaterEqual(result['excludedProductCount']['unverifiedIdentity'], 1)
 
     def test_aggregates_quantity_and_converts_missing_units_using_power_factor(self):
-        result = recommend_from_connection(self.connection, self.request(devices=[
+        result = self.recommend(self.request(devices=[
             {'name': 'Server', 'quantity': 2, 'watt': 100},
             {'name': 'Router', 'quantity': 1, 'va': 200},
         ]))
@@ -166,7 +241,7 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(3, result['load']['requiredOutlets'])
 
     def test_uses_both_va_and_watt_margin_and_excludes_under_capacity_products(self):
-        result = recommend_from_connection(self.connection, self.request())
+        result = self.recommend(self.request())
         self.assertNotIn('UPS-TOO-SMALL', [row['model'] for row in result['recommendations']])
         for row in result['recommendations']:
             self.assertGreaterEqual(row['engineeringMargin']['wattsPercent'], 20)
@@ -200,7 +275,7 @@ class RecommendationEngineTests(unittest.TestCase):
         self.connection.execute('''INSERT INTO price_offers
             (product_source_id,amount_decimal,currency,vat_treatment,price_type)
             VALUES (?,?,?,?,?)''', (price_source, '32530', None, 'exclusive', 'source-marked'))
-        result = recommend_from_connection(self.connection, self.request(devices=[
+        result = self.recommend(self.request(devices=[
             {'name': 'Large load', 'quantity': 1, 'watt': 4000, 'va': 5000},
         ]))
         self.assertNotIn('SRV6KIL', [row['model'] for row in result['recommendations']])
@@ -218,7 +293,12 @@ class RecommendationEngineTests(unittest.TestCase):
              json.dumps({'manufacturer': 'APC', 'model': 'SRV6KIL-BUNDLE'}))).lastrowid
         self.connection.execute('''INSERT INTO product_specifications
             (product_source_id,rating_va,rating_w) VALUES (?,?,?)''', (source_id, 6000, 6000))
-        result = recommend_from_connection(self.connection, self.request())
+        bundle = verified_curve('SRV6KIL-BUNDLE', 6000, 6000, 4,
+                                [{'loadW': 1, 'runtimeMinutes': 60},
+                                 {'loadW': 6000, 'runtimeMinutes': 20}])
+        bundle['batteryConfigurations'][0]['label'] = 'Synthetic bundle with included battery pack'
+        bundle['batteryConfigurations'][0]['includedPacks'] = [{'sku': 'EBM-1', 'quantity': 1}]
+        result = self.recommend(self.request(), curves=self.curves + [bundle])
         self.assertEqual(7, result['eligibleProductCount'])
         self.assertEqual(0, result['excludedProductCount']['nonUpsAccessory'])
 
@@ -230,17 +310,17 @@ class RecommendationEngineTests(unittest.TestCase):
             ]))
 
     def test_runtime_uses_curve_interpolation_and_never_extrapolates(self):
-        result = recommend_from_connection(self.connection, self.request(
+        result = self.recommend(self.request(
             devices=[{'name': 'Load', 'quantity': 1, 'watt': 600, 'va': 750}],
             runtimeRequirementMinutes=30,
         ))
         row = next(item for item in result['recommendations'] if item['model'] == 'UPS-2')
         self.assertEqual(11, row['estimatedRuntimeMinutes'])
         self.assertEqual('below_runtime_requirement', row['runtimeStatus'])
-        self.assertTrue(row['runtimeCurve']['source']['locator'].startswith('sheet:UPS;row:'))
+        self.assertEqual('https://vendor.example/ups-2.pdf', row['runtimeCurve']['source']['url'])
 
     def test_runtime_is_unknown_below_the_lowest_published_curve_load(self):
-        result = recommend_from_connection(self.connection, self.request(
+        result = self.recommend(self.request(
             devices=[{'name': 'Small load', 'quantity': 1, 'watt': 100, 'va': 125}],
         ))
         self.assertEqual(5, len(result['recommendations']))
@@ -248,16 +328,15 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertTrue(all(row['runtimeStatus'] == 'unknown' for row in result['recommendations']))
 
     def test_exact_manufacturer_curve_overrides_local_two_point_curve(self):
-        official_curve = [{
-            'manufacturer': 'Test Vendor', 'model': 'UPS-1', 'sku': 'UPS-1',
-            'points': [
-                {'loadW': 200, 'runtimeMinutes': 40},
-                {'loadW': 500, 'runtimeMinutes': 10},
-                {'loadW': 700, 'runtimeMinutes': 6},
-            ],
-            'outletCount': 8,
-            'source': {'url': 'https://vendor.example/runtime.pdf', 'publicationYear': 2026},
-        }]
+        official = verified_curve('UPS-1', 700, 900, 8, [
+            {'loadW': 200, 'runtimeMinutes': 40},
+            {'loadW': 500, 'runtimeMinutes': 10},
+            {'loadW': 700, 'runtimeMinutes': 6},
+        ])
+        official['source'] = {'url': 'https://vendor.example/runtime.pdf', 'publicationYear': 2026}
+        official['outletGroups'][0]['source'] = official['source']
+        official['batteryConfigurations'][0]['source'] = official['source']
+        official_curve = [official]
         result = recommend_from_connection(self.connection, self.request(), curve_catalog=official_curve)
         row = next(item for item in result['recommendations'] if item['model'] == 'UPS-1')
         self.assertEqual(20, row['estimatedRuntimeMinutes'])
@@ -265,15 +344,17 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual('https://vendor.example/runtime.pdf', row['runtimeCurve']['source']['url'])
 
     def test_manufacturer_curve_is_not_matched_by_model_when_sku_conflicts(self):
-        wrong_sku_curve = [{
-            'manufacturer': 'Test Vendor', 'model': 'UPS-1', 'sku': 'OTHER-SKU',
-            'points': [{'loadW': 200, 'runtimeMinutes': 40}, {'loadW': 700, 'runtimeMinutes': 6}],
-            'source': {'url': 'https://vendor.example/wrong-model.pdf'},
-        }]
-        result = recommend_from_connection(self.connection, self.request(), curve_catalog=wrong_sku_curve)
+        wrong = verified_curve('UPS-1', 700, 900, 4,
+                               [{'loadW': 200, 'runtimeMinutes': 40},
+                                {'loadW': 700, 'runtimeMinutes': 6}])
+        wrong['sku'] = 'OTHER-SKU'
+        valid_identity_without_runtime = {**self.curves[0], 'batteryConfigurations': []}
+        result = recommend_from_connection(self.connection, self.request(),
+                                           curve_catalog=[wrong, valid_identity_without_runtime])
         row = next(item for item in result['recommendations'] if item['model'] == 'UPS-1')
-        self.assertEqual(12.86, row['estimatedRuntimeMinutes'])
-        self.assertFalse(row['runtimeCurve']['source'].get('url'))
+        self.assertIsNone(row['estimatedRuntimeMinutes'])
+        self.assertEqual('unknown', row['runtimeStatus'])
+        self.assertIsNone(row['runtimeCurve'])
 
     def test_marks_runtime_and_outlet_unknown_when_source_evidence_is_missing(self):
         # A candidate with no curve or outlet evidence remains explicit about the gap.
@@ -291,9 +372,15 @@ class RecommendationEngineTests(unittest.TestCase):
         self.connection.execute('''INSERT INTO price_offers
             (product_source_id,amount_decimal,currency,vat_treatment,price_type)
             VALUES (?,?,?,?,?)''', (source_id, '50000', None, 'exclusive', 'source-marked'))
-        result = recommend_from_connection(self.connection, self.request(devices=[
+        no_runtime_or_outlets = verified_curve('UPS-NO-EVIDENCE', 4000, 5000, 4,
+                                              [{'loadW': 1, 'runtimeMinutes': 60},
+                                               {'loadW': 4000, 'runtimeMinutes': 20}])
+        no_runtime_or_outlets.pop('batteryConfigurations')
+        no_runtime_or_outlets.pop('outletGroups')
+        no_runtime_or_outlets.pop('outletCount')
+        result = self.recommend(self.request(devices=[
             {'name': 'Large load', 'quantity': 1, 'watt': 3200, 'va': 4000},
-        ]))
+        ]), curves=[no_runtime_or_outlets])
         row = next(item for item in result['recommendations'] if item['model'] == 'UPS-NO-EVIDENCE')
         self.assertIsNone(row['estimatedRuntimeMinutes'])
         self.assertEqual('unknown', row['runtimeStatus'])

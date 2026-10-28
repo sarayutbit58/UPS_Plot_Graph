@@ -1,8 +1,11 @@
 (function (root, factory) {
-    const api = factory();
+    const calculations = root && root.UPScalculations
+        ? root.UPScalculations
+        : typeof module === 'object' && module.exports ? require('./calculations.js') : null;
+    const api = factory(calculations);
     if (typeof module === 'object' && module.exports) module.exports = api;
     if (root) root.UPSOptimization = api;
-}(typeof globalThis === 'undefined' ? this : globalThis, function () {
+}(typeof globalThis === 'undefined' ? this : globalThis, function (calculations) {
     'use strict';
 
     const MAX_DEVICE_INSTANCES = 10_000;
@@ -33,8 +36,12 @@
             if (!Number.isFinite(load) || load < 0) throw new Error(`ตรวจสอบกำลังไฟของอุปกรณ์ลำดับ ${index + 1}`);
             const quantity = row.quantity === undefined ? 1 : Number(row.quantity);
             if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error(`ตรวจสอบจำนวนอุปกรณ์ของลำดับ ${index + 1}`);
-            const plugs = Number(row.plugs || 1);
+            const plugValue = row.plugs === undefined ? 1 : row.plugs;
+            const plugs = (typeof plugValue === 'number'
+                || (typeof plugValue === 'string' && plugValue.trim() !== ''))
+                ? Number(plugValue) : NaN;
             if (!Number.isSafeInteger(plugs) || plugs < 1) throw new Error(`ตรวจสอบจำนวนปลั๊กของอุปกรณ์ลำดับ ${index + 1}`);
+            const plugGroups = calculations.normalizePlugGroups(row.plugGroups, plugs);
             const outletQuantity = quantity * plugs;
             if (!Number.isSafeInteger(outletQuantity)
                 || totalOutletInstances + outletQuantity > MAX_DEVICE_INSTANCES) {
@@ -44,7 +51,8 @@
             if (load === 0) {
                 devices.push({
                     name: String(row.name || `อุปกรณ์ ${index + 1}`).trim().slice(0, 160) || `อุปกรณ์ ${index + 1}`,
-                    quantity: outletQuantity, watt: 0, va: 0, priority: 50,
+                    quantity, watt: 0, va: 0, priority: 50,
+                    plugs: plugGroups,
                 });
                 return;
             }
@@ -53,14 +61,51 @@
             const va = unit === 'VA' ? load : load / 0.8;
             devices.push({
                 name: String(row.name || `อุปกรณ์ ${index + 1}`).trim().slice(0, 160) || `อุปกรณ์ ${index + 1}`,
-                quantity: outletQuantity,
-                watt: roundSix(watts / plugs * scale),
-                va: roundSix(va / plugs * scale),
+                quantity,
+                watt: roundSix(watts * scale),
+                va: roundSix(va * scale),
                 priority: 50,
+                plugs: plugGroups,
             });
         });
         if (!devices.length) throw new Error('Forecast อย่างเดียวจัด outlet ไม่ได้ กรุณาเพิ่มโหลดอุปกรณ์ที่ระบุจำนวนปลั๊ก');
         return { runtimeRequirementMinutes: runtime, devices };
+    }
+
+    function buildFixedRequest(baseRequest, selectedModels) {
+        if (!baseRequest || !Array.isArray(baseRequest.devices) || !baseRequest.devices.length
+                || !Number.isFinite(Number(baseRequest.runtimeRequirementMinutes))
+                || Number(baseRequest.runtimeRequirementMinutes) <= 0) {
+            throw new Error('ตรวจสอบโหลดอุปกรณ์และ Runtime ก่อนจัดสรร');
+        }
+        if (!Array.isArray(selectedModels) || !selectedModels.length) {
+            throw new Error('เลือกรุ่น UPS และชุดแบตเตอรี่อย่างน้อยหนึ่งรายการ');
+        }
+        if (selectedModels.length > 20) throw new Error('เลือกได้สูงสุด 20 ชุดรุ่นและแบตเตอรี่');
+        const seen = new Set();
+        let total = 0;
+        const models = selectedModels.map(item => {
+            if (!item || !Number.isSafeInteger(item.productId) || item.productId < 1 || item.productId > 2147483647) {
+                throw new Error('รหัสรุ่น UPS ไม่ถูกต้อง');
+            }
+            if (typeof item.batteryConfigId !== 'string' || !/^[A-Za-z0-9_.:-]{1,80}$/.test(item.batteryConfigId)) {
+                throw new Error('เลือกชุดแบตเตอรี่ที่ยืนยันแล้วสำหรับทุกรุ่น');
+            }
+            const key = JSON.stringify([item.productId, item.batteryConfigId]);
+            if (seen.has(key)) throw new Error('มีรุ่นและชุดแบตเตอรี่ซ้ำ กรุณาตรวจสอบรายการ');
+            seen.add(key);
+            const value = item.quantity;
+            const integerText = typeof value === 'string' && /^\d+$/.test(value.trim());
+            const quantity = typeof value === 'number' || integerText ? Number(value) : NaN;
+            if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 500) {
+                throw new Error('จำนวน UPS ต้องเป็นจำนวนเต็มตั้งแต่ 1 ถึง 500 เครื่อง');
+            }
+            total += quantity;
+            return { productId: item.productId, batteryConfigId: item.batteryConfigId, quantity };
+        });
+        if (total > 500) throw new Error('จำนวน UPS รวมต้องไม่เกิน 500 เครื่อง');
+        return { selectedUps: { mode: 'fixed', models },
+            runtimeRequirementMinutes: Number(baseRequest.runtimeRequirementMinutes), devices: baseRequest.devices };
     }
 
     async function optimize(request) {
@@ -83,6 +128,30 @@
         return payload;
     }
 
+    async function allocate(request) {
+        if (typeof fetch !== 'function') throw new Error('เบราว์เซอร์นี้ไม่รองรับการเชื่อมต่อกับบริการจัดสรร');
+        let response;
+        try {
+            response = await fetch('/api/allocations', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+            });
+        } catch (_) {
+            throw new Error('เชื่อมต่อบริการจัดสรรไม่ได้ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่');
+        }
+        if (response.status === 401) throw new Error('กรุณาเข้าสู่ระบบเว็บนี้ก่อนคำนวณการจัดสรร');
+        if (response.status === 404) throw new Error('เว็บนี้ยังไม่ได้เชื่อมบริการจัดสรร กรุณาเปิด URL ของบริการที่เชื่อม Turso');
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload && typeof payload.error === 'string'
+            ? payload.error : `บริการจัดสรรตอบกลับ HTTP ${response.status}`);
+        if (!payload || !payload.validation || !Array.isArray(payload.deviceAllocations)
+                || !Array.isArray(payload.unassignedDevices) || !Array.isArray(payload.upsUtilization)
+                || !Array.isArray(payload.outletAllocations)) {
+            throw new Error('ข้อมูลผลจัดสรรไม่ครบ กรุณาลองใหม่');
+        }
+        return payload;
+    }
+
     function element(tag, className, text) {
         const node = document.createElement(tag);
         if (className) node.className = className;
@@ -91,7 +160,10 @@
     }
 
     function modelMixText(models) {
-        return (models || []).map(model => `${model.manufacturer || ''} ${model.model || 'UPS'} × ${model.quantity}`.trim()).join(' · ');
+        return (models || []).map(model => {
+            const battery = model.batteryConfiguration ? ` · ${model.batteryConfiguration}` : '';
+            return `${model.manufacturer || ''} ${model.model || 'UPS'}${battery} × ${model.quantity}`.trim();
+        }).join(' · ');
     }
 
     function showNumber(value, digits = 2) {
@@ -143,6 +215,12 @@
             metrics.appendChild(metric);
         });
         card.appendChild(metrics);
+        const connectorStatus = solution.validation && solution.validation.connectorStatus;
+        if (connectorStatus === 'not_checked' || connectorStatus === 'partial') {
+            card.appendChild(element('p', 'mt-3 text-sm text-amber-800', connectorStatus === 'partial'
+                ? 'ตรวจชนิดหัวปลั๊กบางส่วนแล้ว แต่ยังมีปลั๊กที่ไม่ได้ระบุชนิด'
+                : 'ยังไม่ได้ตรวจชนิดหัวปลั๊ก กรุณาตรวจความเข้ากันได้ก่อนใช้งาน'));
+        }
         if (!compact) {
             const units = element('div', 'mt-4 space-y-2');
             (solution.units || []).forEach(unit => {
@@ -175,7 +253,9 @@
         const excluded = result.selectionDiagnostics && result.selectionDiagnostics.excludedModels || [];
         if (excluded.length) {
             const reasons = { not_an_available_ups: 'ไม่พบรุ่น UPS ในฐานข้อมูล', watt_capacity_unknown: 'ไม่ทราบ W',
-                va_capacity_unknown: 'ไม่ทราบ VA', outlet_unknown: 'ไม่ทราบเต้ารับ', runtime_unknown: 'ไม่มีกราฟ Runtime' };
+                va_capacity_unknown: 'ไม่ทราบ VA', outlet_unknown: 'ไม่ทราบช่อง Battery Backup',
+                outlet_capacity: 'ไม่มีช่องสำรองไฟที่ใช้ได้', identity_unverified: 'ยังไม่ยืนยันรหัสรุ่น',
+                battery_configuration_required: 'เลือกชุดแบตเตอรี่ก่อน', runtime_unknown: 'ไม่มีกราฟ Runtime ที่ยืนยัน' };
             target.appendChild(element('p', 'bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800',
                 'รุ่นที่เลือกยังใช้จัดสรรไม่ได้: ' + excluded.map(item => '#' + item.productId + ' (' +
                     item.reasons.map(reason => reasons[reason] || reason).join(', ') + ')').join(' · ')));
@@ -221,5 +301,106 @@
         target.appendChild(alternatives);
     }
 
-    return { buildRequest, optimize, render };
+    function renderAllocation(target, result, selections = []) {
+        target.replaceChildren();
+        const assigned = Array.isArray(result.deviceAllocations) ? result.deviceAllocations : [];
+        const unassigned = Array.isArray(result.unassignedDevices) ? result.unassignedDevices : [];
+        const units = Array.isArray(result.upsUtilization) ? result.upsUtilization : [];
+        const outletAllocations = Array.isArray(result.outletAllocations) ? result.outletAllocations : [];
+        const validation = result.validation || {};
+        const unassignedCount = unassigned.reduce((sum, row) => sum
+            + (Number.isSafeInteger(row.quantity) && row.quantity > 0 ? row.quantity : 0), 0);
+        const summary = element('section', validation.isValid === true
+            ? 'bg-green-50 border border-green-200 rounded-xl p-4'
+            : 'bg-amber-50 border border-amber-200 rounded-xl p-4');
+        summary.appendChild(element('h3', 'font-bold text-slate-800', validation.isValid === true
+            ? 'จัดสรรครบตามจำนวน UPS ที่มี' : 'ยังจัดสรรไม่ครบหรือมีเงื่อนไขไม่ผ่าน'));
+        summary.appendChild(element('p', 'text-sm text-slate-700 mt-1',
+            `จัดได้ ${assigned.length} อุปกรณ์ · ยังจัดไม่ได้ ${unassignedCount} อุปกรณ์ · ต้องการ Runtime ${showNumber(result.runtimeRequirementMinutes)} นาที`));
+        const connectorLabels = { verified: 'ตรวจชนิดหัวปลั๊กครบตามข้อมูลที่ระบุ',
+            partial: 'ตรวจชนิดหัวปลั๊กบางส่วนแล้ว แต่ยังมีปลั๊กที่ไม่ได้ระบุชนิด',
+            not_checked: 'ยังไม่ได้ตรวจชนิดหัวปลั๊ก กรุณาตรวจความเข้ากันได้ก่อนใช้งาน',
+            not_verified: 'ยังยืนยันความเข้ากันได้ของชนิดหัวปลั๊กไม่ได้' };
+        summary.appendChild(element('p', 'text-sm text-slate-700 mt-2',
+            connectorLabels[validation.connectorStatus] || 'ยังไม่ทราบสถานะการตรวจชนิดหัวปลั๊ก'));
+        if (validation.searchComplete === false || result.searchComplete === false) {
+            summary.appendChild(element('p', 'text-sm text-amber-800 mt-2',
+                'ระบบค้นหาได้ไม่ครบทุกแบบ ผลนี้ยังยืนยันไม่ได้ว่าไม่มีวิธีจัดสรรที่ผ่าน'));
+        }
+        if (outletAllocations.length) {
+            const checked = outletAllocations.filter(outlet => outlet.compatibilityStatus === 'verified').length;
+            const unchecked = outletAllocations.filter(outlet => outlet.compatibilityStatus === 'not_checked').length;
+            summary.appendChild(element('p', 'text-xs text-slate-600 mt-1',
+                `หัวปลั๊กที่ตรวจแล้ว ${checked} · ยังไม่ระบุชนิด ${unchecked}`));
+        }
+        target.appendChild(summary);
+
+        const grouped = new Map();
+        assigned.forEach((row, index) => {
+            const deviceIndex = Number.isSafeInteger(row.deviceIndex) ? row.deviceIndex : index;
+            const name = String(row.name || 'อุปกรณ์ไม่ระบุชื่อ');
+            const key = JSON.stringify([deviceIndex, name]);
+            if (!grouped.has(key)) grouped.set(key, { name, count: 0, units: new Map() });
+            const group = grouped.get(key);
+            group.count++;
+            const unitId = String(row.upsUnitId || 'UPS ไม่ทราบ');
+            group.units.set(unitId, (group.units.get(unitId) || 0) + 1);
+        });
+        const assignedSection = element('section', 'bg-white border border-slate-200 rounded-xl p-4');
+        assignedSection.appendChild(element('h4', 'font-bold text-slate-800', 'อุปกรณ์ที่จัดได้'));
+        if (grouped.size) {
+            const list = element('ul', 'mt-2 space-y-1 text-sm text-slate-700');
+            grouped.forEach(group => list.appendChild(element('li', '', `${group.name} × ${group.count} · `
+                + Array.from(group.units, ([id, count]) => `${id} × ${count}`).join(', '))));
+            assignedSection.appendChild(list);
+        } else assignedSection.appendChild(element('p', 'text-sm text-slate-600 mt-2', 'ยังไม่มีอุปกรณ์ที่จัดได้'));
+        target.appendChild(assignedSection);
+
+        const reasons = { identity_unverified: 'ยังไม่ยืนยันรหัสรุ่น UPS',
+            watt_capacity_unknown: 'ไม่ทราบกำลัง W', va_capacity_unknown: 'ไม่ทราบกำลัง VA',
+            watt_overload: 'โหลด W เกินกำลัง UPS', va_overload: 'โหลด VA เกินกำลัง UPS',
+            watt_capacity: 'กำลัง W ไม่พอเมื่อเผื่อ 20%', va_capacity: 'กำลัง VA ไม่พอเมื่อเผื่อ 20%',
+            outlet_unknown: 'ยังไม่ทราบช่อง Battery Backup', outlet_capacity: 'ช่อง Battery Backup ไม่พอ',
+            connector_unknown: 'ยังไม่ยืนยันชนิดหัวปลั๊กกับเต้ารับ', connector_mismatch: 'ชนิดหัวปลั๊กไม่ตรงกับเต้ารับ',
+            runtime_unknown: 'ไม่ทราบ Runtime ในช่วงโหลดนี้', runtime_insufficient: 'Runtime ต่ำกว่าเวลาที่ต้องการ',
+            unit_limit_reached: 'ถึงขีดจำกัดจำนวน UPS', no_usable_selected_ups: 'ไม่มี UPS ที่เลือกซึ่งจัดสรรได้' };
+        const missing = element('section', 'bg-white border border-slate-200 rounded-xl p-4');
+        missing.appendChild(element('h4', 'font-bold text-slate-800', 'อุปกรณ์ที่ยังจัดไม่ได้'));
+        if (unassigned.length) {
+            const list = element('ul', 'mt-2 space-y-2 text-sm text-amber-800');
+            unassigned.forEach(row => {
+                const details = (Array.isArray(row.reasons) ? row.reasons : [])
+                    .map(reason => reasons[reason] || String(reason)).join(', ') || 'ยังไม่ทราบสาเหตุ';
+                list.appendChild(element('li', '', `${row.name || 'อุปกรณ์'} × ${showNumber(row.quantity)} · ${details}`));
+            });
+            missing.appendChild(list);
+        } else missing.appendChild(element('p', 'text-sm text-slate-600 mt-2', 'ไม่มีอุปกรณ์ที่ตกค้าง'));
+        target.appendChild(missing);
+
+        const labels = new Map((Array.isArray(selections) ? selections : []).map(item =>
+            [JSON.stringify([item.productId, item.batteryConfigId]), item.label]));
+        const unitSection = element('section', 'space-y-2');
+        unitSection.appendChild(element('h4', 'font-bold text-slate-800', 'การใช้ UPS แต่ละเครื่อง'));
+        units.forEach(unit => {
+            const card = element('article', 'bg-white border border-slate-200 rounded-lg p-3');
+            const label = labels.get(JSON.stringify([unit.productId, unit.batteryConfigId]));
+            card.appendChild(element('p', 'font-semibold text-sm text-slate-800',
+                `${unit.upsUnitId || 'UPS'} · ${label || [unit.manufacturer, unit.model].filter(Boolean).join(' ') || 'รุ่นไม่ทราบ'}`));
+            const used = unit.usedLoad || {}, ratings = unit.ratings || {}, outlets = unit.outlets || {};
+            const available = outlets.available === null || outlets.available === undefined ? 'ไม่ทราบ' : showNumber(outlets.available);
+            card.appendChild(element('p', 'text-sm text-slate-600 mt-1',
+                `${showNumber(used.watts)} / ${showNumber(ratings.watts)} W · ${showNumber(used.va)} / ${showNumber(ratings.va)} VA · ช่อง ${showNumber(outlets.used)} / ${available}`));
+            const runtime = unit.runtimeStatus === 'unused' ? 'ยังไม่ใช้เครื่องนี้ · ไม่คำนวณ Runtime'
+                : unit.runtimeStatus === 'not_applicable_zero_load' ? 'Runtime ไม่เกี่ยวข้อง (โหลด 0 W)'
+                : unit.estimatedRuntimeMinutes === null || unit.estimatedRuntimeMinutes === undefined
+                    ? 'ไม่ทราบ Runtime' : `Runtime ${showNumber(unit.estimatedRuntimeMinutes)} นาที`;
+            card.appendChild(element('p', 'text-sm text-slate-600 mt-1', runtime));
+            addEvidenceList(card, unit.technicalEvidence);
+            unitSection.appendChild(card);
+        });
+        if (!units.length) unitSection.appendChild(element('p', 'text-sm text-slate-600', 'ไม่มี UPS ในผลจัดสรร'));
+        target.appendChild(unitSection);
+    }
+
+    return { buildRequest, buildFixedRequest, optimize, allocate, render, renderAllocation };
 }));

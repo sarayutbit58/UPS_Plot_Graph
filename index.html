@@ -724,13 +724,13 @@
                             <label class="flex items-center gap-2 min-h-[44px]"><input id="catalogIncludeUnknown" type="checkbox" checked class="w-5 h-5">แสดงรุ่นข้อมูลไม่ครบในโหมดใกล้เคียง</label>
                         </div>
                     </details>
-                    <p class="field-help mt-3">ตัวกรองใช้สำรวจรุ่นและแสดงข้อที่ไม่ผ่าน การจัดสรรอัตโนมัติยังต้องผ่านกำลังเผื่อ 20%, เต้ารับ และ Runtime ที่ยืนยันจากกราฟ</p>
+                    <p class="field-help mt-3">ตัวกรองใช้สำรวจรุ่นและจำนวนช่อง Battery Backup หากระบุชนิดหัวปลั๊ก ระบบจะตรวจชนิดหัวเพิ่มเติมตอนค้นหาแบบจัดสรร พร้อมตรวจเผื่อกำลัง 20% และ Runtime</p>
                     <div class="flex flex-wrap justify-between items-center gap-3 mt-4">
                         <p id="catalogStatus" class="field-help" role="status" aria-live="polite">กดค้นหาเพื่อดูรุ่นและเหตุผลที่ผ่านหรือไม่ผ่าน</p>
                         <button id="catalogSearchButton" type="button" onclick="searchCatalogModels(1)" class="min-h-[44px] px-5 py-2 btn-primary text-white rounded-lg">ค้นหารุ่น UPS</button>
                     </div>
                     <div class="bg-white border border-slate-200 rounded-lg p-3 my-4">
-                        <p id="catalogSelectionSummary" class="text-sm text-slate-700">ยังไม่เลือกรุ่น · การจัดสรรจะค้นหาทุกรุ่นที่ข้อมูลครบ</p>
+                        <p id="catalogSelectionSummary" class="text-sm text-slate-700">ยังไม่เลือกชุดแบตเตอรี่ · การจัดสรรจะค้นหาทุกรุ่นและชุดที่ผ่านเกณฑ์</p>
                         <ul id="catalogSelectedModels" class="flex flex-wrap gap-2 mt-2 text-sm"></ul>
                         <button type="button" onclick="clearCatalogSelection()" class="min-h-[44px] text-sm text-blue-700 underline">ล้างรุ่นที่เลือก</button>
                     </div>
@@ -774,10 +774,27 @@
             <!-- Step 5: Scenario comparison -->
             <div id="step5" class="step-content hidden enterprise-only" role="region" aria-labelledby="step5-heading">
                 <h2 id="step5-heading" tabindex="-1" class="text-2xl font-bold text-primary-700 mb-2">เปรียบเทียบแบบจัดสรร UPS</h2>
-                <p class="text-gray-500 mb-6">ระบบค้นหาแบบผสมหลายรุ่น และตรวจ W, VA, Runtime, Outlet ก่อนแสดงแบบที่ผ่านทุกข้อกำหนด</p>
+                <p class="text-gray-500 mb-6">เลือกให้ระบบค้นหา หรือระบุจำนวน UPS ที่มี แล้วตรวจ W, VA, Runtime และ Outlet</p>
+                <fieldset class="bg-white border border-slate-200 p-4 rounded-xl mb-5">
+                    <legend class="font-semibold text-slate-800 px-1">วิธีจัดสรร UPS</legend>
+                    <label class="flex items-center gap-3 min-h-[44px] cursor-pointer text-sm text-slate-800">
+                        <input id="allocationModeAuto" type="radio" name="allocationMode" value="auto" checked onchange="allocationModeChanged()">
+                        ให้ระบบค้นหาจำนวนที่เหมาะสม
+                    </label>
+                    <label class="flex items-center gap-3 min-h-[44px] cursor-pointer text-sm text-slate-800">
+                        <input id="allocationModeFixed" type="radio" name="allocationMode" value="fixed" onchange="allocationModeChanged()">
+                        ระบุจำนวน UPS ที่มี
+                    </label>
+                    <p class="text-sm text-slate-600 mt-1">ทั้งสองวิธีรองรับหลายรุ่นและหลายชุดแบตเตอรี่</p>
+                </fieldset>
                 <p id="optimizerPoolStatus" class="text-sm text-slate-700 mb-2">ใช้ทุกรุ่นที่มีข้อมูลครบ</p>
                 <button type="button" onclick="goToStep(4)" class="min-h-[44px] text-blue-700 underline mb-4">เปลี่ยนตัวกรองหรือเลือกรุ่นที่หน้าสรุป</button>
-                <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-5">
+                <div id="fixedInventoryPanel" hidden class="bg-white border border-slate-200 p-4 rounded-xl mb-5">
+                    <h3 class="font-semibold text-slate-800">UPS และชุดแบตเตอรี่ที่มี</h3>
+                    <p class="text-sm text-slate-600 mt-1">เลือกรุ่นและชุดแบตเตอรี่ที่หน้าสรุป แล้วระบุจำนวนเครื่องที่มีของแต่ละชุด</p>
+                    <div id="fixedInventoryRows" class="mt-3 space-y-3"></div>
+                </div>
+                <div id="automaticAllocationCriteria" class="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-5">
                     <p class="font-semibold text-blue-800">เกณฑ์ค้นหา</p>
                     <p class="text-sm text-blue-700 mt-1">Best Overall ให้ความสำคัญกับจำนวน UPS ต่ำก่อน และจัดลำดับ Runtime reserve ต่อเมื่อผ่านข้อจำกัดวิศวกรรมครบ</p>
                     <p class="text-sm text-blue-700 mt-1">สกุลเงินที่เว้นว่างถือเป็น THB ตามที่ยืนยัน; Lowest Cost แสดงราคาไม่รวม VAT</p>
@@ -786,7 +803,7 @@
                     <p class="text-sm text-blue-700 mt-1">ถ้ารายการหนึ่งใช้หลายรู ระบบแบ่งโหลดเท่ากันต่อรู และกระจาย Forecast ตามสัดส่วนโหลด โดยไม่เพิ่มจำนวนรูปลั๊ก</p>
                 </div>
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                    <p id="optimizationStatus" class="field-help" role="status" aria-live="polite">กดค้นหาเพื่อสร้างแบบจัดสรรจากโหลดปัจจุบัน</p>
+                    <p id="optimizationStatus" class="field-help" role="status" aria-live="polite" tabindex="-1">กดค้นหาเพื่อสร้างแบบจัดสรรจากโหลดปัจจุบัน</p>
                     <button id="runOptimizationButton" type="button" onclick="runScenarioOptimization()"
                         class="px-5 py-3 btn-primary text-white rounded-xl font-medium whitespace-nowrap">ค้นหาแบบจัดสรร</button>
                 </div>
@@ -1111,6 +1128,100 @@
         }
 
         // Device Management
+        function plugGroupsMarkup(deviceId) {
+            const fields = [
+                ['IEC_C14', 'IEC C14 → ช่อง UPS C13'],
+                ['IEC_C20', 'IEC C20 → ช่อง UPS C19'],
+                ['NEMA_5_15P', 'NEMA 5-15P'],
+                ['', 'ไม่ระบุชนิด'],
+            ];
+            return `
+                <details class="mt-3 border border-gray-200 rounded-lg p-3">
+                    <summary class="cursor-pointer font-semibold text-sm text-gray-700">ชนิดหัวปลั๊กต่อเครื่อง (ระบุได้ถ้าต้องการ)</summary>
+                    <p id="device-${deviceId}-plug-help" class="field-help mt-2">เลือกจำนวนปลายสายที่เสียบ UPS สำหรับแต่ละชนิด หากไม่ระบุ ระบบจะนับช่องโดยไม่ตรวจชนิดหัว</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                        ${fields.map(([connector, label], index) => `
+                            <div>
+                                <label for="device-${deviceId}-plug-group-${index}" class="block text-gray-600 text-sm mb-1">${label}</label>
+                                <input type="number" id="device-${deviceId}-plug-group-${index}" class="device-plug-group min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus text-sm" data-connector="${connector}" min="0" step="1" inputmode="numeric" value="${connector ? '0' : '1'}" aria-describedby="device-${deviceId}-plug-help device-${deviceId}-plug-error" oninput="handlePlugGroupInput(this)">
+                            </div>
+                        `).join('')}
+                    </div>
+                </details>
+                <p id="device-${deviceId}-plug-error" class="device-plug-error text-red-700 text-sm mt-2 hidden" role="alert"></p>`;
+        }
+
+        function readPlugGroups(card) {
+            return [...card.querySelectorAll('.device-plug-group')].map(input => ({
+                connector: input.dataset.connector || null, count: input.value,
+            })).filter(group => !/^[+-]?(?:0+(?:\.0*)?|\.0+)(?:e[+-]?\d+)?$/i.test(group.count.trim()));
+        }
+
+        function updatePlugGroupFeedback(card) {
+            const feedback = card.querySelector('.device-plug-error');
+            let message = '';
+            try {
+                UPScalculations.normalizePlugGroups(readPlugGroups(card), card.querySelector('.device-plugs').value);
+            } catch (error) {
+                message = error.message;
+            }
+            feedback.textContent = message;
+            feedback.classList.toggle('hidden', !message);
+            return !message;
+        }
+
+        function initializePlugGroups(card, groups) {
+            const total = card.querySelector('.device-plugs').value;
+            const normalized = UPScalculations.normalizePlugGroups(groups, total);
+            const counts = new Map();
+            normalized.forEach(group => counts.set(group.connector || '', (counts.get(group.connector || '') || 0) + group.count));
+            card.querySelectorAll('.device-plug-group').forEach(input => {
+                input.value = String(counts.get(input.dataset.connector) || 0);
+                input.dataset.previous = input.value;
+            });
+            updatePlugGroupFeedback(card);
+        }
+
+        function nonnegativePlugCount(input) {
+            if (input.value.trim() === '') return null;
+            const value = Number(input.value);
+            return Number.isSafeInteger(value) && value >= 0 ? value : null;
+        }
+
+        function handleTotalPlugsInput(input) {
+            const card = input.closest('.device-card');
+            const total = nonnegativePlugCount(input);
+            const fields = [...card.querySelectorAll('.device-plug-group')];
+            const unknown = fields.find(field => !field.dataset.connector);
+            const known = fields.filter(field => field.dataset.connector).map(nonnegativePlugCount);
+            if (total !== null && total > 0 && known.every(value => value !== null)) {
+                unknown.value = String(Math.max(0, total - known.reduce((sum, value) => sum + value, 0)));
+                unknown.dataset.previous = unknown.value;
+            }
+            updatePlugGroupFeedback(card);
+            updateTotalLoad();
+        }
+
+        function handlePlugGroupInput(input) {
+            const card = input.closest('.device-card');
+            const fields = [...card.querySelectorAll('.device-plug-group')];
+            const unknown = fields.find(field => !field.dataset.connector);
+            const next = nonnegativePlugCount(input);
+            const previous = Number(input.dataset.previous || 0);
+            const unknownCount = nonnegativePlugCount(unknown);
+            if (next !== null && input.dataset.connector && unknownCount !== null) {
+                unknown.value = String(Math.max(0, unknownCount - (next - previous)));
+                unknown.dataset.previous = unknown.value;
+            }
+            if (next !== null) input.dataset.previous = String(next);
+            const counts = fields.map(nonnegativePlugCount);
+            if (counts.every(value => value !== null)) {
+                card.querySelector('.device-plugs').value = String(counts.reduce((sum, value) => sum + value, 0));
+            }
+            updatePlugGroupFeedback(card);
+            updateTotalLoad();
+        }
+
         function addDevice() {
             if (document.querySelectorAll('.device-card').length >= UPScalculations.MAX_DEVICES) {
                 const notice = document.getElementById('deviceLimitNotice');
@@ -1142,9 +1253,9 @@
                                 <option value="VA">VA</option>
                             </select>
                         </div>
-                        <div class="enterprise-only md:col-span-2 xl:col-span-2">
+                        <div class="md:col-span-2 xl:col-span-2">
                             <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก/เครื่อง</label>
-                            <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" placeholder="จำนวนรู" class="device-plugs min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" value="1" oninput="updateTotalLoad()">
+                            <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" placeholder="จำนวนรู" class="device-plugs min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" value="1" oninput="handleTotalPlugsInput(this)">
                         </div>
                         <div class="md:col-span-2 xl:col-span-1">
                             <button onclick="removeDevice(${deviceIdCounter})" aria-label="ลบรายการอุปกรณ์ ${deviceIdCounter}" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
@@ -1152,11 +1263,14 @@
                             </button>
                         </div>
                     </div>
-                    <p class="field-help mt-2">กำลังไฟคิดต่อเครื่องและคูณตามจำนวนอุปกรณ์<span class="enterprise-only enterprise-inline">; รูปลั๊กคิดต่อเครื่อง; ค่า VA แปลงเป็น W ด้วยสมมติฐาน PF 0.8</span></p>
+                    <p class="field-help mt-2">กำลังไฟและปลั๊กคิดต่อเครื่องและคูณตามจำนวนอุปกรณ์<span class="enterprise-only enterprise-inline">; ค่า VA แปลงเป็น W ด้วยสมมติฐาน PF 0.8</span></p>
+                    ${plugGroupsMarkup(deviceIdCounter)}
                 </div>
             `;
             document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);
-            updateDeviceLoadLabel(document.getElementById(`device-${deviceIdCounter}`));
+            const card = document.getElementById(`device-${deviceIdCounter}`);
+            initializePlugGroups(card);
+            updateDeviceLoadLabel(card);
         }
 
         function removeDevice(id) {
@@ -1185,8 +1299,10 @@
                 const load = card.querySelector('.device-load').value;
                 const unit = card.querySelector('.device-unit').value;
                 const quantity = card.querySelector('.device-quantity').value;
-                const plugs = card.querySelector('.device-plugs')?.value || 1;
-                enteredDevices.push({ name, load, unit, quantity, plugs });
+                const plugs = card.querySelector('.device-plugs')?.value ?? 1;
+                const plugGroups = readPlugGroups(card);
+                updatePlugGroupFeedback(card);
+                enteredDevices.push({ name, load, unit, quantity, plugs, plugGroups });
             });
             const forecastValue = document.getElementById('forecastValue').value;
             const forecastUnit = calculatedData.forecastUnit || '%';
@@ -1660,17 +1776,21 @@
             document.getElementById('catalogStatus').textContent = 'ตัวกรองเปลี่ยนแล้ว กดค้นหาเพื่ออัปเดตผล';
         }
 
-        function catalogSelectionChanged() {
+        function catalogSelectionChanged(renderCatalog = true) {
             const selected = catalogSelection.entries();
+            const fixed = document.getElementById('allocationModeFixed')?.checked === true;
             document.getElementById('catalogSelectionSummary').textContent = selected.length
-                ? 'เลือก ' + selected.length + ' รุ่น · การจัดสรรจะใช้เฉพาะรุ่นที่เลือกและตรวจเกณฑ์วิศวกรรมอีกครั้ง'
-                : 'ยังไม่เลือกรุ่น · การจัดสรรจะค้นหาทุกรุ่นที่ข้อมูลครบ';
-            document.getElementById('optimizerPoolStatus').textContent = selected.length
-                ? 'จัดสรรเฉพาะ ' + selected.length + ' รุ่นที่เลือกไว้'
-                : 'ใช้ทุกรุ่นที่มีข้อมูลครบ';
+                ? 'เลือก ' + selected.length + ' ชุดรุ่นและแบตเตอรี่ · ระบบจะตรวจเกณฑ์วิศวกรรมอีกครั้ง'
+                : fixed ? 'ยังไม่เลือกชุดแบตเตอรี่ · เลือกชุดที่มีเพื่อระบุจำนวนเครื่อง'
+                    : 'ยังไม่เลือกชุดแบตเตอรี่ · การจัดสรรจะค้นหาทุกรุ่นและชุดที่ผ่านเกณฑ์';
+            document.getElementById('optimizerPoolStatus').textContent = fixed
+                ? selected.length ? 'ตรวจจาก ' + selected.length + ' ชุดที่เลือกและจำนวนที่ระบุ'
+                    : 'ยังไม่ได้เลือก UPS และชุดแบตเตอรี่ที่มี'
+                : selected.length ? 'จัดสรรเฉพาะ ' + selected.length + ' ชุดที่เลือกไว้'
+                    : 'ใช้ทุกรุ่นและชุดแบตเตอรี่ที่ผ่านเกณฑ์';
             const target = document.getElementById('catalogSelectedModels');
             target.replaceChildren();
-            selected.forEach(([id, label]) => {
+            selected.forEach(({ productId, batteryConfigId, label }, index) => {
                 const item = document.createElement('li');
                 const remove = document.createElement('button');
                 remove.type = 'button';
@@ -1678,14 +1798,81 @@
                 remove.textContent = label + ' ×';
                 remove.setAttribute('aria-label', 'นำ ' + label + ' ออกจากรุ่นที่เลือก');
                 remove.addEventListener('click', () => {
-                    catalogSelection.toggle(id, label, false);
+                    catalogSelection.toggle(productId, batteryConfigId, label, false);
                     catalogSelectionChanged();
+                    const remainingButtons = target.querySelectorAll('button');
+                    (remainingButtons[index] || remainingButtons[index - 1] || document.getElementById('catalogSearchButton'))?.focus();
                 });
                 item.appendChild(remove); target.appendChild(item);
             });
-            if (catalogLastResult) UPSCatalog.render(document.getElementById('catalogResults'), catalogLastResult,
-                catalogSelection, catalogSelectionChanged, message => document.getElementById('catalogStatus').textContent = message);
+            if (renderCatalog && catalogLastResult) UPSCatalog.render(document.getElementById('catalogResults'), catalogLastResult,
+                catalogSelection, () => catalogSelectionChanged(false), message => document.getElementById('catalogStatus').textContent = message);
+            if (document.getElementById('fixedInventoryRows')) renderFixedInventory();
             invalidateOptimizationResults();
+        }
+
+        function renderFixedInventory() {
+            const target = document.getElementById('fixedInventoryRows');
+            if (!target) return;
+            target.replaceChildren();
+            const selected = catalogSelection.entries();
+            if (!selected.length) {
+                const empty = document.createElement('p');
+                empty.className = 'text-sm text-amber-800';
+                empty.textContent = 'ยังไม่มีชุดที่เลือก กรุณาเลือกรุ่นและชุดแบตเตอรี่ที่หน้าสรุป';
+                target.appendChild(empty);
+                return;
+            }
+            selected.forEach((entry, index) => {
+                const row = document.createElement('div');
+                row.className = 'border border-slate-200 rounded-lg p-3';
+                const label = document.createElement('label');
+                label.className = 'block text-sm font-medium text-slate-800';
+                label.htmlFor = 'fixedUpsQuantity-' + index;
+                label.textContent = entry.label + ' · จำนวนเครื่อง';
+                const input = document.createElement('input');
+                input.id = label.htmlFor;
+                input.type = 'number';
+                input.min = '1'; input.max = '500'; input.step = '1';
+                input.value = String(entry.quantity ?? '1');
+                input.className = 'mt-2 border border-slate-300 rounded-lg px-3 py-2 w-32 min-h-[44px]';
+                input.setAttribute('inputmode', 'numeric');
+                input.setAttribute('aria-label', 'จำนวน UPS ของ ' + entry.label);
+                input.setAttribute('aria-describedby', 'fixedUpsQuantityError-' + index);
+                const error = document.createElement('p');
+                error.id = 'fixedUpsQuantityError-' + index;
+                error.className = 'text-sm text-amber-800 mt-1';
+                error.setAttribute('role', 'alert');
+                if (entry.batteryConfigId === null) {
+                    input.disabled = true;
+                    error.textContent = 'ยังไม่มีชุดแบตเตอรี่ที่ยืนยัน เลือกชุดที่มีข้อมูลครบก่อนจัดสรร';
+                }
+                input.addEventListener('input', () => {
+                    catalogSelection.setQuantity(entry.productId, entry.batteryConfigId, input.value);
+                    error.textContent = '';
+                    input.setAttribute('aria-invalid', 'false');
+                    invalidateOptimizationResults();
+                });
+                input.addEventListener('blur', () => {
+                    try {
+                        UPSCatalog.fixedQuantity(input.value);
+                        error.textContent = '';
+                        input.setAttribute('aria-invalid', 'false');
+                    } catch (problem) {
+                        error.textContent = problem.message;
+                        input.setAttribute('aria-invalid', 'true');
+                    }
+                });
+                row.appendChild(label); row.appendChild(input); row.appendChild(error);
+                target.appendChild(row);
+            });
+        }
+
+        function allocationModeChanged() {
+            const fixed = document.getElementById('allocationModeFixed').checked;
+            document.getElementById('fixedInventoryPanel').hidden = !fixed;
+            document.getElementById('automaticAllocationCriteria').hidden = fixed;
+            catalogSelectionChanged(false);
         }
 
         function clearCatalogSelection() {
@@ -1734,7 +1921,7 @@
                 manufacturer.value = previousBrand;
                 const coverage = result.coverage;
                 status.textContent = 'พบ ' + result.total + ' รุ่นตามตัวกรอง จากฐาน ' + coverage.totalModels
-                    + ' รุ่น · มี W/VA ครบ ' + coverage.capacityKnown + ' รุ่น · พร้อมตรวจจัดสรร ' + coverage.optimizerEligible + ' รุ่น';
+                    + ' รุ่น · ยืนยัน W/VA แล้ว ' + coverage.capacityKnown + ' รุ่น · พร้อมตรวจจัดสรร ' + coverage.optimizerEligible + ' รุ่น';
                 if (result.dataset && result.dataset.omitted_missing_capacity_count) {
                     status.textContent += ' · ฐานย่อจาก UPS ' + result.dataset.original_model_count
                         + ' รุ่น โดยละ ' + result.dataset.omitted_missing_capacity_count + ' รุ่นที่ยังขาดข้อมูลกำลังไฟ';
@@ -1742,7 +1929,7 @@
                 if (coverage.budgetExcludedUnknownPrice) status.textContent += ' · ไม่นำราคาไม่ทราบฐาน VAT '
                     + coverage.budgetExcludedUnknownPrice + ' รุ่นมาเทียบงบ';
                 UPSCatalog.render(document.getElementById('catalogResults'), result, catalogSelection,
-                    catalogSelectionChanged, message => status.textContent = message);
+                    () => catalogSelectionChanged(false), message => status.textContent = message);
                 const pages = Math.max(1, Math.ceil(result.total / result.pageSize));
                 document.getElementById('catalogPageInfo').textContent = result.total + ' รุ่น · หน้า ' + result.page + ' / ' + pages;
                 document.getElementById('catalogPrevPage').disabled = result.page <= 1;
@@ -1760,7 +1947,13 @@
             const status = document.getElementById('optimizationStatus');
             if (!results || !status) return;
             results.replaceChildren();
-            status.textContent = 'ข้อมูลโหลดเปลี่ยนแล้ว กดค้นหาใหม่เพื่อให้ผลตรงกับค่าปัจจุบัน';
+            status.textContent = 'ข้อมูลโหลดหรือการเลือกเปลี่ยนแล้ว กดตรวจใหม่เพื่อให้ผลตรงกับค่าปัจจุบัน';
+            const button = document.getElementById('runOptimizationButton');
+            if (button) {
+                button.disabled = false;
+                button.textContent = document.getElementById('allocationModeFixed')?.checked
+                    ? 'ตรวจการจัดสรร' : 'ค้นหาแบบจัดสรร';
+            }
         }
 
         async function runScenarioOptimization() {
@@ -1773,10 +1966,12 @@
             const button = document.getElementById('runOptimizationButton');
             const status = document.getElementById('optimizationStatus');
             const results = document.getElementById('optimizationResults');
-            const requestVersion = optimizationRequestVersion;
+            const fixed = document.getElementById('allocationModeFixed')?.checked === true;
+            const requestVersion = ++optimizationRequestVersion;
             button.disabled = true;
-            button.textContent = 'กำลังค้นหา…';
-            status.textContent = 'กำลังตรวจ W, VA, Runtime และ Outlet ของแบบผสมหลายรุ่น';
+            button.textContent = fixed ? 'กำลังตรวจ…' : 'กำลังค้นหา…';
+            status.textContent = fixed ? 'กำลังตรวจการจัดสรรจากจำนวน UPS ที่ระบุ'
+                : 'กำลังตรวจ W, VA, Runtime และ Outlet ของแบบผสมหลายรุ่น';
             results.replaceChildren();
             try {
                 const inputDevices = [...document.querySelectorAll('.device-card')].map(card => ({
@@ -1784,7 +1979,8 @@
                     load: card.querySelector('.device-load').value,
                     unit: card.querySelector('.device-unit').value,
                     quantity: card.querySelector('.device-quantity').value,
-                    plugs: card.querySelector('.device-plugs')?.value || 1,
+                    plugs: card.querySelector('.device-plugs')?.value ?? 1,
+                    plugGroups: readPlugGroups(card),
                 }));
                 const request = UPSOptimization.buildRequest(
                     inputDevices,
@@ -1792,18 +1988,32 @@
                     calculatedData.deviceLoad,
                     calculatedData.totalLoad,
                 );
-                if (catalogSelection.ids().length) request.selectedProductIds = catalogSelection.ids();
-                const response = await UPSOptimization.optimize(request);
-                if (requestVersion !== optimizationRequestVersion) return;
-                UPSOptimization.render(results, response);
-                status.textContent = `พบแบบที่ผ่านข้อกำหนด ${response.validDesignCount} แบบ จาก ${response.search.candidateModelCount} รุ่นที่มีข้อมูลเทคนิคครบ`;
+                if (fixed) {
+                    const models = catalogSelection.fixedModels();
+                    const response = await UPSOptimization.allocate(UPSOptimization.buildFixedRequest(request, models));
+                    if (requestVersion !== optimizationRequestVersion) return;
+                    UPSOptimization.renderAllocation(results, response, catalogSelection.entries());
+                    status.textContent = response.validation.isValid
+                        ? 'จัดสรรอุปกรณ์ครบแล้ว กรุณาตรวจสถานะหัวปลั๊กและ Runtime ในผลลัพธ์'
+                        : 'ยังมีอุปกรณ์ที่จัดไม่ได้ กรุณาดูเหตุผลในผลลัพธ์';
+                } else {
+                    const selectedConfigurations = catalogSelection.configurations();
+                    if (selectedConfigurations.length) request.selectedConfigurations = selectedConfigurations;
+                    const response = await UPSOptimization.optimize(request);
+                    if (requestVersion !== optimizationRequestVersion) return;
+                    UPSOptimization.render(results, response);
+                    status.textContent = `พบแบบที่ผ่านข้อกำหนด ${response.validDesignCount} แบบ จาก ${response.search.candidateModelCount} รุ่น/ชุดที่ผ่านเกณฑ์เบื้องต้น`;
+                }
             } catch (error) {
                 if (requestVersion === optimizationRequestVersion) {
                     status.textContent = error.message || 'ค้นหาแบบจัดสรรไม่สำเร็จ';
+                    status.focus?.();
                 }
             } finally {
-                button.disabled = false;
-                button.textContent = 'ค้นหาแบบจัดสรรอีกครั้ง';
+                if (requestVersion === optimizationRequestVersion) {
+                    button.disabled = false;
+                    button.textContent = fixed ? 'ตรวจการจัดสรรอีกครั้ง' : 'ค้นหาแบบจัดสรรอีกครั้ง';
+                }
             }
         }
 
@@ -2268,9 +2478,9 @@
                                             <option value="VA" ${device.unit === 'VA' ? 'selected' : ''}>VA</option>
                                         </select>
                                     </div>
-                                    <div class="enterprise-only md:col-span-2 xl:col-span-2">
+                                    <div class="md:col-span-2 xl:col-span-2">
                                         <label for="device-${deviceIdCounter}-plugs" class="block text-gray-600 text-sm mb-1">รูปลั๊ก/เครื่อง</label>
-                                        <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" value="${escapeHtml(device.plugs)}" class="device-plugs min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="updateTotalLoad()">
+                                        <input type="number" id="device-${deviceIdCounter}-plugs" name="devicePlugs[]" value="${escapeHtml(device.plugs)}" class="device-plugs min-h-[44px] w-full px-3 py-2 border border-gray-300 rounded-lg input-focus transition-all text-sm" min="1" step="1" oninput="handleTotalPlugsInput(this)">
                                     </div>
                                     <div class="md:col-span-2 xl:col-span-1">
                                         <button onclick="removeDevice(${deviceIdCounter})" aria-label="ลบรายการอุปกรณ์ ${deviceIdCounter}" class="w-full py-2 btn-danger text-white rounded-lg text-sm font-medium transition-all">
@@ -2278,11 +2488,14 @@
                                         </button>
                                     </div>
                                 </div>
-                                <p class="field-help mt-2">กำลังไฟคิดต่อเครื่องและคูณตามจำนวนอุปกรณ์<span class="enterprise-only enterprise-inline">; รูปลั๊กคิดต่อเครื่อง; ค่า VA แปลงเป็น W ด้วยสมมติฐาน PF 0.8</span></p>
+                                <p class="field-help mt-2">กำลังไฟและปลั๊กคิดต่อเครื่องและคูณตามจำนวนอุปกรณ์<span class="enterprise-only enterprise-inline">; ค่า VA แปลงเป็น W ด้วยสมมติฐาน PF 0.8</span></p>
+                                ${plugGroupsMarkup(deviceIdCounter)}
                             </div>
                         `;
                         document.getElementById('deviceList').insertAdjacentHTML('beforeend', deviceHtml);
-                        updateDeviceLoadLabel(document.getElementById(`device-${deviceIdCounter}`));
+                        const card = document.getElementById(`device-${deviceIdCounter}`);
+                        initializePlugGroups(card, device.plugGroups);
+                        updateDeviceLoadLabel(card);
                     });
 
                     // Restore settings

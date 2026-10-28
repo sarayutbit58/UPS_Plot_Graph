@@ -6,9 +6,16 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import hashlib
 import json
+import math
 from pathlib import Path
+import re
 import sqlite3
 from urllib.parse import urlsplit
+
+try:
+    from .verified_evidence import _field as _conflict_field, has_unverified_bundle, _lifecycle_observation
+except ImportError:
+    from verified_evidence import _field as _conflict_field, has_unverified_bundle, _lifecycle_observation
 
 SCHEMA = '''CREATE TABLE published_models(product_id INTEGER PRIMARY KEY,
 manufacturer TEXT,model TEXT,sku TEXT,rating_w REAL,rating_va REAL,
@@ -16,14 +23,19 @@ outlet_count INTEGER,model_json TEXT NOT NULL);
 CREATE TABLE catalog_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);'''
 MODEL_COLUMNS = ('product_id', 'manufacturer', 'model', 'sku', 'rating_w',
                  'rating_va', 'outlet_count', 'model_json')
-FORMAT = 'ups-curated-v1'
+FORMAT = 'ups-curated-v2'
+SUPPORTED_FORMATS = frozenset({'ups-curated-v1', FORMAT})
 
 
 def _source(reference):
     if not isinstance(reference, dict):
         return None
     identity = json.dumps(reference, sort_keys=True, ensure_ascii=False)
-    result = {'sourceId': hashlib.sha256(identity.encode()).hexdigest()[:24]}
+    old_id = reference.get('sourceId')
+    old_path = reference.get('path')
+    already_projected = (isinstance(old_id, str) and re.fullmatch(r'[0-9a-f]{24}', old_id)
+                         and (old_path == 'source:' + old_id or old_path is None and reference.get('url')))
+    result = {'sourceId': old_id if already_projected else hashlib.sha256(identity.encode()).hexdigest()[:24]}
     # Legacy engine evidence deduplication expects a path key. This is an opaque
     # reference, never a filesystem path or original document filename.
     result['path'] = 'source:' + result['sourceId']
@@ -36,7 +48,41 @@ def _source(reference):
             result['title'] = str(reference['title'])[:300]
         if reference.get('publicationYear'):
             result['publicationYear'] = reference['publicationYear']
+        if isinstance(reference.get('page'), int) and not isinstance(reference['page'], bool) and reference['page'] > 0:
+            result['page'] = reference['page']
         result.pop('path')
+    return result
+
+
+def _public_text(value, limit=1000):
+    if (not isinstance(value, str) or len(value) > limit
+            or value.startswith(chr(92) * 2)
+            or re.search(r'(?i)(?:[a-z]:[/\\]|file://|https?://)', value)):
+        return None
+    return value
+
+
+def _project_outlet_groups(groups):
+    return [{'type': _public_text(group.get('type'), 80), 'power': _public_text(group.get('power'), 80),
+             'manufacturer_verified': group.get('manufacturer_verified') is True,
+             'count': group.get('count'), 'source': _source(group.get('source'))}
+            for group in groups or [] if isinstance(group, dict)]
+
+
+def _project_battery_configurations(configurations):
+    result = []
+    for config in configurations or []:
+        if not isinstance(config, dict):
+            continue
+        projected = {key: _public_text(config.get(key)) for key in ('id', 'label', 'conditions')}
+        projected['manufacturer_verified'] = config.get('manufacturer_verified') is True
+        projected['source'] = _source(config.get('source'))
+        projected['points'] = [{key: point.get(key) for key in ('loadW', 'runtimeMinutes')}
+                               for point in config.get('points', []) if isinstance(point, dict)]
+        for key in ('includedPacks', 'extraPacks'):
+            projected[key] = [{'sku': _public_text(pack.get('sku'), 300), 'quantity': pack.get('quantity')}
+                              for pack in config.get(key, []) if isinstance(pack, dict)]
+        result.append(projected)
     return result
 
 
@@ -46,6 +92,68 @@ def project_model(product, include_prices=False):
             'external_battery_model', 'max_external_battery_packs', 'warnings')
     result = {key: product.get(key) for key in keys}
     result.update(description=None, non_ups_reason=None, prices=[], estimated_cost=None)
+    # Structured verified facts are independent of total-outlet and legacy runtime
+    # fields. Their source references must receive the same privacy filtering as
+    # the original evidence; never copy raw source records into the projection.
+    result['identity_verified'] = product.get('identity_verified') is True
+    result['bundle_identity_unverified'] = has_unverified_bundle(product)
+    result['manufacturer_sku'] = product.get('manufacturer_sku')
+    result['product_category'] = product.get('product_category')
+    result['identity_source'] = _source(product.get('identity_source'))
+    lifecycle = product.get('lifecycle_observations')
+    result['lifecycle_observations'] = [
+        observation for value in lifecycle if (observation := _lifecycle_observation(value, product.get('manufacturer')))
+    ] if isinstance(lifecycle, list) and isinstance(product.get('manufacturer'), str) else []
+    crosswalk = product.get('identity_crosswalk')
+    if isinstance(crosswalk, dict) and re.fullmatch(r'[0-9a-f]{24}', str(crosswalk.get('sourceId') or '')):
+        maker_source = _source({'url': crosswalk.get('manufacturerUrl')})
+        if maker_source and maker_source.get('url'):
+            result['identity_crosswalk'] = {'sourceId': crosswalk['sourceId'],
+                                             'manufacturerUrl': maker_source['url']}
+    for field in ('rating_w', 'rating_va'):
+        result[field + '_verified'] = product.get(field + '_verified') is True
+        result[field + '_source'] = _source(product.get(field + '_source'))
+    if product.get('non_ups_reason') == 'manufacturer_verified_non_ups':
+        result['non_ups_reason'] = 'manufacturer_verified_non_ups'
+    originals = product.get('original_source_ratings')
+    if isinstance(originals, dict):
+        result['original_source_ratings'] = {
+            field: value for field, value in originals.items()
+            if field in {'rating_w', 'rating_va'} and isinstance(value, (int, float))
+            and not isinstance(value, bool) and math.isfinite(value)
+        }
+    result['manufacturer_conflicts'] = []
+    for conflict in product.get('manufacturer_conflicts') or []:
+        if not isinstance(conflict, dict):
+            continue
+        clean = {'field': _conflict_field(conflict.get('field'))}
+        for key in ('configurationId', 'outletType'):
+            value = conflict.get(key)
+            if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_.:-]{1,100}', value):
+                clean[key] = value
+        for key in ('valueA', 'valueB'):
+            value = conflict.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+                clean[key] = value
+            elif (isinstance(value, str) and len(value) <= 300 and '\\' not in value
+                  and not re.search(r'(?i)[a-z]:/|https?://', value)):
+                clean[key] = value
+        for key in ('sourceA', 'sourceB'):
+            source = _source(conflict.get(key))
+            if source:
+                clean[key] = source
+        if clean.get('field'):
+            result['manufacturer_conflicts'].append(clean)
+    result['outlet_groups'] = _project_outlet_groups(product.get('outlet_groups'))
+    result['battery_configurations'] = _project_battery_configurations(product.get('battery_configurations'))
+    for field in ('identity_source', 'rating_w_source', 'rating_va_source'):
+        key = 'previous_' + field
+        if isinstance(product.get(key), list):
+            result[key] = [source for value in product[key] if (source := _source(value))]
+    if isinstance(product.get('previous_outlet_groups'), list):
+        result['previous_outlet_groups'] = _project_outlet_groups(product['previous_outlet_groups'])
+    if isinstance(product.get('previous_battery_configurations'), list):
+        result['previous_battery_configurations'] = _project_battery_configurations(product['previous_battery_configurations'])
     result['evidence'] = []
     for evidence in product.get('evidence', []):
         result['evidence'].append({**_source(evidence), **{
