@@ -8,8 +8,10 @@ import re
 import sqlite3
 
 try:
+    from .price_policy import _price_comparison_basis
     from .verified_evidence import is_manufacturer_url, has_unverified_bundle, _configuration, _group, apply_verified_evidence
 except ImportError:
+    from price_policy import _price_comparison_basis
     from verified_evidence import is_manufacturer_url, has_unverified_bundle, _configuration, _group, apply_verified_evidence
 
 
@@ -717,26 +719,21 @@ def _price_scores(candidates):
         for candidate in candidates:
             candidate['scores']['price'] = None
         return False, 'Extra battery pack prices are unknown; UPS-only prices cannot rank complete configurations.'
-    priced = [candidate for candidate in candidates if candidate['estimated_cost']]
-    currencies = {candidate['estimated_cost']['currency'] for candidate in priced}
-    vat_treatments = {candidate['estimated_cost']['vatTreatment'] for candidate in priced}
-    if not priced:
+    comparison = [{'price_offers': candidate.get('prices') or [], 'runtime_curve': None}
+                  for candidate in candidates]
+    basis = _price_comparison_basis(comparison)
+    if not basis[0]:
         for candidate in candidates:
             candidate['scores']['price'] = None
-        return False, 'No explicit NDP/Dealer prices are available for comparison.'
-    if None in currencies or len(currencies) != 1:
-        for candidate in candidates:
-            candidate['scores']['price'] = None
-        return False, 'Price efficiency is not scored because explicit comparable currencies are unavailable.'
-    # This single-model ranking uses raw prices; inclusive offers cannot be
-    # treated as ex-VAT until they are normalized using verified rate and dates.
-    if vat_treatments != {'exclusive'}:
-        for candidate in candidates:
-            candidate['scores']['price'] = None
-        return False, 'Price efficiency is not scored unless all compared prices exclude VAT.'
+        return False, basis[2]
+    for candidate, item in zip(candidates, comparison):
+        candidate['_comparison_cost'] = item['_cost']
+        candidate['_comparison_offer'] = item['_comparison_offer']
+        candidate['_comparison_currency'] = basis[3]
+        candidate['_comparison_currency_source'] = basis[4]
     cost_per_watt = {
-        candidate['id']: candidate['estimated_cost']['decimal'] / Decimal(str(candidate['rating_w']))
-        for candidate in priced if candidate['rating_w']
+        candidate['id']: candidate['_comparison_cost'] / Decimal(str(candidate['rating_w']))
+        for candidate in candidates if candidate['rating_w']
     }
     if not cost_per_watt:
         for candidate in candidates:
@@ -846,9 +843,11 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
             reasons.append('The number of battery-backed outlets is not verified.')
         else:
             reasons.append(f"Verified battery-backed outlet count {candidate['outlet_count']} for {load['requiredOutlets']} device plugs; no outlet allocation is performed.")
-        cost = candidate['estimated_cost']
-        if cost:
-            reasons.append(f"Lowest explicit NDP/Dealer source amount is {cost['amount']} ({cost['currency'] or 'currency unknown'}; {cost['vatTreatment']} VAT treatment).")
+        cost = candidate.get('_comparison_offer') if comparable_prices else candidate['estimated_cost']
+        if cost and comparable_prices:
+            reasons.append(f"Lowest comparable NDP/Dealer amount is {candidate['_comparison_cost']:.2f} {candidate['_comparison_currency']} excluding VAT.")
+        elif cost:
+            reasons.append(f"Recorded NDP/Dealer source amount is {cost['amount']} ({cost['currency'] or 'currency unknown'}; {cost['vatTreatment']} VAT treatment); offers were not compared.")
         else:
             reasons.append('No explicit NDP/Dealer price row is available.')
         if candidate['external_battery_supported'] is True:
@@ -880,6 +879,10 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
             estimated_cost['basis'] = cost['kind']
             estimated_cost['excludesBatteryPacks'] = any(
                 config.get('extraPacks') for config in candidate['verified_runtime_configurations'])
+            if comparable_prices:
+                estimated_cost['comparisonAmountExVat'] = round(float(candidate['_comparison_cost']), 2)
+                estimated_cost['comparisonCurrency'] = candidate['_comparison_currency']
+                estimated_cost['comparisonCurrencySource'] = candidate['_comparison_currency_source']
         outlet_evidence = [group['source'] for group in _verified_battery_outlet_groups(candidate) or []]
         recommendations.append({
             'rank': rank,
