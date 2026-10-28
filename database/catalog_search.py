@@ -16,13 +16,13 @@ try:
         _apply_manufacturer_curves, _read_curve_catalog, _interpolate_runtime,
         _verified_battery_outlet_count, _verified_runtime_curve, _verified_runtime_curves, _verified_rating,
         _verified_identity, _verified_outlet_groups)
-    from .optimization_engine import _price_comparison_basis
+    from .price_policy import _price_comparison_basis
 except ImportError:
     from recommendation_engine import (RecommendationInputError, _build_inventory,
         _apply_manufacturer_curves, _read_curve_catalog, _interpolate_runtime,
         _verified_battery_outlet_count, _verified_runtime_curve, _verified_runtime_curves, _verified_rating,
         _verified_identity, _verified_outlet_groups)
-    from optimization_engine import _price_comparison_basis
+    from price_policy import _price_comparison_basis
 
 
 def _number(request, key, default, minimum, maximum=None, integer=False):

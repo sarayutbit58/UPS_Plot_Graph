@@ -104,6 +104,101 @@ class VerifiedOptimizerContractTests(unittest.TestCase):
                 }, curve_catalog=[])
                 self.assertIsNone(result['recommendations'][0]['scores']['price'])
 
+    def test_recommendation_checks_every_offer_before_scoring_price(self):
+        item = model()
+        item['battery_configurations'] = item['battery_configurations'][:1]
+        exclusive = {'amount': '100', 'currency': 'THB', 'vatTreatment': 'exclusive', 'kind': 'Dealer',
+                     'source': {'path': 'synthetic/source'}}
+        unknown = {'amount': '101', 'currency': 'THB', 'vatTreatment': 'unknown', 'kind': 'Dealer',
+                   'source': {'path': 'synthetic/source'}}
+        item['prices'] = [exclusive, unknown]
+        item['estimated_cost'] = exclusive
+        self.connection.execute('UPDATE published_models SET model_json=? WHERE product_id=1',
+                                (json.dumps(item),))
+        result = recommend_from_connection(self.connection, {
+            'runtimeRequirementMinutes': 10, 'powerFactor': 0.8,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500}],
+        }, curve_catalog=[])
+        candidate = result['recommendations'][0]
+        self.assertIsNone(candidate['scores']['price'])
+        self.assertFalse(any('Lowest explicit' in reason for reason in candidate['reasons']))
+
+    def test_offer_without_dealer_or_ndp_kind_does_not_crash_or_score(self):
+        for kind in (None, [], {}):
+            with self.subTest(kind=kind):
+                item = model()
+                item['battery_configurations'] = item['battery_configurations'][:1]
+                offer = {'amount': '100', 'currency': 'THB', 'vatTreatment': 'exclusive',
+                         'kind': kind, 'source': {'path': 'synthetic/source'}}
+                item['prices'] = [offer]
+                item['estimated_cost'] = {**offer, 'kind': 'Dealer'}
+                self.connection.execute('UPDATE published_models SET model_json=? WHERE product_id=1',
+                                        (json.dumps(item),))
+                result = recommend_from_connection(self.connection, {
+                    'runtimeRequirementMinutes': 10, 'powerFactor': 0.8,
+                    'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500}],
+                }, curve_catalog=[])
+                self.assertIsNone(result['recommendations'][0]['scores']['price'])
+
+    def test_offer_without_source_is_not_used_for_comparison(self):
+        item = model()
+        item['battery_configurations'] = item['battery_configurations'][:1]
+        offer = {'amount': '100', 'currency': 'THB', 'vatTreatment': 'exclusive', 'kind': 'Dealer'}
+        item['prices'] = [offer]
+        item['estimated_cost'] = offer
+        self.connection.execute('UPDATE published_models SET model_json=? WHERE product_id=1',
+                                (json.dumps(item),))
+        result = recommend_from_connection(self.connection, {
+            'runtimeRequirementMinutes': 10, 'powerFactor': 0.8,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500}],
+        }, curve_catalog=[])
+        self.assertIsNone(result['recommendations'][0]['scores']['price'])
+
+    def test_unrepresentable_price_never_becomes_json_infinity_or_zero(self):
+        for amount in ('9' * 310, '0.' + '0' * 400 + '1'):
+            with self.subTest(amount=amount[:10]):
+                item = model()
+                item['battery_configurations'] = item['battery_configurations'][:1]
+                offer = {'amount': amount, 'currency': 'THB', 'vatTreatment': 'exclusive',
+                         'kind': 'Dealer', 'source': {'path': 'synthetic/source'}}
+                item['prices'], item['estimated_cost'] = [offer], offer
+                self.connection.execute('UPDATE published_models SET model_json=? WHERE product_id=1',
+                                        (json.dumps(item),))
+                result = recommend_from_connection(self.connection, {
+                    'runtimeRequirementMinutes': 10, 'powerFactor': 0.8,
+                    'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500}],
+                }, curve_catalog=[])
+                self.assertIsNone(result['recommendations'][0]['scores']['price'])
+                json.dumps(result, allow_nan=False)
+
+    def test_recommendation_scores_normalized_offers_like_fleet_comparison(self):
+        first = model()
+        first['battery_configurations'] = first['battery_configurations'][:1]
+        exclusive = {'amount': '105', 'currency': 'THB', 'vatTreatment': 'exclusive', 'kind': 'Dealer',
+                     'source': {'path': 'synthetic/source'}}
+        inclusive = {'amount': '107', 'currency': 'THB', 'vatTreatment': 'inclusive', 'kind': 'Dealer',
+                     'source': {'path': 'synthetic/source'},
+                     'priceEffectiveFrom': '2026-05-01', 'priceEffectiveTo': '2026-05-31'}
+        first['prices'], first['estimated_cost'] = [exclusive, inclusive], exclusive
+        second = json.loads(json.dumps(first))
+        second.update(id=2, model='UPS-2', sku='UPS-2', manufacturer_sku='UPS-2')
+        second_offer = {'amount': '102', 'currency': 'THB', 'vatTreatment': 'exclusive', 'kind': 'Dealer',
+                        'source': {'path': 'synthetic/source'}}
+        second['prices'], second['estimated_cost'] = [second_offer], second_offer
+        self.connection.execute('UPDATE published_models SET model_json=? WHERE product_id=1',
+                                (json.dumps(first),))
+        self.connection.execute('INSERT INTO published_models VALUES(?,?,?,?,?,?,?,?)',
+                                (2, 'APC', 'UPS-2', 'UPS-2', 700, 900, 4, json.dumps(second)))
+        result = recommend_from_connection(self.connection, {
+            'runtimeRequirementMinutes': 10, 'powerFactor': 0.8,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500}],
+        }, curve_catalog=[])
+        by_model = {row['model']: row for row in result['recommendations']}
+        self.assertEqual(100, by_model['UPS-1']['scores']['price'])
+        self.assertAlmostEqual(98.04, by_model['UPS-2']['scores']['price'], places=2)
+        self.assertEqual('107', by_model['UPS-1']['estimatedResellerCost']['amount'])
+        self.assertEqual(100, by_model['UPS-1']['estimatedResellerCost']['comparisonAmountExVat'])
+
     def test_model_only_alias_merged_without_bundle_proof_is_not_recommended(self):
         item = model()
         item['warnings'] = ['Combined a model-only catalogue row with its exact manufacturer-SKU row']

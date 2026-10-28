@@ -37,6 +37,13 @@ print('Private catalog backup verified; models:', len(rows))
 
 Deploy the v2-capable server first: v1 data without verified metadata fails closed. Then publish the reviewed v2 file using `publish_turso.py --db <staged-file> --expected-source <remote-backup>`. The publisher checks JSON consistency, retains existing model identities and original price/source evidence, checks the staged fingerprint, and compares both the original and written catalog inside its transaction. Unexpected tables, triggers, views, or other user-defined schema objects abort publication. A mismatch aborts instead of overwriting a concurrent change. Identity splits and intentional price/evidence changes require a separately reviewed migration, not this ordinary refresh. The staging fingerprint is removed from live metadata. After publishing, verify the remote data and an authenticated browser flow; the server may cache a prior catalog for up to 60 seconds.
 
+## Release record - 2026-10-28
+
+- PR #8 was merged as commit `c9e577195a381f0f48344fb678a85c537523732e`. Render reported that exact commit as Live; the public health endpoint returned 200 and unauthenticated page and script requests returned 401.
+- The first v2 Turso update retained the original 223 models and added 14 verified, priced models. A fresh private snapshot verified SQLite integrity and matched all 237 staged rows and live metadata. The previous private snapshot remains available for recovery.
+- A local browser exercise allocated two synthetic 80 W devices to a verified CyberPower configuration and reported 22.18 minutes with the connector type explicitly unchecked. An authenticated hosted-browser acceptance test is still pending; the operator did not receive the team password.
+- This is an incremental evidence release, not a claim that every legacy model, connector, battery configuration, runtime, price, or local availability is verified.
+
 The 2026-10-15 records below are historical setup evidence, not current catalog counts or a current deployment acceptance result.
 
 ## Deployment record - 2026-10-15
