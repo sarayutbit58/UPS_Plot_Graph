@@ -5,10 +5,13 @@ import json
 import sqlite3
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_recommendation_engine import seed_catalog
+from verified_fixture import verified_curve
+from verified_evidence import MANUFACTURER_DOMAINS
 
 try:
     from optimization_engine import OptimizationInputError, optimize_from_connection
@@ -18,6 +21,110 @@ except ImportError:
 
 
 class OptimizationEngineTests(unittest.TestCase):
+    def test_optimizer_excludes_outlets_without_battery_backup_evidence(self):
+        curve = {**self.curves[0]}
+        curve.pop('outletGroups')
+        result = optimize_from_connection(self.connection, {
+            'selectedProductIds': [self.catalog['products'][0]],
+            'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 50}],
+        }, curve_catalog=[curve])
+        self.assertIsNone(result['bestSolution'])
+        self.assertEqual(0, result['search']['candidateModelCount'])
+        self.assertIn('outlet_unknown', result['selectionDiagnostics']['excludedModels'][0]['reasons'])
+
+    def test_optimizer_excludes_unverified_identity(self):
+        curve = {**self.curves[0], 'identityVerified': False, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 8},
+        ]}
+        result = optimize_from_connection(self.connection, {
+            'selectedProductIds': [self.catalog['products'][0]],
+            'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 50}],
+        }, curve_catalog=[curve])
+        self.assertIsNone(result['bestSolution'])
+        self.assertEqual(0, result['search']['candidateModelCount'])
+        self.assertIn('identity_unverified', result['selectionDiagnostics']['excludedModels'][0]['reasons'])
+
+    def test_optimizer_excludes_runtime_without_verified_battery_setup(self):
+        curve = {**self.curves[0], 'identityVerified': True, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 8},
+        ]}
+        curve.pop('batteryConfigurations')
+        result = optimize_from_connection(self.connection, {
+            'selectedProductIds': [self.catalog['products'][0]],
+            'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 50}],
+        }, curve_catalog=[curve])
+        self.assertIsNone(result['bestSolution'])
+        self.assertEqual(0, result['search']['candidateModelCount'])
+        self.assertIn('runtime_unknown', result['selectionDiagnostics']['excludedModels'][0]['reasons'])
+
+    def test_optimizer_counts_all_plugs_without_splitting_each_device(self):
+        curve = {**self.curves[0], 'identityVerified': True,
+                 'ratingWattsVerified': True, 'ratedWatts': 700,
+                 'ratingVaVerified': True, 'ratedVa': 900, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 3},
+        ], 'batteryConfigurations': [{
+            'id': 'internal', 'manufacturer_verified': True, 'label': 'Internal', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+            'includedPacks': [], 'extraPacks': [],
+        }]}
+        result = optimize_from_connection(self.connection, {
+            'selectedProductIds': [self.catalog['products'][0]],
+            'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Dual PSU server', 'quantity': 2, 'watt': 100, 'va': 125,
+                         'priority': 50, 'plugs': [{'connector': 'IEC_C14', 'count': 2}]}],
+        }, curve_catalog=[curve])
+        self.assertIsNotNone(result['bestSolution'])
+        self.assertEqual(2, result['bestSolution']['unitCount'])
+        self.assertEqual([2, 2], sorted(unit['outlets']['used'] for unit in result['bestSolution']['units']))
+
+    def test_optimizer_excludes_legacy_capacity_without_manufacturer_verification(self):
+        curve = {**self.curves[0], 'identityVerified': True, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 3},
+        ], 'batteryConfigurations': [{
+            'id': 'internal', 'manufacturer_verified': True, 'label': 'Internal', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+            'includedPacks': [], 'extraPacks': [],
+        }]}
+        curve.pop('ratingWattsVerified')
+        curve.pop('ratingVaVerified')
+        result = optimize_from_connection(self.connection, {
+            'selectedProductIds': [self.catalog['products'][0]],
+            'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 50}],
+        }, curve_catalog=[curve])
+        self.assertEqual(0, result['search']['candidateModelCount'])
+        reasons = result['selectionDiagnostics']['excludedModels'][0]['reasons']
+        self.assertIn('watt_capacity_unknown', reasons)
+        self.assertIn('va_capacity_unknown', reasons)
+
+    def test_optimizer_can_select_battery_configuration_and_never_assume_pack_cost_is_zero(self):
+        curve = {**self.curves[0], 'identityVerified': True,
+                 'ratingWattsVerified': True, 'ratedWatts': 700,
+                 'ratingVaVerified': True, 'ratedVa': 900, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 4},
+        ], 'batteryConfigurations': [
+            {'id': 'internal', 'manufacturer_verified': True, 'label': 'Internal', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 8}, {'loadW': 700, 'runtimeMinutes': 2}],
+             'includedPacks': [], 'extraPacks': []},
+            {'id': 'plus-one', 'manufacturer_verified': True, 'label': 'Internal plus one pack', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 120}, {'loadW': 700, 'runtimeMinutes': 40}],
+             'includedPacks': [], 'extraPacks': [{'sku': 'EBM-1', 'quantity': 1}]},
+        ]}
+        result = optimize_from_connection(self.connection, {
+            'selectedConfigurations': [{'productId': self.catalog['products'][0],
+                                        'batteryConfigId': 'plus-one'}],
+            'runtimeRequirementMinutes': 10,
+            'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 50}],
+        }, curve_catalog=[curve])
+        self.assertIsNotNone(result['bestSolution'])
+        self.assertEqual('plus-one', result['bestSolution']['models'][0]['batteryConfigId'])
+        self.assertIsNone(result['bestSolution']['totalCost'])
+        self.assertFalse(result['priceComparison']['available'])
+        self.assertEqual('battery_pack_price_unknown', result['priceComparison']['reasonCode'])
+
     def test_selected_product_ids_restrict_solver_and_report_unavailable_models(self):
         selected = self.catalog['products'][0]
         result = optimize_from_connection(self.connection, {
@@ -39,10 +146,12 @@ class OptimizationEngineTests(unittest.TestCase):
     def test_selected_model_without_runtime_is_diagnosed_without_guessing(self):
         selected = self.catalog['products'][0]
         self.connection.execute('UPDATE product_sources SET raw_text=?', ('no runtime facts',))
+        curve = {**self.curves[0]}
+        curve.pop('batteryConfigurations')
         result = optimize_from_connection(self.connection, {
             'selectedProductIds': [selected], 'runtimeRequirementMinutes': 10,
             'devices': [{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 50}],
-        }, curve_catalog=[])
+        }, curve_catalog=[curve])
         self.assertIsNone(result['bestSolution'])
         self.assertEqual(0, result['search']['candidateModelCount'])
         reasons = result['selectionDiagnostics']['excludedModels'][0]['reasons']
@@ -51,6 +160,7 @@ class OptimizationEngineTests(unittest.TestCase):
     def test_small_devices_can_accumulate_into_supported_runtime_range(self):
         self.connection.execute("UPDATE products SET product_type='accessory' WHERE model!='UPS-1'")
         self.curves[0]['points'] = [{'loadW': 300, 'runtimeMinutes': 20}, {'loadW': 700, 'runtimeMinutes': 10}]
+        self.curves[0]['batteryConfigurations'][0]['points'] = self.curves[0]['points']
         result = self.optimize(devices=[
             {'name': 'Camera', 'quantity': 8, 'watt': 50, 'va': 62.5, 'priority': 50},
         ])
@@ -61,41 +171,40 @@ class OptimizationEngineTests(unittest.TestCase):
     def test_final_load_below_curve_range_remains_invalid(self):
         self.connection.execute("UPDATE products SET product_type='accessory' WHERE model!='UPS-1'")
         self.curves[0]['points'] = [{'loadW': 300, 'runtimeMinutes': 20}, {'loadW': 700, 'runtimeMinutes': 10}]
+        self.curves[0]['batteryConfigurations'][0]['points'] = self.curves[0]['points']
         result = self.optimize(devices=[
             {'name': 'Camera', 'quantity': 1, 'watt': 50, 'va': 62.5, 'priority': 50},
         ])
         self.assertIsNone(result['bestSolution'])
 
     def setUp(self):
+        domains = patch.dict(MANUFACTURER_DOMAINS, {'test vendor': ('vendor.example',)})
+        domains.start()
+        self.addCleanup(domains.stop)
         self.connection = sqlite3.connect(':memory:', isolation_level=None)
         self.catalog = seed_catalog(self.connection)
-        self.curves = [
-            {
-                'manufacturer': 'Test Vendor', 'model': 'UPS-1', 'sku': 'UPS-1',
-                'points': [{'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
-                'outletCount': 8,
-                'source': {'url': 'https://vendor.example/ups-1-runtime.pdf'},
-            },
-            {
-                'manufacturer': 'Test Vendor', 'model': 'UPS-2', 'sku': 'UPS-2',
-                'points': [{'loadW': 1, 'runtimeMinutes': 70}, {'loadW': 800, 'runtimeMinutes': 25}],
-                'outletCount': 5,
-                'source': {'url': 'https://vendor.example/ups-2-runtime.pdf'},
-            },
-        ]
+        self.curves = [verified_curve(
+            f'UPS-{index + 1}', 700 + 100 * index, 900 + 100 * index,
+            8 if index == 0 else 4 + index,
+            [{'loadW': 1, 'runtimeMinutes': 60 + 10 * index},
+             {'loadW': 700 + 100 * index, 'runtimeMinutes': 20 + 5 * index}],
+        ) for index in range(6)]
 
     def tearDown(self):
         self.connection.close()
 
-    def optimize(self, devices=None, runtime=10):
+    def optimize(self, devices=None, runtime=10, selected=None):
         if not callable(optimize_from_connection):
             self.fail('optimization_engine.optimize_from_connection is not implemented')
-        return optimize_from_connection(self.connection, {
+        request = {
             'runtimeRequirementMinutes': runtime,
             'devices': devices or [
                 {'name': 'Server', 'quantity': 2, 'watt': 600, 'va': 750, 'priority': 50},
             ],
-        }, curve_catalog=self.curves)
+        }
+        if selected is not None:
+            request['selectedProductIds'] = selected
+        return optimize_from_connection(self.connection, request, curve_catalog=self.curves)
 
     def test_returns_engineering_valid_best_and_five_alternatives(self):
         result = self.optimize()
@@ -119,7 +228,7 @@ class OptimizationEngineTests(unittest.TestCase):
     def test_single_device_search_is_complete_without_enumerating_unused_ups(self):
         result = self.optimize(devices=[
             {'name': 'Server', 'quantity': 1, 'watt': 200, 'va': 250, 'priority': 50},
-        ], runtime=5)
+        ], runtime=5, selected=self.catalog['products'][:2])
 
         self.assertEqual(1, result['search']['maxUnitsPerDesign'])
         self.assertTrue(result['search']['isComplete'])
@@ -150,6 +259,11 @@ class OptimizationEngineTests(unittest.TestCase):
                 SELECT ps.id FROM product_sources ps JOIN products p ON p.id=ps.product_id
                 WHERE p.model='UPS-1'
             )''')
+        self.curves[0]['ratedWatts'] = 12
+        self.curves[0]['ratedVa'] = 15
+        self.curves[0]['points'] = [{'loadW': 1, 'runtimeMinutes': 60},
+                                    {'loadW': 12, 'runtimeMinutes': 20}]
+        self.curves[0]['batteryConfigurations'][0]['points'] = self.curves[0]['points']
         result = self.optimize(devices=[
             {'name': f'Load {watt}', 'quantity': 1, 'watt': watt, 'va': watt / 0.8, 'priority': 50}
             for watt in (9, 6, 5, 3, 2, 2, 2, 1)

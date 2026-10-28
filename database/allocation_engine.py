@@ -1,6 +1,7 @@
 """Deterministic UPS fleet allocation with strict capacity, outlet, and runtime checks."""
 
 from decimal import Decimal, InvalidOperation
+from collections import deque
 import math
 from pathlib import Path
 import re
@@ -13,6 +14,11 @@ try:
         _build_inventory,
         _interpolate_runtime,
         _read_curve_catalog,
+        _verified_battery_outlet_count,
+        _verified_battery_outlet_groups,
+        _verified_runtime_curve,
+        _verified_rating,
+        _verified_identity,
     )
 except ImportError:  # Running this file or sibling API module directly.
     from recommendation_engine import (
@@ -21,6 +27,11 @@ except ImportError:  # Running this file or sibling API module directly.
         _build_inventory,
         _interpolate_runtime,
         _read_curve_catalog,
+        _verified_battery_outlet_count,
+        _verified_battery_outlet_groups,
+        _verified_runtime_curve,
+        _verified_rating,
+        _verified_identity,
     )
 
 
@@ -28,6 +39,12 @@ MAX_UPS_MODELS = 20
 MAX_UPS_UNITS = 500
 MAX_DEVICE_LINES = 500
 MAX_DEVICE_INSTANCES = 10000
+MAX_FIXED_SEARCH_DEVICES = 32
+MAX_FIXED_SEARCH_UNITS = 16
+MAX_FIXED_SEARCH_OUTLETS = 256
+MAX_FIXED_SEARCH_NODES = 5000
+CONNECTOR_OUTLETS = {'IEC_C14': 'IEC_C13', 'IEC_C20': 'IEC_C19',
+                     'NEMA_5_15P': 'NEMA_5_15R'}
 
 
 class AllocationInputError(ValueError):
@@ -93,21 +110,30 @@ def _parse_request(request):
         raise AllocationInputError(f'selectedUps.models must contain 1 to {MAX_UPS_MODELS} models')
 
     selected_models = []
-    seen_product_ids = set()
+    seen_selections = set()
+    configs_by_product = {}
     initial_ups_count = 0
     for index, model_row in enumerate(model_rows):
         if not isinstance(model_row, dict):
             raise AllocationInputError(f'selectedUps.models[{index}] must be an object')
         product_id = _integer(model_row.get('productId'), f'selectedUps.models[{index}].productId', 1, 2**31 - 1)
-        if product_id in seen_product_ids:
-            raise AllocationInputError('selectedUps.models must not repeat productId values')
-        seen_product_ids.add(product_id)
+        config_id = model_row.get('batteryConfigId')
+        if config_id is not None and (not isinstance(config_id, str)
+                or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,80}', config_id)):
+            raise AllocationInputError(f'selectedUps.models[{index}].batteryConfigId is invalid')
+        key = (product_id, config_id)
+        previous_configs = configs_by_product.setdefault(product_id, set())
+        if key in seen_selections or (previous_configs and (config_id is None or None in previous_configs)):
+            raise AllocationInputError('selectedUps.models must not repeat a model and battery configuration')
+        seen_selections.add(key)
+        previous_configs.add(config_id)
         if mode == 'fixed' and 'quantity' not in model_row:
             raise AllocationInputError(f'selectedUps.models[{index}].quantity is required in fixed mode')
         quantity = _integer(model_row.get('quantity', 0), f'selectedUps.models[{index}].quantity',
                             1 if mode == 'fixed' else 0, MAX_UPS_UNITS)
         initial_ups_count += quantity
-        selected_models.append({'product_id': product_id, 'quantity': quantity, 'selection_index': index})
+        selected_models.append({'product_id': product_id, 'battery_config_id': config_id,
+                                'quantity': quantity, 'selection_index': index})
     if initial_ups_count > MAX_UPS_UNITS:
         raise AllocationInputError(f'Initial UPS count must not exceed {MAX_UPS_UNITS}')
 
@@ -116,6 +142,7 @@ def _parse_request(request):
         raise AllocationInputError(f'devices must contain 1 to {MAX_DEVICE_LINES} entries')
     parsed_devices = []
     total_device_instances = 0
+    total_outlet_instances = 0
     total_watts = Decimal('0')
     total_va = Decimal('0')
     for index, device in enumerate(devices):
@@ -127,11 +154,30 @@ def _parse_request(request):
         quantity = _integer(device.get('quantity'), f'devices[{index}].quantity', 1, MAX_DEVICE_INSTANCES)
         watts = _decimal(device.get('watt', device.get('watts')))
         va = _decimal(device.get('va'))
-        if watts is None or watts <= 0 or _number(watts) is None:
-            raise AllocationInputError(f'devices[{index}].watt must be a finite number greater than 0')
-        if va is None or va <= 0 or _number(va) is None:
-            raise AllocationInputError(f'devices[{index}].va must be a finite number greater than 0')
+        if watts is None or watts < 0 or _number(watts) is None:
+            raise AllocationInputError(f'devices[{index}].watt must be a finite non-negative number')
+        if va is None or va < 0 or _number(va) is None:
+            raise AllocationInputError(f'devices[{index}].va must be a finite non-negative number')
+        if (watts == 0) != (va == 0):
+            raise AllocationInputError(f'devices[{index}] must specify both W and VA as zero or both positive')
         priority = _integer(device.get('priority'), f'devices[{index}].priority', 1, 100)
+        plugs = device.get('plugs', [{'connector': None, 'count': 1}])
+        if not isinstance(plugs, list) or not plugs or len(plugs) > 100:
+            raise AllocationInputError(f'devices[{index}].plugs must contain 1 to 100 groups')
+        parsed_plugs = []
+        for plug_index, plug in enumerate(plugs):
+            if not isinstance(plug, dict):
+                raise AllocationInputError(f'devices[{index}].plugs[{plug_index}] must be an object')
+            connector = plug.get('connector')
+            if connector is not None and (not isinstance(connector, str) or connector not in CONNECTOR_OUTLETS):
+                raise AllocationInputError(f'devices[{index}].plugs[{plug_index}].connector is unsupported')
+            count = _integer(plug.get('count'), f'devices[{index}].plugs[{plug_index}].count', 1,
+                             MAX_DEVICE_INSTANCES)
+            parsed_plugs.append({'connector': connector, 'count': count})
+        plug_count = sum(plug['count'] for plug in parsed_plugs)
+        total_outlet_instances += quantity * plug_count
+        if total_outlet_instances > MAX_DEVICE_INSTANCES:
+            raise AllocationInputError(f'Total plug quantity must not exceed {MAX_DEVICE_INSTANCES}')
         total_device_instances += quantity
         if total_device_instances > MAX_DEVICE_INSTANCES:
             raise AllocationInputError(f'Total device quantity must not exceed {MAX_DEVICE_INSTANCES}')
@@ -140,18 +186,22 @@ def _parse_request(request):
         parsed_devices.append({
             'device_index': index, 'name': name, 'quantity': quantity,
             'watt_each': float(watts), 'va_each': float(va), 'priority': priority,
+            'plugs': parsed_plugs, 'plug_count': plug_count,
         })
 
     total_watts_number = _number(total_watts)
     total_va_number = _number(total_va)
     if total_watts_number is None or total_va_number is None:
         raise AllocationInputError('Total load exceeds the supported numeric range')
+    if total_watts_number <= 0 or total_va_number <= 0:
+        raise AllocationInputError('At least one device must have a positive watt and VA load')
 
     return {
         'mode': mode, 'selected_models': selected_models,
         'runtime_required': runtime_required_number,
         'devices': parsed_devices, 'device_count': total_device_instances,
         'required_watts': total_watts_number, 'required_va': total_va_number,
+        'required_outlets': total_outlet_instances,
     }
 
 
@@ -167,19 +217,31 @@ def _model_records(connection, selected_models, curve_catalog):
         if product is None or product.get('non_ups_reason'):
             raise AllocationInputError(f"Selected productId {selected['product_id']} is not an allocatable UPS")
         missing = []
-        if product.get('rating_w') is None:
+        if not _verified_identity(product):
+            missing.append('identity_unverified')
+        rating_w = _verified_rating(product, 'rating_w')
+        rating_va = _verified_rating(product, 'rating_va')
+        if rating_w is None:
             missing.append('watt_capacity_unknown')
-        if product.get('rating_va') is None:
+        if rating_va is None:
             missing.append('va_capacity_unknown')
-        if product.get('outlet_count') is None:
+        backed_outlets = _verified_battery_outlet_count(product)
+        if backed_outlets is None:
             missing.append('outlet_unknown')
-        if product.get('runtime_curve') is None:
+        curve = _verified_runtime_curve(product, selected.get('battery_config_id'))
+        if curve is None:
             missing.append('runtime_unknown')
         models.append({
             'product_id': product['id'], 'manufacturer': product['manufacturer'],
             'model': product['model'], 'sku': product['sku'],
-            'rating_w': product.get('rating_w'), 'rating_va': product.get('rating_va'),
-            'outlet_count': product.get('outlet_count'), 'runtime_curve': product.get('runtime_curve'),
+            'identity_verified': _verified_identity(product),
+            'battery_config_id': curve['configurationId'] if curve else selected.get('battery_config_id'),
+            'rating_w': rating_w, 'rating_va': rating_va,
+            'rating_w_source': product.get('rating_w_source') if rating_w is not None else None,
+            'rating_va_source': product.get('rating_va_source') if rating_va is not None else None,
+            'identity_source': product.get('identity_source') if _verified_identity(product) else None,
+            'outlet_count': backed_outlets, 'runtime_curve': curve,
+            'outlet_groups': _verified_battery_outlet_groups(product),
             'quantity': selected['quantity'], 'selection_index': selected['selection_index'],
             'evidence': list(product.get('evidence', [])),
             'source_warnings': [warning for warning in product.get('warnings', [])
@@ -207,12 +269,13 @@ def _evidence_refs(model, flag):
 
 
 def _technical_evidence(model):
-    outlet_source = model.get('manufacturer_outlet_source')
-    outlets = [outlet_source] if outlet_source else _evidence_refs(model, 'outletEvidence')
+    outlets = [group['source'] for group in model.get('outlet_groups') or []
+               if group.get('source')]
     curve = model.get('runtime_curve')
     return {
-        'ratingWatts': _evidence_refs(model, 'ratingWEvidence'),
-        'ratingVa': _evidence_refs(model, 'ratingVaEvidence'),
+        'identity': [model['identity_source']] if model.get('identity_source') else [],
+        'ratingWatts': [model['rating_w_source']] if model.get('rating_w_source') else [],
+        'ratingVa': [model['rating_va_source']] if model.get('rating_va_source') else [],
         'outlets': outlets,
         'runtimeCurve': [] if not curve else [curve.get('source')],
     }
@@ -223,19 +286,79 @@ def _new_unit(model, sequence, auto_added):
         'ups_unit_id': f'UPS-{sequence:02d}', 'sequence': sequence,
         'product_id': model['product_id'], 'manufacturer': model['manufacturer'],
         'model': model['model'], 'sku': model['sku'],
+        'identity_verified': model.get('identity_verified') is True,
+        'battery_config_id': model.get('battery_config_id'),
         'rating_w': model['rating_w'], 'rating_va': model['rating_va'],
+        'rating_w_source': model.get('rating_w_source'), 'rating_va_source': model.get('rating_va_source'),
+        'identity_source': model.get('identity_source'),
         'outlet_count': model['outlet_count'], 'runtime_curve': model['runtime_curve'],
+        'outlet_groups': model.get('outlet_groups'),
         'evidence': model['evidence'], 'source_warnings': model['source_warnings'],
         'manufacturer_outlet_source': model['manufacturer_outlet_source'],
         'auto_added': auto_added, 'used_w': 0.0, 'used_va': 0.0, 'outlets': [],
+        'plug_demands': [], 'device_refs': [],
     }
 
 
-def _placement(unit, device, runtime_required):
+def _plan_outlets(unit, device=None):
+    """Match all plugs on a unit, preserving typed sockets for typed plugs."""
+    if unit.get('outlet_count') is None or unit.get('outlet_groups') is None:
+        return None, 'outlet_unknown'
+    free_groups = []
+    number = 0
+    for group in unit['outlet_groups']:
+        end = number + group['count']
+        free_groups.append({'outletType': group.get('type'), 'numbers': deque(range(number + 1, end + 1))})
+        number = end
+    demands = list(unit['plug_demands'])
+    if device is not None:
+        demands.append(device['plugs'])
+    needed = sum(plug['count'] for groups in demands for plug in groups)
+    if number < needed:
+        return None, 'outlet_capacity'
+    assigned = [[] for _ in demands]
+    flattened = [(index, plug['connector']) for index, groups in enumerate(demands)
+                 for plug in groups for _ in range(plug['count'])]
+    # Re-evaluate earlier untyped plugs whenever another device is placed.
+    # This avoids consuming the only C13 socket before a later C14 plug arrives.
+    for owner_index, connector in sorted(flattened, key=lambda item: item[1] is None):
+        required_type = CONNECTOR_OUTLETS.get(connector) if connector else None
+        match = next((group for group in free_groups if group['numbers']
+                      and (required_type is None or group['outletType'] == required_type)), None)
+        if match is None:
+            unknown = any(group['numbers'] and (not group['outletType']
+                          or group['outletType'] in {'UNIVERSAL', 'AS'}) for group in free_groups)
+            return None, 'connector_unknown' if unknown else 'connector_mismatch'
+        assigned[owner_index].append({
+            'outletNumber': match['numbers'].popleft(), 'outletType': match['outletType'],
+            'connector': connector, 'compatibilityStatus': 'verified' if connector else 'not_checked',
+        })
+    return assigned, None
+
+
+def _commit_outlets(unit, device):
+    plan, reason = _plan_outlets(unit, device)
+    if reason:
+        raise AllocationInputError('Outlet assignment changed unexpectedly')
+    unit['plug_demands'].append(device['plugs'])
+    unit['outlets'] = [slot['outletNumber'] for assignment in plan for slot in assignment]
+
+
+def _rollback_outlets(unit):
+    unit['plug_demands'].pop()
+    plan, reason = _plan_outlets(unit)
+    if reason:
+        raise AllocationInputError('Outlet rollback changed unexpectedly')
+    unit['outlets'] = [slot['outletNumber'] for assignment in plan for slot in assignment]
+
+
+def _placement(unit, device, runtime_required, allow_partial_below_curve=False):
     watts = unit['used_w'] + device['watt_each']
     va = unit['used_va'] + device['va_each']
-    outlet_number = len(unit['outlets']) + 1
+    outlet_number = len(unit['outlets']) + device['plug_count']
     reasons = []
+    if not unit.get('identity_verified'):
+        reasons.append('identity_unverified')
 
     rating_w = unit['rating_w']
     rating_va = unit['rating_va']
@@ -255,19 +378,20 @@ def _placement(unit, device, runtime_required):
             reasons.append('va_overload')
         elif va > planning_limit_va + 1e-9:
             reasons.append('va_capacity')
-    if unit['outlet_count'] is None:
-        reasons.append('outlet_unknown')
-    elif outlet_number > unit['outlet_count']:
-        reasons.append('outlet_capacity')
+    _, outlet_reason = _plan_outlets(unit, device)
+    if outlet_reason:
+        reasons.append(outlet_reason)
 
     runtime = None
     curve = unit['runtime_curve']
     if curve is None:
         reasons.append('runtime_unknown')
-    else:
+    elif watts > 0:
         runtime = _interpolate_runtime(curve['points'], watts)
         if runtime is None:
-            reasons.append('runtime_unknown')
+            below_range = watts < min(point['loadW'] for point in curve['points'])
+            if not (allow_partial_below_curve and below_range):
+                reasons.append('runtime_unknown')
         elif runtime + 1e-9 < runtime_required:
             reasons.append('runtime_insufficient')
 
@@ -277,6 +401,98 @@ def _placement(unit, device, runtime_required):
     safe_va = rating_va / (1 + float(MIN_ENGINEERING_MARGIN))
     utilization = max(watts / safe_w, va / safe_va, outlet_number / unit['outlet_count'])
     return [], runtime, utilization
+
+
+def _record_placement(unit, device, instance_number, runtime, allocations):
+    unit['used_w'] += device['watt_each']
+    unit['used_va'] += device['va_each']
+    _commit_outlets(unit, device)
+    allocation = {
+        'deviceIndex': device['device_index'], 'instanceNumber': instance_number,
+        'name': device['name'], 'priority': device['priority'], 'quantity': 1,
+        'watt': device['watt_each'], 'va': device['va_each'],
+        'upsUnitId': unit['ups_unit_id'], 'productId': unit['product_id'],
+        'model': unit['model'], 'outletNumber': None, 'outletNumbers': [],
+        'estimatedRuntimeMinutes': None if runtime is None else round(runtime, 2),
+        'runtimeStatus': 'not_applicable_zero_load' if runtime is None else 'meets_requirement',
+    }
+    allocations.append(allocation)
+    unit['device_refs'].append(allocation)
+
+
+def _fixed_units(models):
+    result = []
+    for model in models:
+        for _ in range(model['quantity']):
+            result.append(_new_unit(model, len(result) + 1, auto_added=False))
+    return result
+
+
+def _fixed_search(models, ordered_devices, parsed, current_units):
+    """Find a complete fixed-fleet assignment, or explicitly report a search limit."""
+    if parsed['device_count'] > MAX_FIXED_SEARCH_DEVICES:
+        return None, False, 'fixed_search_device_limit'
+    if len(current_units) > MAX_FIXED_SEARCH_UNITS:
+        return None, False, 'fixed_search_unit_limit'
+    if sum(unit['outlet_count'] or 0 for unit in current_units) > MAX_FIXED_SEARCH_OUTLETS:
+        return None, False, 'fixed_search_outlet_limit'
+
+    units = _fixed_units(models)
+    instances = [(device, number) for device in ordered_devices
+                 for number in range(1, device['quantity'] + 1)]
+    assignment = []
+    nodes = 0
+    limited = False
+
+    def search(index):
+        nonlocal nodes, limited
+        if nodes >= MAX_FIXED_SEARCH_NODES:
+            limited = True
+            return None
+        nodes += 1
+        if index == len(instances):
+            for unit in units:
+                if not unit['used_w']:
+                    continue
+                curve = unit['runtime_curve']
+                runtime = _interpolate_runtime(curve['points'], unit['used_w']) if curve else None
+                if runtime is None or runtime + 1e-9 < parsed['runtime_required']:
+                    return None
+            return list(assignment)
+
+        device, _ = instances[index]
+        viable = []
+        for unit_index, unit in enumerate(units):
+            reasons, runtime, utilization = _placement(
+                unit, device, parsed['runtime_required'], allow_partial_below_curve=True)
+            if not reasons:
+                viable.append((utilization, unit['sequence'], unit_index, runtime))
+        viable.sort(key=lambda item: (
+            item[3] is None and units[item[2]]['used_w'] + device['watt_each'] > 0,
+            -item[0], item[1]))
+        for _, _, unit_index, _ in viable:
+            unit = units[unit_index]
+            old_w, old_va = unit['used_w'], unit['used_va']
+            unit['used_w'] += device['watt_each']
+            unit['used_va'] += device['va_each']
+            _commit_outlets(unit, device)
+            assignment.append(unit_index)
+            found = search(index + 1)
+            assignment.pop()
+            _rollback_outlets(unit)
+            unit['used_w'], unit['used_va'] = old_w, old_va
+            if found is not None:
+                return found
+            if limited:
+                return None
+        return None
+
+    answer = search(0)
+    if answer is not None:
+        return (instances, answer), True, 'feasible_assignment_found'
+    if limited:
+        return None, False, 'fixed_search_node_limit'
+    return None, True, 'fixed_search_exhausted'
 
 
 def _distinct_reasons(groups):
@@ -296,7 +512,7 @@ def _recommendations(validation, capacity_report):
             'code': 'increase_ups_capacity',
             'message': 'Add a selected UPS unit or select a UPS model with higher W/VA ratings while preserving the 20% engineering margin.',
         })
-    if reasons & {'outlet_capacity', 'outlet_unknown'}:
+    if reasons & {'outlet_capacity', 'outlet_unknown', 'connector_unknown', 'connector_mismatch'}:
         recommendations.append({
             'code': 'increase_verified_outlets',
             'message': 'Add a selected UPS with a verified outlet count or select a model with more source-listed outlets.',
@@ -318,7 +534,6 @@ def allocate_from_connection(connection, request, curve_catalog=None):
     """Allocate device instances across fixed UPS units or an auto-added selected-model pool."""
     parsed = _parse_request(request)
     models = _model_records(connection, parsed['selected_models'], curve_catalog)
-    model_by_id = {model['product_id']: model for model in models}
     units = []
     for model in models:
         for _ in range(model['quantity']):
@@ -333,14 +548,17 @@ def allocate_from_connection(connection, request, curve_catalog=None):
             viable = []
             current_reasons = []
             for unit in units:
-                reasons, runtime, utilization = _placement(unit, device, parsed['runtime_required'])
+                reasons, runtime, utilization = _placement(unit, device, parsed['runtime_required'],
+                                                           allow_partial_below_curve=True)
                 if reasons:
                     current_reasons.append(reasons)
                 else:
                     viable.append((utilization, unit['sequence'], unit, runtime))
 
             if viable:
-                _, _, unit, runtime = min(viable, key=lambda item: (-item[0], item[1]))
+                _, _, unit, runtime = min(viable, key=lambda item: (
+                    item[3] is None and item[2]['used_w'] + device['watt_each'] > 0,
+                    -item[0], item[1]))
             elif parsed['mode'] == 'auto' and len(units) < MAX_UPS_UNITS:
                 new_options = []
                 model_reasons = []
@@ -349,13 +567,15 @@ def allocate_from_connection(connection, request, curve_catalog=None):
                         model_reasons.append(model['unusable_reasons'])
                         continue
                     candidate = _new_unit(model, len(units) + 1, auto_added=True)
-                    reasons, runtime, utilization = _placement(candidate, device, parsed['runtime_required'])
+                    reasons, runtime, utilization = _placement(candidate, device, parsed['runtime_required'],
+                                                               allow_partial_below_curve=True)
                     if reasons:
                         model_reasons.append(reasons)
                     else:
                         new_options.append((utilization, model['selection_index'], model, runtime))
                 if new_options:
-                    _, _, model, runtime = min(new_options, key=lambda item: (-item[0], item[1]))
+                    _, _, model, runtime = min(new_options, key=lambda item: (
+                        item[3] is None and device['watt_each'] > 0, -item[0], item[1]))
                     unit = _new_unit(model, len(units) + 1, auto_added=True)
                     units.append(unit)
                 else:
@@ -381,26 +601,67 @@ def allocate_from_connection(connection, request, curve_catalog=None):
                 })
                 continue
 
-            unit['used_w'] += device['watt_each']
-            unit['used_va'] += device['va_each']
-            outlet_number = len(unit['outlets']) + 1
-            unit['outlets'].append(outlet_number)
-            allocation = {
-                'deviceIndex': device['device_index'], 'instanceNumber': instance_number,
-                'name': device['name'], 'priority': device['priority'], 'quantity': 1,
-                'watt': device['watt_each'], 'va': device['va_each'],
-                'upsUnitId': unit['ups_unit_id'], 'productId': unit['product_id'],
-                'model': unit['model'], 'outletNumber': outlet_number,
-            'estimatedRuntimeMinutes': round(runtime, 2), 'runtimeStatus': 'meets_requirement',
-            }
-            device_allocations.append(allocation)
-            outlet_allocations.append({
-                'upsUnitId': unit['ups_unit_id'], 'productId': unit['product_id'],
-                'outletNumber': outlet_number, 'outletType': None,
-                'compatibilityEvidence': 'outlet count only; receptacle type is not recorded',
-                'deviceIndex': device['device_index'], 'instanceNumber': instance_number,
-                'deviceName': device['name'],
-            })
+            _record_placement(unit, device, instance_number, runtime, device_allocations)
+
+    devices_by_index = {device['device_index']: device for device in parsed['devices']}
+    for unit in units:
+        if not unit['used_w']:
+            continue
+        runtime = (_interpolate_runtime(unit['runtime_curve']['points'], unit['used_w'])
+                   if unit['runtime_curve'] else None)
+        if runtime is not None and runtime + 1e-9 >= parsed['runtime_required']:
+            continue
+        reason = 'runtime_unknown' if runtime is None else 'runtime_insufficient'
+        for allocation in unit['device_refs']:
+            device = devices_by_index[allocation['deviceIndex']]
+            unassigned_instances.append({'device_index': device['device_index'],
+                'instance_number': allocation['instanceNumber'], 'device': device, 'reasons': [reason]})
+            device_allocations.remove(allocation)
+        unit['used_w'] = 0.0
+        unit['used_va'] = 0.0
+        unit['outlets'] = []
+        unit['plug_demands'] = []
+        unit['device_refs'] = []
+
+    search_complete = True
+    search_reason = 'feasible_assignment_found'
+    if parsed['mode'] == 'fixed' and unassigned_instances:
+        solution, search_complete, search_reason = _fixed_search(models, ordered_devices, parsed, units)
+        if solution is not None:
+            instances, assignment = solution
+            units = _fixed_units(models)
+            device_allocations = []
+            unassigned_instances = []
+            for (device, instance_number), unit_index in zip(instances, assignment):
+                unit = units[unit_index]
+                reasons, runtime, _ = _placement(unit, device, parsed['runtime_required'],
+                                                  allow_partial_below_curve=True)
+                if reasons:
+                    raise AllocationInputError('Fixed allocation changed unexpectedly')
+                _record_placement(unit, device, instance_number, runtime, device_allocations)
+    elif parsed['mode'] == 'auto' and unassigned_instances:
+        search_complete = False
+        search_reason = 'auto_search_not_exhaustive'
+
+    for unit in units:
+        if not unit['device_refs']:
+            continue
+        plan, outlet_error = _plan_outlets(unit)
+        if outlet_error or len(plan) != len(unit['device_refs']):
+            raise AllocationInputError('Final outlet assignment is inconsistent')
+        for allocation, assigned_outlets in zip(unit['device_refs'], plan):
+            numbers = [outlet['outletNumber'] for outlet in assigned_outlets]
+            allocation['outletNumber'] = numbers[0]
+            allocation['outletNumbers'] = numbers
+            for outlet in assigned_outlets:
+                outlet_allocations.append({
+                    'upsUnitId': unit['ups_unit_id'], 'productId': unit['product_id'],
+                    **outlet,
+                    'compatibilityEvidence': ('connector and outlet type matched' if outlet['connector']
+                                              else 'connector compatibility was not checked'),
+                    'deviceIndex': allocation['deviceIndex'], 'instanceNumber': allocation['instanceNumber'],
+                    'deviceName': allocation['name'],
+                })
 
     unassigned_groups = {}
     for item in unassigned_instances:
@@ -424,7 +685,8 @@ def allocate_from_connection(connection, request, curve_catalog=None):
         final_runtime_by_unit[unit['ups_unit_id']] = runtime
     for allocation in device_allocations:
         runtime = final_runtime_by_unit[allocation['upsUnitId']]
-        allocation['estimatedRuntimeMinutes'] = round(runtime, 2)
+        allocation['estimatedRuntimeMinutes'] = None if runtime is None else round(runtime, 2)
+        allocation['runtimeStatus'] = 'not_applicable_zero_load' if runtime is None else 'meets_requirement'
 
     assigned_w = _finite_sum((unit['used_w'] for unit in units), 'Assigned W')
     assigned_va = _finite_sum((unit['used_va'] for unit in units), 'Assigned VA')
@@ -453,12 +715,21 @@ def allocate_from_connection(connection, request, curve_catalog=None):
         'watt_capacity', 'watt_overload', 'va_capacity', 'va_overload',
         'watt_capacity_unknown', 'va_capacity_unknown',
     })
-    outlet_valid = not bool(reasons & {'outlet_capacity', 'outlet_unknown'})
+    outlet_valid = not bool(reasons & {'outlet_capacity', 'outlet_unknown',
+                                       'connector_unknown', 'connector_mismatch'})
     runtime_valid = not bool(reasons & {'runtime_insufficient', 'runtime_unknown'})
     all_assigned = not unassigned_devices
+    connectors = [plug['connector'] for device in parsed['devices'] for plug in device['plugs']]
+    connector_status = ('not_checked' if all(connector is None for connector in connectors)
+                        else 'not_verified' if not outlet_valid or not all_assigned
+                        else 'partial' if any(connector is None for connector in connectors)
+                        else 'verified')
     validation = {
         'isValid': all_assigned and capacity_valid and outlet_valid and runtime_valid,
         'allDevicesAssigned': all_assigned,
+        'searchComplete': search_complete,
+        'searchReason': search_reason,
+        'connectorStatus': connector_status,
         'capacityValid': capacity_valid,
         'outletValid': outlet_valid,
         'runtimeValid': runtime_valid,
@@ -493,6 +764,7 @@ def allocate_from_connection(connection, request, curve_catalog=None):
         unit_summaries.append({
             'upsUnitId': unit['ups_unit_id'], 'productId': unit['product_id'],
             'manufacturer': unit['manufacturer'], 'model': unit['model'], 'sku': unit['sku'],
+            'batteryConfigId': unit['battery_config_id'],
             'autoAdded': unit['auto_added'], 'ratings': {'watts': unit['rating_w'], 'va': unit['rating_va']},
             'usedLoad': {'watts': round(unit['used_w'], 2), 'va': round(unit['used_va'], 2)},
             'utilizationPercent': {
@@ -502,7 +774,8 @@ def allocate_from_connection(connection, request, curve_catalog=None):
             'outlets': {'used': len(unit['outlets']), 'available': unit['outlet_count'],
                         'assignedNumbers': list(unit['outlets'])},
             'estimatedRuntimeMinutes': None if runtime is None else round(runtime, 2),
-            'runtimeStatus': 'unused' if not unit['used_w'] else 'meets_requirement',
+            'runtimeStatus': ('not_applicable_zero_load' if unit['outlets'] and not unit['used_w']
+                              else 'unused' if not unit['used_w'] else 'meets_requirement'),
             'runtimeCurveSource': None if not unit['runtime_curve'] else unit['runtime_curve']['source'],
             'technicalEvidence': _technical_evidence(unit),
             'sourceWarnings': list(unit['source_warnings']),
@@ -510,6 +783,8 @@ def allocate_from_connection(connection, request, curve_catalog=None):
 
     return {
         'inventoryMode': parsed['mode'],
+        'searchComplete': search_complete,
+        'searchReason': search_reason,
         'runtimeRequirementMinutes': parsed['runtime_required'],
         'deviceAllocations': device_allocations,
         'unassignedDevices': unassigned_devices,
@@ -521,6 +796,7 @@ def allocate_from_connection(connection, request, curve_catalog=None):
         'selectedModels': [
             {'productId': model['product_id'], 'manufacturer': model['manufacturer'],
              'model': model['model'], 'sku': model['sku'], 'initialQuantity': model['quantity'],
+             'batteryConfigId': model['battery_config_id'],
              'unusableReasons': model['unusable_reasons'],
              'technicalEvidence': _technical_evidence(model),
              'sourceWarnings': list(model['source_warnings'])}

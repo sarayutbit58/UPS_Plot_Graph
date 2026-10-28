@@ -2,6 +2,43 @@
 
 Deployed 2026-10-15. The private service is available at https://ups-team-selector.onrender.com and runs on cloud Python with Turso persistence. The laptop does not need to remain awake. The reusable deployment blueprint remains in `render.yaml`.
 
+## Verified catalog v2 workflow
+
+The v2 projection stores manufacturer-verified identity and W/VA separately from legacy observations, separates battery-backed outlet groups from total/surge/hardwire outputs, and binds each runtime curve to its battery configuration. Missing or conflicting facts remain unknown and cannot pass automatic allocation. Historical model-only/SKU merges remain quarantined until their bundle identity is resolved. Original prices and source references stay in the private catalog and backup; public code must not contain partner costs, raw source paths or credentials.
+
+Create an immutable local backup of the current remote catalog before staging. Use `stage_verified_catalog.py` with a private reviewed evidence manifest to create a new v2 SQLite file; use `append_verified_catalog.py` only for source records with a verified identity, manufacturer W/VA and a projected Dealer/NDP offer. Both tools refuse to overwrite their inputs. The staged file contains a fingerprint of the remote snapshot it was built from; successive staging/append operations preserve that base.
+
+The following PowerShell example snapshots only this app's two catalog tables; it is not a general backup of unrelated Turso data. Set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in a private process environment first. Use a fresh ignored filename for each backup, keep it private, and do not modify it after creation. A failed attempt can leave an incomplete file; choose a new filename and investigate before retrying.
+
+```powershell
+$upsPython = (uv python find --no-project 3.11)
+@'
+import os, sqlite3
+from pathlib import Path
+from database.turso_store import TursoStore
+from database.publish_turso import _read_catalog
+
+path = Path('database/local/current-remote-backup.sqlite3')
+path.parent.mkdir(parents=True, exist_ok=True)
+source = TursoStore(os.environ['TURSO_DATABASE_URL'], os.environ['TURSO_AUTH_TOKEN'], cache_seconds=0).connect()
+try:
+    with path.open('xb'):
+        pass
+    with sqlite3.connect(path) as target:
+        source.backup(target)
+        if target.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+            raise ValueError('Backup integrity check failed')
+finally:
+    source.close()
+_, rows = _read_catalog(path, expected=True)
+print('Private catalog backup verified; models:', len(rows))
+'@ | & $upsPython -B -X utf8 -
+```
+
+Deploy the v2-capable server first: v1 data without verified metadata fails closed. Then publish the reviewed v2 file using `publish_turso.py --db <staged-file> --expected-source <remote-backup>`. The publisher checks JSON consistency, retains existing model identities and original price/source evidence, checks the staged fingerprint, and compares both the original and written catalog inside its transaction. Unexpected tables, triggers, views, or other user-defined schema objects abort publication. A mismatch aborts instead of overwriting a concurrent change. Identity splits and intentional price/evidence changes require a separately reviewed migration, not this ordinary refresh. The staging fingerprint is removed from live metadata. After publishing, verify the remote data and an authenticated browser flow; the server may cache a prior catalog for up to 60 seconds.
+
+The 2026-10-15 records below are historical setup evidence, not current catalog counts or a current deployment acceptance result.
+
 ## Deployment record - 2026-10-15
 
 - Render Free web service in Singapore, deployed from `feat/catalog-filters-turso` at commit `7b1c44e10e9e6f42bcbaa250569e98d52f94644c`; automatic deployment is off. PR #5 remains separate from this deployment.
@@ -18,13 +55,13 @@ After merging the reviewed PR, configure Render's deployment branch as `main` an
 
 ## 1. Create the catalog database
 
-Create a Turso account and a dedicated empty database for this application. Keep it separate from unrelated customer or business data. Export the derived catalog with `published_catalog.py`, then publish that export with `publish_turso.py --db <curated-export.sqlite3>`. Check each tool's `--help` for the current export arguments. Include dealer prices only in the private team export; original documents, raw extraction text, and private file paths must not be uploaded.
+Create a Turso account and a dedicated empty database for this application. Keep it separate from unrelated customer or business data. Export the derived catalog with `published_catalog.py`; for a populated destination, use the v2 staging and expected-source workflow above. Include dealer prices only in the private team export; original documents, raw extraction text, and private file paths must not be uploaded.
 
-The default private team projection keeps real UPS models with known W and VA. It retains unknown outlets, runtime, and expansion as unknown so the nearby browser can explain them. This preserves every model currently eligible for automatic allocation while leaving capacity-less rows out of the hosted dataset:
+The historical private projection kept catalog entries with recorded W and VA. V2 keeps those observations for review but requires separate manufacturer verification before automatic allocation. A staged refresh uses the current remote backup as its base:
 
 ```text
-python database/published_catalog.py --db database/local/ups-products.sqlite3 --output database/local/team-catalog.sqlite3 --include-prices
-python database/publish_turso.py --db database/local/team-catalog.sqlite3
+python database/stage_verified_catalog.py --source database/local/current-remote-backup.sqlite3 --output database/local/team-catalog-v2.sqlite3 --manifest database/local/reviewed-evidence.json
+python database/publish_turso.py --db database/local/team-catalog-v2.sqlite3 --expected-source database/local/current-remote-backup.sqlite3
 ```
 
 Choose a fresh output filename if that export already exists. The source database is opened read-only. Publishing is a separate explicit network action after the export has been reviewed.

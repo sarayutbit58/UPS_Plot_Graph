@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from published_catalog import SCHEMA, FORMAT, export_catalog, project_model, load_published_inventory
-from publish_turso import publish
+from publish_turso import BASE_SNAPSHOT_KEY, _read_catalog, publish, snapshot_fingerprint
 
 
 def model():
@@ -62,6 +62,96 @@ class FakeRemoteStore:
 
 
 class PublishedCatalogTests(unittest.TestCase):
+    def test_publisher_can_upgrade_a_dedicated_v1_catalog_to_v2(self):
+        class ExistingV1Store(FakeRemoteStore):
+            def query(self, sql):
+                if 'sqlite_master' in sql:
+                    return [('published_models',), ('catalog_meta',)]
+                if 'catalog_meta' in sql:
+                    return [('format', 'ups-curated-v1')]
+                raise AssertionError('Unexpected query')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'v2.sqlite3'
+            expected = Path(directory) / 'expected-v1.sqlite3'
+            write_export(path)
+            write_export(expected)
+            with closing(sqlite3.connect(expected)) as connection, connection:
+                connection.execute("UPDATE catalog_meta SET value='ups-curated-v1' WHERE key='format'")
+            fingerprint = snapshot_fingerprint(*_read_catalog(expected, expected=True))
+            with closing(sqlite3.connect(path)) as connection, connection:
+                connection.execute('INSERT INTO catalog_meta VALUES(?,?)', (BASE_SNAPSHOT_KEY, fingerprint))
+            try:
+                result = publish(path, ExistingV1Store(), expected_snapshot_path=expected)
+            except ValueError as error:
+                self.fail(f'dedicated v1 catalog could not be upgraded: {error}')
+        self.assertEqual(1, result['models'])
+
+    def test_projection_retains_conflicts_and_previous_ratings_without_private_paths(self):
+        product = model()
+        product['original_source_ratings'] = {'rating_w': 800, 'rating_va': 1000}
+        product['manufacturer_conflicts'] = [{
+            'field': 'runtime', 'configurationId': 'internal',
+            'valueA': 5, 'valueB': 4,
+            'sourceA': {'url': 'https://vendor.example/spec.pdf', 'page': 2},
+            'sourceB': {'path': 'C:/private/customer-name/source.xlsx', 'locator': 'sheet:secret'},
+        }]
+        projected = project_model(product, include_prices=True)
+        self.assertEqual(800, projected.get('original_source_ratings', {}).get('rating_w'))
+        self.assertEqual('runtime', projected.get('manufacturer_conflicts', [{}])[0].get('field'))
+        self.assertEqual(2, projected['manufacturer_conflicts'][0]['sourceA']['page'])
+        self.assertNotIn('C:/private', json.dumps(projected))
+
+    def test_reprojected_evidence_preserves_opaque_source_identity(self):
+        first = project_model(model())
+        second_input = model()
+        second_input['evidence'] = first['evidence']
+        second = project_model(second_input)
+        self.assertEqual(first['evidence'][0]['sourceId'], second['evidence'][0]['sourceId'])
+
+    def test_unusual_conflict_field_is_not_silently_dropped(self):
+        item = model()
+        item['manufacturer_conflicts'] = [{'field': 'runtime discrepancy'}]
+        projected = project_model(item)
+        self.assertEqual(1, len(projected['manufacturer_conflicts']))
+
+    def test_verified_outlets_and_battery_configuration_survive_private_projection(self):
+        product = model()
+        product.update({
+            'identity_verified': True,
+            'manufacturer_sku': 'UPS-1',
+            'rating_w_verified': True, 'rating_va_verified': True,
+            'rating_w_source': {'url': 'https://vendor.example/spec.pdf'},
+            'rating_va_source': {'url': 'https://vendor.example/spec.pdf'},
+            'outlet_groups': [{
+                'type': 'IEC_C13', 'power': 'battery', 'count': 4, 'manufacturer_verified': True,
+                'source': {'url': 'https://vendor.example/spec.pdf',
+                           'path': 'C:/private/customer-name/spec.pdf'},
+            }],
+            'battery_configurations': [{
+                'id': 'internal', 'label': 'Internal battery',
+                'manufacturer_verified': True,
+                'includedPacks': [], 'extraPacks': [],
+                'points': [{'loadW': 500, 'runtimeMinutes': 10},
+                           {'loadW': 1000, 'runtimeMinutes': 4}],
+                'source': {'url': 'https://vendor.example/runtime.pdf',
+                           'path': 'C:/private/customer-name/runtime.pdf'},
+            }],
+        })
+        projected = project_model(product, include_prices=True)
+        self.assertTrue(projected.get('identity_verified'))
+        self.assertEqual('UPS-1', projected.get('manufacturer_sku'))
+        self.assertTrue(projected.get('rating_w_verified'))
+        self.assertTrue(projected.get('rating_va_verified'))
+        self.assertEqual('https://vendor.example/spec.pdf', projected['rating_w_source']['url'])
+        self.assertEqual('battery', projected['outlet_groups'][0]['power'])
+        self.assertEqual(4, projected['outlet_groups'][0]['count'])
+        self.assertTrue(projected['outlet_groups'][0].get('manufacturer_verified'))
+        self.assertEqual('internal', projected['battery_configurations'][0]['id'])
+        self.assertTrue(projected['battery_configurations'][0].get('manufacturer_verified'))
+        self.assertEqual(4, projected['battery_configurations'][0]['points'][1]['runtimeMinutes'])
+        self.assertNotIn('C:/private', json.dumps(projected))
+        self.assertEqual('123.45', projected['prices'][0]['amount'])
+
     def test_default_omits_prices_paths_raw_description_and_keeps_unknowns(self):
         result = project_model(model())
         text = json.dumps(result)

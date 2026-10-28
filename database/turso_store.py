@@ -9,9 +9,9 @@ from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 try:
-    from .published_catalog import SCHEMA, FORMAT
+    from .published_catalog import SCHEMA, SUPPORTED_FORMATS
 except ImportError:
-    from published_catalog import SCHEMA, FORMAT
+    from published_catalog import SCHEMA, SUPPORTED_FORMATS
 
 MAX_RESPONSE_BYTES = 8_000_000
 MAX_MODELS = 10_000
@@ -111,7 +111,7 @@ class TursoStore:
                     raise TursoError('Database catalog read failed')
                 steps = batch['step_results']
                 metadata, models = decode_rows(steps[1]), decode_rows(steps[2])
-                if dict(metadata).get('format') != FORMAT or len(models) > MAX_MODELS:
+                if dict(metadata).get('format') not in SUPPORTED_FORMATS or len(models) > MAX_MODELS:
                     raise TursoError('Unsupported catalog format or size')
                 self._cached = (metadata, models)
                 self._expires = time.monotonic() + self._cache_seconds

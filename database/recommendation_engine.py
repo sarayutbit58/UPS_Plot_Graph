@@ -7,6 +7,11 @@ from pathlib import Path
 import re
 import sqlite3
 
+try:
+    from .verified_evidence import is_manufacturer_url, has_unverified_bundle, _configuration, _group, apply_verified_evidence
+except ImportError:
+    from verified_evidence import is_manufacturer_url, has_unverified_bundle, _configuration, _group, apply_verified_evidence
+
 
 MIN_ENGINEERING_MARGIN = Decimal('0.20')
 TARGET_ENGINEERING_MARGIN = Decimal('0.30')
@@ -310,6 +315,92 @@ def _interpolate_runtime(points, watts):
     return None
 
 
+def _verified_outlet_groups(product):
+    """Return only manufacturer-sourced groups with valid explicit types."""
+    groups = product.get('outlet_groups')
+    if not isinstance(groups, list) or not isinstance(product.get('manufacturer'), str):
+        return []
+    verified = []
+    for group in groups:
+        if not isinstance(group, dict) or group.get('manufacturer_verified') is not True:
+            continue
+        sanitized = _group(group, product.get('manufacturer'))
+        if sanitized:
+            verified.append(sanitized)
+    keys = [(group['type'], group['power']) for group in verified]
+    return [group for group in verified if keys.count((group['type'], group['power'])) == 1]
+
+
+def _verified_battery_outlet_groups(product):
+    """Return explicitly battery-backed socket groups, or None without evidence."""
+    groups = [group for group in _verified_outlet_groups(product) if group['power'] == 'battery']
+    if not groups or sum(group['count'] for group in groups) > 10000:
+        return None
+    return [group for group in groups if group.get('type') != 'HARDWIRE']
+
+
+def _verified_rating(product, field):
+    """A recorded capacity is usable for sizing only with verified provenance."""
+    if field not in {'rating_w', 'rating_va'} or product.get(field + '_verified') is not True:
+        return None
+    source = product.get(field + '_source')
+    url = source.get('url') if isinstance(source, dict) else None
+    value = _number(product.get(field))
+    return value if is_manufacturer_url(product.get('manufacturer'), url) and value and value > 0 else None
+
+
+def _verified_identity(product):
+    source = product.get('identity_source')
+    url = source.get('url') if isinstance(source, dict) else None
+    sku = product.get('manufacturer_sku')
+    if has_unverified_bundle(product):
+        return False
+    return (product.get('identity_verified') is True and isinstance(sku, str) and bool(sku.strip())
+            and is_manufacturer_url(product.get('manufacturer'), url))
+
+
+def _verified_battery_outlet_count(product):
+    """Count verified backup sockets; exclude hardwired terminals and unknowns."""
+    groups = _verified_battery_outlet_groups(product)
+    return None if groups is None else sum(group['count'] for group in groups)
+
+
+def _verified_runtime_curves(product):
+    """Return valid, explicitly sourced manufacturer battery configurations."""
+    configurations = product.get('battery_configurations')
+    manufacturer = product.get('manufacturer')
+    if not isinstance(configurations, list) or not isinstance(manufacturer, str):
+        return []
+    valid = []
+    seen = set()
+    ids = [config.get('id') for config in configurations if isinstance(config, dict)
+           and isinstance(config.get('id'), str)]
+    duplicates = {identifier for identifier in ids if ids.count(identifier) > 1}
+    for config in configurations:
+        if not isinstance(config, dict) or config.get('manufacturer_verified') is not True:
+            continue
+        identifier = config.get('id')
+        if not isinstance(identifier, str) or identifier in seen or identifier in duplicates:
+            continue
+        verified = _configuration(config, manufacturer, _verified_rating(product, 'rating_w'))
+        if verified is None:
+            continue
+        seen.add(identifier)
+        valid.append({'configurationId': identifier, 'batteryConfiguration': verified['label'],
+                      'points': verified['points'], 'source': verified['source'],
+                      'conditions': verified.get('conditions'),
+                      'includedPacks': verified['includedPacks'], 'extraPacks': verified['extraPacks']})
+    return valid
+
+
+def _verified_runtime_curve(product, configuration_id=None):
+    """Select one manufacturer curve without guessing between configurations."""
+    valid = _verified_runtime_curves(product)
+    if configuration_id is None:
+        return valid[0] if len(valid) == 1 else None
+    return next((curve for curve in valid if curve['configurationId'] == configuration_id), None)
+
+
 def _source_curve(facts, source_w, source):
     full = facts.get('full_runtime')
     half = facts.get('half_runtime')
@@ -348,13 +439,26 @@ def _is_ups_cost_source(relative_path, locator, raw_text):
     return not any(marker in context for marker in service_markers)
 
 
+def _read_verified_evidence_records():
+    path = Path(__file__).with_name('manufacturer_verified_facts.json')
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError('Verified manufacturer evidence catalog is unreadable') from error
+    if not isinstance(data, dict) or data.get('version') != 1 or not isinstance(data.get('records'), list):
+        raise ValueError('Unsupported verified manufacturer evidence catalog')
+    return data['records']
+
+
 def _build_inventory(connection):
     if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='published_models'").fetchone():
         try:
             from .published_catalog import load_published_inventory
         except ImportError:
             from published_catalog import load_published_inventory
-        return load_published_inventory(connection)
+        return apply_verified_evidence(load_published_inventory(connection), _read_verified_evidence_records())
     products = {}
     query = '''SELECT p.id,p.manufacturer_id,p.model,p.sku,p.description,p.product_type,m.name AS manufacturer,
         ps.id AS source_id,ps.raw_json,ps.raw_text,ps.source_locator,sf.relative_path,
@@ -507,7 +611,8 @@ def _build_inventory(connection):
             product['warnings'].append('Reseller price currency is not recorded; amount is shown without an assumed currency')
         if product['estimated_cost'] and product['estimated_cost']['sourceDate'] is None:
             product['warnings'].append('Source price date is not recorded; estimate may be historical')
-    return [product for product in products.values() if product['id'] not in removed_alias_ids]
+    inventory = [product for product in products.values() if product['id'] not in removed_alias_ids]
+    return apply_verified_evidence(inventory, _read_verified_evidence_records())
 
 
 def _read_curve_catalog(curve_catalog):
@@ -563,6 +668,22 @@ def _apply_manufacturer_curves(products, curve_catalog):
             source = entry.get('source')
             if not isinstance(source, dict) or not source.get('url'):
                 continue
+            if entry.get('identityVerified') is True and entry_sku and entry_sku == product.get('sku'):
+                record = {'manufacturer': product['manufacturer'], 'catalogSku': entry_sku,
+                          'manufacturerSku': entry_sku, 'category': 'UPS', 'identitySource': source}
+                for field, flag, key in (('ratingWatts', 'ratingWattsVerified', 'ratedWatts'),
+                                         ('ratingVa', 'ratingVaVerified', 'ratedVa')):
+                    if entry.get(flag) is True:
+                        record[field] = entry.get(key)
+                        record['ratingSource'] = source
+                for field in ('outletGroups', 'batteryConfigurations'):
+                    values = entry.get(field)
+                    if isinstance(values, list):
+                        record[field] = [{**value, 'source': value.get('source') or source}
+                                         for value in values if isinstance(value, dict)]
+                verified = apply_verified_evidence([product], [record])[0]
+                product.clear()
+                product.update(verified)
             previous = product['runtime_curve']
             if previous and previous['points'] != normalized_points:
                 product['warnings'].append('Official manufacturer runtime table overrides a differing local source curve')
@@ -582,10 +703,20 @@ def _apply_manufacturer_curves(products, curve_catalog):
                     product['manufacturer_outlet_source'] = source
             matches += 1
             break
+    # Legacy overlays must never re-certify an unresolved manufacturer conflict.
+    validated = apply_verified_evidence(products, [])
+    for original, safe in zip(products, validated):
+        original.clear()
+        original.update(safe)
     return matches
 
 
 def _price_scores(candidates):
+    if any(any(config.get('extraPacks') for config in candidate.get('verified_runtime_configurations', []))
+           for candidate in candidates):
+        for candidate in candidates:
+            candidate['scores']['price'] = None
+        return False, 'Extra battery pack prices are unknown; UPS-only prices cannot rank complete configurations.'
     priced = [candidate for candidate in candidates if candidate['estimated_cost']]
     currencies = {candidate['estimated_cost']['currency'] for candidate in priced}
     vat_treatments = {candidate['estimated_cost']['vatTreatment'] for candidate in priced}
@@ -597,10 +728,12 @@ def _price_scores(candidates):
         for candidate in candidates:
             candidate['scores']['price'] = None
         return False, 'Price efficiency is not scored because explicit comparable currencies are unavailable.'
-    if 'unknown' in vat_treatments or len(vat_treatments) != 1:
+    # This single-model ranking uses raw prices; inclusive offers cannot be
+    # treated as ex-VAT until they are normalized using verified rate and dates.
+    if vat_treatments != {'exclusive'}:
         for candidate in candidates:
             candidate['scores']['price'] = None
-        return False, 'Price efficiency is not scored because VAT treatments are unknown or differ.'
+        return False, 'Price efficiency is not scored unless all compared prices exclude VAT.'
     cost_per_watt = {
         candidate['id']: candidate['estimated_cost']['decimal'] / Decimal(str(candidate['rating_w']))
         for candidate in priced if candidate['rating_w']
@@ -629,11 +762,15 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
     excluded_missing_capacity = 0
     excluded_margin = 0
     excluded_non_ups_accessory = 0
+    excluded_unverified_identity = 0
     for product in inventory:
         if product['non_ups_reason']:
             excluded_non_ups_accessory += 1
             continue
-        rating_w, rating_va = product['rating_w'], product['rating_va']
+        if not _verified_identity(product):
+            excluded_unverified_identity += 1
+            continue
+        rating_w, rating_va = _verified_rating(product, 'rating_w'), _verified_rating(product, 'rating_va')
         if not rating_w or not rating_va:
             excluded_missing_capacity += 1
             continue
@@ -649,11 +786,12 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
             excluded_margin += 1
             continue
         margin = min(margin_w, margin_va)
-        curve = product['runtime_curve']
+        curves = _verified_runtime_curves(product)
+        curve = curves[0] if len(curves) == 1 else None
         runtime = _interpolate_runtime(curve['points'], load['watts']) if curve else None
         runtime_requirement = load['runtimeRequirementMinutes']
         runtime_status = 'unknown' if runtime is None else 'meets_runtime' if runtime >= runtime_requirement else 'below_runtime_requirement'
-        outlet_count = product['outlet_count']
+        outlet_count = _verified_battery_outlet_count(product)
         outlet_score = None if outlet_count is None else 100.0 if load['requiredOutlets'] == 0 else min(100.0, 100 * outlet_count / load['requiredOutlets'])
         runtime_score = None if runtime is None else min(100.0, 100 * runtime / runtime_requirement)
         expansion_score = None if product['external_battery_supported'] is None else 100.0 if product['external_battery_supported'] else 0.0
@@ -666,6 +804,8 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
         }
         candidate = {
             **product,
+            'outlet_count': outlet_count,
+            'total_outlet_count': product.get('outlet_count'),
             'engineering_margin': {'watts_percent': round(margin_w_percent, 2), 'va_percent': round(margin_va_percent, 2),
                                    'minimum_percent': round(margin * 100, 2)},
             'estimated_runtime_minutes': None if runtime is None else round(runtime, 2),
@@ -674,6 +814,7 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
             'outlet_shortfall': None if outlet_count is None else max(0, load['requiredOutlets'] - outlet_count),
             'scores': scores,
             'runtime_curve': curve,
+            'verified_runtime_configurations': curves,
         }
         candidates.append(candidate)
 
@@ -702,9 +843,9 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
         else:
             reasons.append(f"Source-curve runtime estimate {candidate['estimated_runtime_minutes']:.1f} min is below the {load['runtimeRequirementMinutes']:.1f} min requirement.")
         if candidate['outlet_count'] is None:
-            reasons.append('Outlet count is not present in the source record.')
+            reasons.append('The number of battery-backed outlets is not verified.')
         else:
-            reasons.append(f"Outlet count {candidate['outlet_count']} for {load['requiredOutlets']} device plugs; no outlet allocation is performed.")
+            reasons.append(f"Verified battery-backed outlet count {candidate['outlet_count']} for {load['requiredOutlets']} device plugs; no outlet allocation is performed.")
         cost = candidate['estimated_cost']
         if cost:
             reasons.append(f"Lowest explicit NDP/Dealer source amount is {cost['amount']} ({cost['currency'] or 'currency unknown'}; {cost['vatTreatment']} VAT treatment).")
@@ -737,9 +878,9 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
         if cost:
             estimated_cost = {key: value for key, value in cost.items() if key != 'decimal' and key != 'kind'}
             estimated_cost['basis'] = cost['kind']
-        outlet_evidence = evidence_refs('outletEvidence')
-        if candidate.get('manufacturer_outlet_source'):
-            outlet_evidence.append(candidate['manufacturer_outlet_source'])
+            estimated_cost['excludesBatteryPacks'] = any(
+                config.get('extraPacks') for config in candidate['verified_runtime_configurations'])
+        outlet_evidence = [group['source'] for group in _verified_battery_outlet_groups(candidate) or []]
         recommendations.append({
             'rank': rank,
             'productId': candidate['id'], 'manufacturer': candidate['manufacturer'],
@@ -754,8 +895,8 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
             'runtimeStatus': candidate['runtime_status'],
             'runtimeCurve': candidate['runtime_curve'],
             'technicalEvidence': {
-                'ratingVa': evidence_refs('ratingVaEvidence'),
-                'ratingWatts': evidence_refs('ratingWEvidence'),
+                'ratingVa': [candidate['rating_va_source']],
+                'ratingWatts': [candidate['rating_w_source']],
                 'runtimeCurve': ([candidate['runtime_curve']['source']] if candidate['runtime_curve'] else []),
                 'outlets': outlet_evidence,
                 'expansion': evidence_refs('expansionEvidence'),
@@ -794,6 +935,7 @@ def recommend_from_connection(connection, request, limit=TOP_N, curve_catalog=No
             'missingCapacity': excluded_missing_capacity,
             'belowMinimumMargin': excluded_margin,
             'nonUpsAccessory': excluded_non_ups_accessory,
+            'unverifiedIdentity': excluded_unverified_identity,
         },
         'recommendations': recommendations,
         'recommendedUps': recommendations[0] if recommendations else None,

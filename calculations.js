@@ -9,6 +9,7 @@
     const MAX_DEVICES = 500;
     const MAX_DEVICE_NAME_LENGTH = 160;
     const MAX_IMPORT_FILE_BYTES = 1_000_000;
+    const MAX_PLUG_GROUPS = 100;
 
     function utf8ByteLength(text) {
         let bytes = 0;
@@ -127,6 +128,35 @@
         return number;
     }
 
+    function normalizePlugGroups(groups, totalPlugs) {
+        const total = finiteNumber(totalPlugs);
+        if (total === null || !decimalInputMatchesNumber(totalPlugs, total)
+            || !Number.isSafeInteger(total) || total < 1) {
+            throw new Error('ตรวจสอบจำนวนปลั๊กต่อเครื่อง');
+        }
+        if (groups === undefined) return [{ connector: null, count: total }];
+        if (!Array.isArray(groups) || !groups.length || groups.length > MAX_PLUG_GROUPS) {
+            throw new Error('ตรวจสอบกลุ่มชนิดหัวต่อและจำนวนปลั๊ก');
+        }
+        let countSum = 0;
+        const normalized = groups.map(group => {
+            if (!group || typeof group !== 'object' || Array.isArray(group)
+                || ![null, 'IEC_C14', 'IEC_C20', 'NEMA_5_15P'].includes(group.connector)) {
+                throw new Error('ชนิดหัวต่อปลั๊กไม่ถูกต้อง');
+            }
+            const count = finiteNumber(group.count);
+            if (count === null || !decimalInputMatchesNumber(group.count, count)
+                || !Number.isSafeInteger(count) || count < 1) {
+                throw new Error('จำนวนปลั๊กในแต่ละกลุ่มต้องเป็นจำนวนเต็มบวก');
+            }
+            countSum += count;
+            if (!Number.isSafeInteger(countSum)) throw new Error('จำนวนปลั๊กรวมมากเกินไป');
+            return { connector: group.connector, count };
+        });
+        if (countSum !== total) throw new Error('จำนวนปลั๊กแต่ละชนิดรวมกันต้องเท่ากับจำนวนปลั๊กต่อเครื่อง');
+        return normalized;
+    }
+
     function calculateLoadBreakdown(inputDevices, forecastValue, forecastUnit) {
         if (!Array.isArray(inputDevices)) {
             return { devices: [], deviceLoad: 0, forecastWatt: 0, totalLoad: 0, totalPlugs: 0, precisionInvalidTarget: null, invalidPlugIndex: null, invalidQuantityIndex: null, valid: false };
@@ -171,7 +201,7 @@
             }
             const wattsNumerator = unit === 'VA' ? loadFraction.numerator * 4n : loadFraction.numerator;
             const wattsDenominator = unit === 'VA' ? loadFraction.denominator * 5n : loadFraction.denominator;
-            const rawPlugs = device.plugs === undefined || device.plugs === null || device.plugs === '' ? 1 : device.plugs;
+            const rawPlugs = device.plugs === undefined || device.plugs === null ? 1 : device.plugs;
             const plugs = finiteNumber(rawPlugs);
             if (plugs === null || !decimalInputMatchesNumber(rawPlugs, plugs)
                 || !Number.isSafeInteger(plugs) || plugs < 1) {
@@ -206,6 +236,15 @@
                 return;
             }
             const normalized = { name: String(device.name ?? ''), load, unit, quantity, watts: roundedWatts, plugs };
+            if (device.plugGroups !== undefined) {
+                try {
+                    normalized.plugGroups = normalizePlugGroups(device.plugGroups, plugs);
+                } catch (_) {
+                    inputsValid = false;
+                    invalidPlugIndex ??= index;
+                    return;
+                }
+            }
             devices.push(normalized);
             deviceLoadMicroWatts = nextDeviceLoadMicroWatts;
             deviceLoad = nextDeviceLoad;
@@ -558,7 +597,7 @@
         }
         if (data.devices.length > MAX_DEVICES) throw invalidImport(`ไฟล์มีอุปกรณ์เกินขีดจำกัด ${MAX_DEVICES} รายการ`);
         if (data.version !== undefined && data.version !== null) {
-            if (typeof data.version !== 'string' || !/^1\.[0-6]$/.test(data.version)) {
+            if (typeof data.version !== 'string' || !/^1\.[0-7]$/.test(data.version)) {
                 throw invalidImport(`ไม่รองรับเวอร์ชันไฟล์ ${String(data.version)}`);
             }
         }
@@ -596,7 +635,15 @@
                 || plugs < 1 || !['W', 'VA'].includes(device.unit ?? 'W')) {
                 throw invalidImport('ข้อมูลโหลดหรือจำนวนปลั๊กไม่ถูกต้อง');
             }
-            return { name: String(device.name ?? ''), load, unit: device.unit ?? 'W', quantity, plugs };
+            const normalized = { name: String(device.name ?? ''), load, unit: device.unit ?? 'W', quantity, plugs };
+            if (device.plugGroups !== undefined) {
+                try {
+                    normalized.plugGroups = normalizePlugGroups(device.plugGroups, plugs);
+                } catch (error) {
+                    throw invalidImport(error.message);
+                }
+            }
+            return normalized;
         });
         const sourceSettings = data.settings === undefined || data.settings === null ? {} : data.settings;
         if (typeof sourceSettings !== 'object' || Array.isArray(sourceSettings)) throw invalidImport('ค่าตั้งค่าแบตเตอรี่ไม่ถูกต้อง');
@@ -753,7 +800,8 @@
             }
         }
         return {
-            version: '1.6', appName: 'UPS Picker', exportDate: exportDate.toISOString(),
+            version: devices.some(device => device.plugGroups !== undefined) ? '1.7' : '1.6',
+            appName: 'UPS Picker', exportDate: exportDate.toISOString(),
             mode: exportMode, runtimeSource: exportRuntimeSource,
             devices: devices.map(device => ({
                 ...device,
@@ -766,5 +814,5 @@
         };
     }
 
-    return { calculateLoadBreakdown, calculateBatteryAh, resolveActiveBatterySettings, isBelowAhResolution, isAhRequirementBeyondOutputRange, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, parseImportJson, normalizeImportData, buildExportData, MAX_DEVICES, MAX_DEVICE_NAME_LENGTH, MAX_IMPORT_FILE_BYTES };
+    return { calculateLoadBreakdown, normalizePlugGroups, calculateBatteryAh, resolveActiveBatterySettings, isBelowAhResolution, isAhRequirementBeyondOutputRange, calculateRuntimeMinutes, buildRuntimeCurve, parseRuntimeCurveCsv, calculateRuntimeFromCurve, buildManufacturerRuntimeCurve, runtimeCurveImportFailureMessage, normalizeRuntimeCurveData, runtimeCurveMetadataMatches, recommendUpsVA, planOutlets, escapeHtml, parseImportJson, normalizeImportData, buildExportData, MAX_DEVICES, MAX_DEVICE_NAME_LENGTH, MAX_IMPORT_FILE_BYTES, MAX_PLUG_GROUPS };
 }));

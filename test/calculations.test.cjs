@@ -31,6 +31,50 @@ test('multiplies per-device W and VA by device quantity before Forecast and outl
     ]);
 });
 
+test('preserves connector groups while calculating the same device load and outlet total', () => {
+    const plugGroups = [{ connector: 'IEC_C14', count: 1 }, { connector: null, count: 1 }];
+    const result = calculations.calculateLoadBreakdown([
+        { name: 'Server', load: 120, unit: 'W', quantity: 3, plugs: 2, plugGroups },
+    ], 10, '%');
+    assert.equal(result.valid, true);
+    assert.equal(result.deviceLoad, 360);
+    assert.equal(result.totalLoad, 396);
+    assert.equal(result.totalPlugs, 6);
+    assert.deepEqual(result.devices[0].plugGroups, plugGroups);
+});
+
+test('rejects a blank or inconsistent connector quantity instead of assuming one plug', () => {
+    for (const device of [
+        { load: 100, unit: 'W', plugs: '' },
+        { load: 100, unit: 'W', plugs: 2, plugGroups: [{ connector: null, count: 1 }] },
+    ]) {
+        const result = calculations.calculateLoadBreakdown([device], 0, '%');
+        assert.equal(result.valid, false);
+        assert.equal(result.invalidPlugIndex, 0);
+    }
+});
+
+test('validates imported connector groups while keeping older files compatible', () => {
+    const plugGroups = [{ connector: 'IEC_C20', count: 1 }, { connector: null, count: 1 }];
+    const imported = calculations.normalizeImportData({
+        version: '1.7', mode: 'basic',
+        devices: [{ name: 'Server', load: 120, unit: 'W', plugs: 2, plugGroups }], calculatedData: {},
+    });
+    assert.deepEqual(imported.devices[0].plugGroups, plugGroups);
+    const legacy = calculations.normalizeImportData({
+        version: '1.6', devices: [{ name: 'Old', load: 100, unit: 'W', plugs: 1 }], calculatedData: {},
+    });
+    assert.equal(legacy.devices[0].plugs, 1);
+    assert.equal(legacy.devices[0].plugGroups, undefined);
+    for (const groups of [[], [{ connector: 'UNIVERSAL', count: 2 }], [{ connector: null, count: 1 }],
+        [{ connector: 'IEC_C14', count: '1.00000000000000001' }, { connector: null, count: 1 }]]) {
+        assert.throws(() => calculations.normalizeImportData({
+            version: '1.7', devices: [{ name: 'Bad', load: 100, unit: 'W', plugs: 2, plugGroups: groups }],
+            calculatedData: {},
+        }), { name: 'InvalidImportDataError' });
+    }
+});
+
 test('keeps displayed load, Forecast, and total aligned at six-decimal precision', () => {
     const roundedComponents = calculations.calculateLoadBreakdown([
         { name: 'Precise', load: 100.0000004, unit: 'W', plugs: 1 },

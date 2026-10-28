@@ -5,10 +5,13 @@ import json
 import sqlite3
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_recommendation_engine import seed_catalog
+from verified_fixture import verified_curve
+from verified_evidence import MANUFACTURER_DOMAINS
 
 try:
     from allocation_engine import AllocationInputError, allocate_from_connection
@@ -19,29 +22,20 @@ except ImportError:
 
 class AllocationEngineTests(unittest.TestCase):
     def setUp(self):
+        domains = patch.dict(MANUFACTURER_DOMAINS, {'test vendor': ('vendor.example',)})
+        domains.start()
+        self.addCleanup(domains.stop)
         self.connection = sqlite3.connect(':memory:', isolation_level=None)
         self.catalog = seed_catalog(self.connection)
         self.ups1 = self.catalog['products'][0]
         self.ups2 = self.catalog['products'][1]
         self.curves = [
-            {
-                'manufacturer': 'Test Vendor', 'model': 'UPS-1', 'sku': 'UPS-1',
-                'points': [
-                    {'loadW': 1, 'runtimeMinutes': 60},
-                    {'loadW': 700, 'runtimeMinutes': 20},
-                ],
-                'outletCount': 4,
-                'source': {'url': 'https://vendor.example/ups-1-runtime.pdf'},
-            },
-            {
-                'manufacturer': 'Test Vendor', 'model': 'UPS-2', 'sku': 'UPS-2',
-                'points': [
-                    {'loadW': 1, 'runtimeMinutes': 70},
-                    {'loadW': 800, 'runtimeMinutes': 25},
-                ],
-                'outletCount': 5,
-                'source': {'url': 'https://vendor.example/ups-2-runtime.pdf'},
-            },
+            verified_curve('UPS-1', 700, 900, 4,
+                           [{'loadW': 1, 'runtimeMinutes': 60},
+                            {'loadW': 700, 'runtimeMinutes': 20}]),
+            verified_curve('UPS-2', 800, 1000, 5,
+                           [{'loadW': 1, 'runtimeMinutes': 70},
+                            {'loadW': 800, 'runtimeMinutes': 25}]),
         ]
 
     def tearDown(self):
@@ -123,6 +117,205 @@ class AllocationEngineTests(unittest.TestCase):
         self.assertFalse(result['validation']['outletValid'])
         self.assertIn('increase_verified_outlets', [row['code'] for row in result['engineeringRecommendations']])
 
+    def test_total_outlets_without_battery_backup_evidence_cannot_allocate(self):
+        # An outlet count alone does not say which sockets have battery backup.
+        curve = {**self.curves[0]}
+        curve.pop('outletGroups')
+        result = self.allocate(self.request(), curve_catalog=[curve])
+        self.assertFalse(result['validation']['isValid'])
+        self.assertEqual([], result['deviceAllocations'])
+        self.assertIn('outlet_unknown', result['unassignedDevices'][0]['reasons'])
+
+    def test_unverified_identity_cannot_allocate_even_with_backed_outlets(self):
+        curve = {**self.curves[0], 'identityVerified': False, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 4},
+        ]}
+        result = self.allocate(self.request(), curve_catalog=[curve])
+        self.assertFalse(result['validation']['isValid'])
+        self.assertEqual([], result['deviceAllocations'])
+        self.assertIn('identity_unverified', result['unassignedDevices'][0]['reasons'])
+
+    def test_legacy_runtime_without_verified_battery_configuration_cannot_allocate(self):
+        curve = {**self.curves[0], 'identityVerified': True, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 4},
+        ]}
+        curve.pop('batteryConfigurations')
+        result = self.allocate(self.request(), curve_catalog=[curve])
+        self.assertFalse(result['validation']['isValid'])
+        self.assertEqual([], result['deviceAllocations'])
+        self.assertIn('runtime_unknown', result['unassignedDevices'][0]['reasons'])
+
+    def test_same_model_can_use_two_distinct_verified_battery_configurations(self):
+        curve = {**self.curves[0], 'identityVerified': True,
+                 'ratingWattsVerified': True, 'ratedWatts': 700,
+                 'ratingVaVerified': True, 'ratedVa': 900, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 4},
+        ], 'batteryConfigurations': [
+            {'id': 'internal', 'manufacturer_verified': True, 'label': 'Internal', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+             'includedPacks': [], 'extraPacks': []},
+            {'id': 'plus-one', 'manufacturer_verified': True, 'label': 'Internal plus one pack', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 120}, {'loadW': 700, 'runtimeMinutes': 40}],
+             'includedPacks': [], 'extraPacks': [{'sku': 'EBM-1', 'quantity': 1}]},
+        ]}
+        request = self.request(selected_ups={'mode': 'fixed', 'models': [
+            {'productId': self.ups1, 'batteryConfigId': 'internal', 'quantity': 1},
+            {'productId': self.ups1, 'batteryConfigId': 'plus-one', 'quantity': 1},
+        ]}, devices=[{'name': 'Server', 'quantity': 2, 'watt': 400, 'va': 500, 'priority': 1}])
+        try:
+            result = self.allocate(request, curve_catalog=[curve])
+        except AllocationInputError as error:
+            self.fail(f'distinct configurations of the same model were rejected: {error}')
+        self.assertTrue(result['validation']['isValid'])
+        self.assertEqual({'internal', 'plus-one'},
+                         {unit['batteryConfigId'] for unit in result['upsUtilization']})
+        self.assertEqual(2, len(result['deviceAllocations']))
+
+    def test_two_plugs_of_one_device_stay_on_one_ups_and_use_two_sockets(self):
+        curve = {**self.curves[0], 'identityVerified': True,
+                 'ratingWattsVerified': True, 'ratedWatts': 700,
+                 'ratingVaVerified': True, 'ratedVa': 900, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 4},
+        ], 'batteryConfigurations': [{
+            'id': 'internal', 'manufacturer_verified': True, 'label': 'Internal', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+            'includedPacks': [], 'extraPacks': [],
+        }]}
+        result = self.allocate(self.request(devices=[{
+            'name': 'Dual PSU server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 1,
+            'plugs': [{'connector': 'IEC_C14', 'count': 2}],
+        }]), curve_catalog=[curve])
+        self.assertTrue(result['validation']['isValid'])
+        self.assertEqual(1, len(result['deviceAllocations']))
+        self.assertEqual(2, len(result['outletAllocations']))
+        self.assertEqual(1, len({row['upsUnitId'] for row in result['outletAllocations']}))
+        self.assertEqual({'IEC_C13'}, {row['outletType'] for row in result['outletAllocations']})
+
+    def test_connector_mismatch_and_unknown_type_never_pass_as_verified(self):
+        for outlet_type, expected in [('IEC_C13', 'connector_mismatch'), (None, 'connector_unknown')]:
+            with self.subTest(outlet_type=outlet_type):
+                curve = {**self.curves[0], 'identityVerified': True,
+                         'ratingWattsVerified': True, 'ratedWatts': 700,
+                         'ratingVaVerified': True, 'ratedVa': 900, 'outletGroups': [
+                    {'type': outlet_type, 'power': 'battery', 'manufacturer_verified': True, 'count': 4},
+                ], 'batteryConfigurations': [{
+                    'id': 'internal', 'manufacturer_verified': True, 'label': 'Internal', 'points': [
+                        {'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+                    'includedPacks': [], 'extraPacks': [],
+                }]}
+                result = self.allocate(self.request(devices=[{
+                    'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 1,
+                    'plugs': [{'connector': 'IEC_C20', 'count': 1}],
+                }]), curve_catalog=[curve])
+                self.assertFalse(result['validation']['isValid'])
+                self.assertIn(expected, result['unassignedDevices'][0]['reasons'])
+
+    def test_unspecified_connector_is_labeled_unchecked(self):
+        curve = {**self.curves[0], 'identityVerified': True,
+                 'ratingWattsVerified': True, 'ratedWatts': 700,
+                 'ratingVaVerified': True, 'ratedVa': 900, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 4},
+        ], 'batteryConfigurations': [{
+            'id': 'internal', 'manufacturer_verified': True, 'label': 'Internal', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+            'includedPacks': [], 'extraPacks': [],
+        }]}
+        result = self.allocate(self.request(), curve_catalog=[curve])
+        self.assertTrue(result['validation']['isValid'])
+        self.assertEqual('not_checked', result['outletAllocations'][0]['compatibilityStatus'])
+
+    def test_untyped_plug_does_not_consume_socket_needed_by_a_later_typed_plug(self):
+        curve = {**self.curves[0], 'identityVerified': True,
+                 'ratingWattsVerified': True, 'ratedWatts': 700,
+                 'ratingVaVerified': True, 'ratedVa': 900, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 1},
+            {'type': 'IEC_C19', 'power': 'battery', 'manufacturer_verified': True, 'count': 1},
+        ], 'batteryConfigurations': [{
+            'id': 'internal', 'manufacturer_verified': True, 'label': 'Internal', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+            'includedPacks': [], 'extraPacks': [],
+        }]}
+        result = self.allocate(self.request(devices=[
+            {'name': 'Unspecified', 'quantity': 1, 'watt': 100, 'va': 125, 'priority': 1},
+            {'name': 'C14 device', 'quantity': 1, 'watt': 100, 'va': 125, 'priority': 1,
+             'plugs': [{'connector': 'IEC_C14', 'count': 1}]},
+        ]), curve_catalog=[curve])
+        self.assertTrue(result['validation']['isValid'])
+        typed = next(row for row in result['outletAllocations'] if row['deviceName'] == 'C14 device')
+        self.assertEqual('IEC_C13', typed['outletType'])
+
+    def test_unverified_capacity_cannot_pass_even_if_legacy_values_exist(self):
+        curve = {**self.curves[0], 'identityVerified': True, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 4},
+        ], 'batteryConfigurations': [{
+            'id': 'internal', 'manufacturer_verified': True, 'label': 'Internal', 'points': [
+                {'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+            'includedPacks': [], 'extraPacks': [],
+        }]}
+        curve.pop('ratingWattsVerified')
+        curve.pop('ratingVaVerified')
+        result = self.allocate(self.request(), curve_catalog=[curve])
+        self.assertFalse(result['validation']['isValid'])
+        reasons = result['unassignedDevices'][0]['reasons']
+        self.assertIn('watt_capacity_unknown', reasons)
+        self.assertIn('va_capacity_unknown', reasons)
+
+    def test_invalid_connector_types_are_rejected_as_input_errors(self):
+        for connector in ([], {}, True, 123):
+            with self.subTest(connector=connector):
+                try:
+                    self.allocate(self.request(devices=[{
+                        'name': 'Server', 'quantity': 1, 'watt': 100, 'va': 125, 'priority': 1,
+                        'plugs': [{'connector': connector, 'count': 1}],
+                    }]))
+                except Exception as error:
+                    self.assertIsInstance(error, AllocationInputError)
+                else:
+                    self.fail('Invalid connector was accepted')
+
+    def test_unmarked_backup_and_runtime_metadata_cannot_self_certify(self):
+        self.connection.execute('''CREATE TABLE published_models
+            (product_id INTEGER PRIMARY KEY,manufacturer TEXT,model TEXT,sku TEXT,
+             rating_w REAL,rating_va REAL,outlet_count INTEGER,model_json TEXT NOT NULL)''')
+        item = {'id': 99, 'manufacturer': 'APC', 'model': 'UPS-99', 'sku': 'UPS-99',
+                'identity_verified': True, 'manufacturer_sku': 'UPS-99',
+                'identity_source': {'url': 'https://www.se.com/product/ups-99'},
+                'rating_w': 700, 'rating_va': 900,
+                'rating_w_verified': True, 'rating_va_verified': True,
+                'rating_w_source': {'url': 'https://www.se.com/spec/ups-99'},
+                'rating_va_source': {'url': 'https://www.se.com/spec/ups-99'},
+                'outlet_count': 4,
+                'outlet_groups': [{'type': 'IEC_C13', 'power': 'battery', 'count': 4,
+                                   'source': {'url': 'https://www.se.com/spec/ups-99'}}],
+                'battery_configurations': [{'id': 'internal', 'label': 'Internal',
+                    'points': [{'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+                    'source': {'url': 'https://www.se.com/runtime/ups-99'},
+                    'includedPacks': [], 'extraPacks': []}],
+                'non_ups_reason': None, 'prices': [], 'estimated_cost': None,
+                'warnings': [], 'evidence': []}
+        self.connection.execute('INSERT INTO published_models VALUES(?,?,?,?,?,?,?,?)',
+                                (99, 'APC', 'UPS-99', 'UPS-99', 700, 900, 4, json.dumps(item)))
+        result = self.allocate(self.request(selected_ups={
+            'mode': 'fixed', 'models': [{'productId': 99, 'quantity': 1}]}), curve_catalog=[])
+        self.assertFalse(result['validation']['isValid'])
+        reasons = result['unassignedDevices'][0]['reasons']
+        self.assertIn('outlet_unknown', reasons)
+        self.assertIn('runtime_unknown', reasons)
+
+    def test_missing_extra_battery_list_is_not_assumed_to_be_empty(self):
+        curve = {**self.curves[0], 'identityVerified': True,
+                 'ratingWattsVerified': True, 'ratedWatts': 700,
+                 'ratingVaVerified': True, 'ratedVa': 900, 'outletGroups': [
+            {'type': 'IEC_C13', 'power': 'battery', 'manufacturer_verified': True, 'count': 4},
+        ], 'batteryConfigurations': [{
+            'id': 'external', 'label': 'External battery', 'manufacturer_verified': True,
+            'points': [{'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 700, 'runtimeMinutes': 20}],
+            'includedPacks': [],
+        }]}
+        result = self.allocate(self.request(), curve_catalog=[curve])
+        self.assertFalse(result['validation']['isValid'])
+        self.assertIn('runtime_unknown', result['unassignedDevices'][0]['reasons'])
+
     def test_reports_watt_shortage_when_outlets_are_sufficient(self):
         result = self.allocate(self.request(devices=[
             {'name': 'PoE switch', 'quantity': 2, 'watt': 300, 'va': 375, 'priority': 1},
@@ -145,9 +338,11 @@ class AllocationEngineTests(unittest.TestCase):
         self.assertIn('select_verified_runtime', [row['code'] for row in result['engineeringRecommendations']])
 
     def test_unknown_runtime_without_curve_blocks_device_placement(self):
+        curve = {**self.curves[0]}
+        curve.pop('batteryConfigurations')
         result = self.allocate(self.request(
             devices=[{'name': 'Router', 'quantity': 1, 'watt': 200, 'va': 250, 'priority': 1}],
-        ), curve_catalog=[])
+        ), curve_catalog=[curve])
         self.assertEqual([], result['deviceAllocations'])
         self.assertEqual(['runtime_unknown'], result['unassignedDevices'][0]['reasons'])
         self.assertFalse(result['validation']['runtimeValid'])
@@ -163,11 +358,11 @@ class AllocationEngineTests(unittest.TestCase):
              json.dumps({'manufacturer': 'Test Vendor', 'model': 'NO-OUTLETS', 'sku': 'NO-OUTLETS'}))).lastrowid
         self.connection.execute('''INSERT INTO product_specifications
             (product_source_id,rating_va,rating_w) VALUES (?,?,?)''', (source_id, 1000, 800))
-        curve = {
-            'manufacturer': 'Test Vendor', 'model': 'NO-OUTLETS', 'sku': 'NO-OUTLETS',
-            'points': [{'loadW': 1, 'runtimeMinutes': 60}, {'loadW': 800, 'runtimeMinutes': 20}],
-            'source': {'url': 'https://vendor.example/no-outlets-runtime.pdf'},
-        }
+        curve = verified_curve('NO-OUTLETS', 800, 1000, 4,
+                               [{'loadW': 1, 'runtimeMinutes': 60},
+                                {'loadW': 800, 'runtimeMinutes': 20}])
+        curve.pop('outletGroups')
+        curve.pop('outletCount')
         result = self.allocate(self.request(
             selected_ups={'mode': 'fixed', 'models': [{'productId': product_id, 'quantity': 1}]},
             devices=[{'name': 'Server', 'quantity': 1, 'watt': 400, 'va': 500, 'priority': 1}],
@@ -177,10 +372,12 @@ class AllocationEngineTests(unittest.TestCase):
         self.assertFalse(result['validation']['outletValid'])
 
     def test_auto_mode_does_not_call_unknown_runtime_an_overload(self):
+        curve = {**self.curves[0]}
+        curve.pop('batteryConfigurations')
         result = self.allocate(self.request(
             selected_ups={'mode': 'auto', 'models': [{'productId': self.ups1}]},
             devices=[{'name': 'Router', 'quantity': 1, 'watt': 200, 'va': 250, 'priority': 1}],
-        ), curve_catalog=[])
+        ), curve_catalog=[curve])
         self.assertEqual([], result['deviceAllocations'])
         self.assertFalse(result['capacityReport']['overloaded'])
         self.assertEqual(['select_verified_runtime'], [row['code'] for row in result['engineeringRecommendations']])
@@ -273,8 +470,11 @@ class AllocationEngineTests(unittest.TestCase):
             selected_ups={'mode': 'fixed', 'models': [{'productId': product_id, 'quantity': 2}]},
             devices=[{'name': 'Small load', 'quantity': 1, 'watt': 100, 'va': 125, 'priority': 1}],
         )
+        curve = verified_curve('BIG-UPS', 1e308, 1e308, 4,
+                               [{'loadW': 1, 'runtimeMinutes': 60},
+                                {'loadW': 1e308, 'runtimeMinutes': 20}])
         with self.assertRaisesRegex(AllocationInputError, 'finite JSON number range'):
-            self.allocate(request)
+            self.allocate(request, curve_catalog=[curve])
 
 
 if __name__ == '__main__':

@@ -75,6 +75,22 @@ test('export saves the device quantity in schema 1.6 and restores its calculated
     assert.equal(calculations.calculateLoadBreakdown(restored.devices, 0, '%').deviceLoad, 360);
 });
 
+test('export and import preserve different connector groups for the same device', async () => {
+    const plugGroups = [{ connector: 'IEC_C14', count: 1 }, { connector: 'NEMA_5_15P', count: 1 }];
+    const fixture = exportFixture(undefined, [
+        { name: 'Server', load: 120, unit: 'W', quantity: 2, plugs: 2, plugGroups },
+    ]);
+    await fixture.run();
+    const encoded = fixture.anchors[0].href.slice('data:application/json;charset=utf-8,'.length);
+    const exported = JSON.parse(decodeURIComponent(encoded));
+    assert.equal(exported.version, '1.7');
+    assert.equal(exported.calculatedData.deviceLoad, 240);
+    assert.deepEqual(exported.devices[0].plugGroups, plugGroups);
+    const restored = calculations.normalizeImportData(exported);
+    assert.deepEqual(restored.devices[0].plugGroups, plugGroups);
+    assert.equal(restored.devices[0].quantity, 2);
+});
+
 test('export aborts a failed writable before starting its download fallback', async () => {
     const fixture = exportFixture(async () => ({ createWritable: async () => ({
         async write() { fixture.events.push('write'); throw new Error('disk write failed'); },
