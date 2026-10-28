@@ -262,6 +262,7 @@ class VerifiedEvidenceTests(unittest.TestCase):
         brands = [
             ('APC', 'https://apc.com/spec'),
             ('APC', 'https://support.schneider-electric.com/spec'),
+            ('APC', 'https://www.merten.de/produkt/example.html'),
             ('Eaton', 'https://www.eaton.com/spec'),
             ('Eaton', 'https://assets.tripplite.com/cad-drawing/example.pdf'),
             ('CyberPower', 'https://support.cyberpower.com/spec'),
@@ -290,6 +291,14 @@ class VerifiedEvidenceTests(unittest.TestCase):
         self.assertFalse(validator('Eaton', 'https://sub.assets.tripplite.com/example.pdf'))
         self.assertFalse(validator('Eaton', 'https://other.tripplite.com/example.pdf'))
         self.assertFalse(validator('APC', 'https://assets.tripplite.com/cad-drawing/example.pdf'))
+
+    def test_apc_merten_source_requires_the_exact_schneider_host(self):
+        validator = evidence_module.is_manufacturer_url
+        self.assertTrue(validator('APC', 'https://www.merten.de/produkt/example.html'))
+        self.assertFalse(validator('APC', 'https://www.merten.de.attacker.test/example'))
+        self.assertFalse(validator('APC', 'https://sub.www.merten.de/example'))
+        self.assertFalse(validator('APC', 'https://other.merten.de/example'))
+        self.assertFalse(validator('Eaton', 'https://www.merten.de/produkt/example.html'))
 
     def test_public_url_validator_uses_patchable_manufacturer_allowlist(self):
         validator = getattr(evidence_module, 'is_manufacturer_url', None)
