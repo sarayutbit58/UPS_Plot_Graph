@@ -172,6 +172,26 @@
         return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
     }
 
+    const lifecycleRegions = {
+        thailand: 'th', 'kingdom of thailand': 'th', th: 'th', tha: 'th',
+        singapore: 'sg', indonesia: 'id', malaysia: 'my', india: 'in',
+        'south africa': 'za', belgium: 'be', 'united states': 'us', 'united kingdom': 'uk',
+        italy: 'it', netherlands: 'nl', germany: 'de', egypt: 'eg', australia: 'au',
+        'new zealand': 'nz', france: 'fr', philippines: 'ph', vietnam: 'vn', myanmar: 'mm',
+    };
+
+    function matchesLifecycleProduct(link, manufacturerSku, region) {
+        if (typeof manufacturerSku !== 'string' || !manufacturerSku || !region) return false;
+        try {
+            const path = decodeURIComponent(new URL(link.href).pathname);
+            const parts = path.replace(/^\/+|\/+$/g, '').split('/');
+            return !path.includes('\\') && !parts.some(part => part === '.' || part === '..')
+                && parts.length >= 4 && parts[0].toLowerCase() === region
+                && parts[2].toLowerCase() === 'product'
+                && parts[3].toLowerCase() === manufacturerSku.toLowerCase();
+        } catch (_) { return false; }
+    }
+
     function renderConfiguration(model, config, title, selection, onChange, onError) {
         const configId = config ? config.id : null;
         const configLabel = config ? String(config.label || config.id) : 'ยังไม่มีชุดแบตเตอรี่ที่ยืนยัน';
@@ -287,21 +307,28 @@
             }
             const observations = Array.isArray(model.lifecycleObservations) ? model.lifecycleObservations : [];
             observations.forEach(observation => {
-                if (!observation || typeof observation !== 'object'
+                if (model.identityVerified !== true || !observation || typeof observation !== 'object'
                         || typeof observation.country !== 'string'
                         || observation.country !== observation.country.trim()
                         || !observation.country || observation.country.length > 80
-                        || /[<>/\\\x00-\x1f\x7f]/.test(observation.country)
-                        || ['th', 'tha', 'thailand', 'ไทย', 'ประเทศไทย'].includes(observation.country.toLowerCase())
+                        || !/^[A-Za-z]+(?:[ -][A-Za-z]+)*$/.test(observation.country)
                         || observation.thailandStatus !== 'unknown'
                         || !validIsoDate(observation.endOfSaleDate) || !validIsoDate(observation.observedOn)
+                        || observation.observedOn > new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
                         || !observation.source || (observation.source.page != null
                             && (!Number.isSafeInteger(observation.source.page) || observation.source.page < 1))) return;
                 const link = manufacturerLink(observation.source);
                 if (!link) return;
+                const region = lifecycleRegions[observation.country.toLowerCase()];
+                if (!matchesLifecycleProduct(link, model.manufacturerSku, region)) return;
+                const isThailand = region === 'th';
                 const note = node('p', 'text-sm text-amber-800 mt-2',
-                    'ผู้ผลิตกำหนดวันสิ้นสุดการขายใน ' + observation.country + ' ' + observation.endOfSaleDate
-                    + ' · สถานะ/สต็อกไทยยังไม่ทราบ · ข้อมูล ณ ' + observation.observedOn + ' · ');
+                    (isThailand
+                        ? 'ผู้ผลิตกำหนดวันสิ้นสุดการขายในประเทศไทย ' + observation.endOfSaleDate
+                            + ' · สต็อกและการจำหน่ายจริงต้องตรวจสอบ'
+                        : 'ผู้ผลิตกำหนดวันสิ้นสุดการขายใน ' + observation.country + ' ' + observation.endOfSaleDate
+                            + ' · สถานะ/สต็อกไทยยังไม่ทราบ')
+                    + ' · ข้อมูล ณ ' + observation.observedOn + ' · ');
                 note.appendChild(link);
                 card.appendChild(note);
             });

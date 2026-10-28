@@ -186,11 +186,12 @@ test('catalog qualifies a Singapore end-of-sale observation and leaves Thailand 
     global.document = { createElement: fakeNode };
     t.after(() => { global.document = previous; });
     const target = fakeNode('section');
-    catalog.render(target, { models: [{ productId: 19, manufacturer: 'APC', model: 'Example', status: 'unknown',
+    catalog.render(target, { models: [{ productId: 19, manufacturer: 'APC', model: 'Example',
+        manufacturerSku: 'UPS-1', status: 'unknown',
         identityVerified: true, ratingsVerified: {}, batteryBackupOutletCount: null, checks: {}, expansion: {},
         price: null, canOptimize: false, batteryConfigurations: [], lifecycleObservations: [{
             country: 'Singapore', endOfSaleDate: '2025-12-31', observedOn: '2026-10-28', thailandStatus: 'unknown',
-            source: { url: 'https://www.se.com/sg/en/product/spec.pdf', page: 4 },
+            source: { url: 'https://www.se.com/sg/en/product/UPS-1', page: 4 },
         }] }] }, catalog.createSelection(), () => {}, error => { throw new Error(error); });
     const nodes = descendants(target);
     const text = nodes.map(node => node.textContent).join(' ');
@@ -198,7 +199,46 @@ test('catalog qualifies a Singapore end-of-sale observation and leaves Thailand 
     assert.match(text, /สถานะ\/สต็อกไทยยังไม่ทราบ/);
     assert.match(text, /2026-10-28/);
     assert.doesNotMatch(text, /ไทย.*เลิกขาย|ไทย.*ไม่มีสต็อก/);
-    assert.equal(nodes.find(node => node.tag === 'a').href, 'https://www.se.com/sg/en/product/spec.pdf#page=4');
+    assert.equal(nodes.find(node => node.tag === 'a').href, 'https://www.se.com/sg/en/product/UPS-1#page=4');
+});
+
+test('catalog displays a Thailand end-of-sale notice only with a Thai regional source', t => {
+    const previous = global.document;
+    global.document = { createElement: fakeNode };
+    t.after(() => { global.document = previous; });
+    const target = fakeNode('section');
+    catalog.render(target, { models: [{ productId: 19, manufacturer: 'APC', model: 'Example',
+        manufacturerSku: 'UPS-1', status: 'unknown',
+        identityVerified: true, ratingsVerified: {}, batteryBackupOutletCount: null, checks: {}, expansion: {},
+        price: null, canOptimize: false, batteryConfigurations: [], lifecycleObservations: [{
+            country: 'Thailand', endOfSaleDate: '2026-06-18', observedOn: '2026-10-28', thailandStatus: 'unknown',
+            source: { url: 'https://www.se.com/th/en/product/ups-1' },
+        }, {
+            country: 'Thailand', endOfSaleDate: '2026-05-01', observedOn: '2026-10-28', thailandStatus: 'unknown',
+            source: { url: 'https://www.se.com/th/en/product/OTHER-999' },
+        }] }] }, catalog.createSelection(), () => {}, error => { throw new Error(error); });
+    const nodes = descendants(target);
+    const text = nodes.map(node => node.textContent).join(' ');
+    assert.match(text, /สิ้นสุดการขายในประเทศไทย.*2026-06-18/);
+    assert.match(text, /สต็อก.*ตรวจสอบ/);
+    assert.doesNotMatch(text, /ไทยยังไม่ทราบ/);
+    assert.doesNotMatch(text, /2026-05-01/);
+    assert.equal(nodes.find(node => node.tag === 'a').href, 'https://www.se.com/th/en/product/ups-1');
+});
+
+test('catalog hides lifecycle notices when the product identity is unverified', t => {
+    const previous = global.document;
+    global.document = { createElement: fakeNode };
+    t.after(() => { global.document = previous; });
+    const target = fakeNode('section');
+    catalog.render(target, { models: [{ productId: 19, manufacturer: 'APC', model: 'Example',
+        manufacturerSku: 'UPS-1', identityVerified: false, status: 'unknown', ratingsVerified: {},
+        batteryBackupOutletCount: null, checks: {}, expansion: {}, price: null, canOptimize: false,
+        batteryConfigurations: [], lifecycleObservations: [{
+            country: 'Thailand', endOfSaleDate: '2026-06-18', observedOn: '2026-10-28', thailandStatus: 'unknown',
+            source: { url: 'https://www.se.com/th/en/product/UPS-1' },
+        }] }] }, catalog.createSelection(), () => {}, error => { throw new Error(error); });
+    assert.doesNotMatch(descendants(target).map(node => node.textContent).join(' '), /สิ้นสุดการขาย/);
 });
 
 test('catalog discards malformed lifecycle observations rather than asserting availability', t => {
@@ -209,8 +249,11 @@ test('catalog discards malformed lifecycle observations rather than asserting av
     const valid = { country: 'Singapore', endOfSaleDate: '2025-12-31', observedOn: '2026-10-28',
         thailandStatus: 'unknown', source: { url: 'https://www.se.com/spec.pdf', page: 4 } };
     const observations = [null, {}, { ...valid, country: '' }, { ...valid, country: '<img src=x>' },
-        { ...valid, country: 'Thailand' }, { ...valid, endOfSaleDate: '2026-02-30' },
-        { ...valid, observedOn: 'unknown' }, { ...valid, thailandStatus: 'end_of_sale' },
+        { ...valid, country: 'Thailand' }, { ...valid, country: 'Thailand.' },
+        { ...valid, country: 'Kingdom of Thailand', source: { url: 'https://www.se.com/sg/en/product/UPS-1' } },
+        { ...valid, endOfSaleDate: '2026-02-30' },
+        { ...valid, observedOn: 'unknown' }, { ...valid, observedOn: '2099-01-01' },
+        { ...valid, thailandStatus: 'end_of_sale' },
         { ...valid, source: { url: 'javascript:alert(1)' } },
         { ...valid, source: { url: 'https://www.se.com/spec.pdf', page: 0 } }];
     catalog.render(target, { models: [{ productId: 19, manufacturer: 'APC', model: 'Example', status: 'unknown',

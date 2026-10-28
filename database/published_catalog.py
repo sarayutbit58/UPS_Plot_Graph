@@ -102,7 +102,9 @@ def project_model(product, include_prices=False):
     result['identity_source'] = _source(product.get('identity_source'))
     lifecycle = product.get('lifecycle_observations')
     result['lifecycle_observations'] = [
-        observation for value in lifecycle if (observation := _lifecycle_observation(value, product.get('manufacturer')))
+        observation for value in lifecycle if (observation := _lifecycle_observation(
+            value, product.get('manufacturer'), product.get('manufacturer_sku')
+            if product.get('identity_verified') is True else None))
     ] if isinstance(lifecycle, list) and isinstance(product.get('manufacturer'), str) else []
     crosswalk = product.get('identity_crosswalk')
     if isinstance(crosswalk, dict) and re.fullmatch(r'[0-9a-f]{24}', str(crosswalk.get('sourceId') or '')):

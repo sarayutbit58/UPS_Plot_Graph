@@ -95,7 +95,7 @@ class VerifiedCatalogIntegrationTests(unittest.TestCase):
         candidate = record()
         candidate['lifecycleObservation'] = {
             'country': 'Singapore', 'endOfSaleDate': '2023-03-03', 'observedOn': '2026-10-28',
-            'thailandStatus': 'unknown', 'source': {'url': 'https://www.se.com/sg/product/ups-1'}}
+            'thailandStatus': 'unknown', 'source': {'url': 'https://www.se.com/sg/en/product/ups-1'}}
         with patch('recommendation_engine._read_verified_evidence_records', create=True,
                    return_value=[candidate]):
             result = search_catalog_from_connection(connection, {
@@ -105,6 +105,47 @@ class VerifiedCatalogIntegrationTests(unittest.TestCase):
         observations = result['models'][0].get('lifecycleObservations') or []
         self.assertEqual('Singapore', observations[0]['country'] if observations else None)
         self.assertEqual('unknown', observations[0]['thailandStatus'])
+
+    def test_malformed_lifecycle_list_is_ignored_without_breaking_search(self):
+        connection = sqlite3.connect(':memory:')
+        self.addCleanup(connection.close)
+        connection.executescript(SCHEMA)
+        projected = project_model(product(), include_prices=True)
+        projected['lifecycle_observations'] = 42
+        connection.execute('INSERT INTO published_models VALUES(?,?,?,?,?,?,?,?)',
+                           (1, 'APC', 'UPS-1', 'UPS-1', 800, 1000, 9, json.dumps(projected)))
+        with patch('recommendation_engine._read_verified_evidence_records', create=True,
+                   return_value=[record()]):
+            result = search_catalog_from_connection(connection, {
+                'requiredWatts': 600, 'requiredVa': 700, 'requiredOutlets': 2,
+                'runtimeRequirementMinutes': 5, 'headroomPercent': 0,
+            }, curve_catalog=[])
+        self.assertEqual([], result['models'][0]['lifecycleObservations'])
+
+    def test_unverified_bundle_does_not_receive_a_definitive_lifecycle_notice(self):
+        connection = sqlite3.connect(':memory:')
+        self.addCleanup(connection.close)
+        connection.executescript(SCHEMA)
+        item = product()
+        item['warnings'].append('Combined a model-only catalogue row with its exact manufacturer-SKU row')
+        projected = project_model(item, include_prices=True)
+        connection.execute('INSERT INTO published_models VALUES(?,?,?,?,?,?,?,?)',
+                           (1, 'APC', 'UPS-1', 'UPS-1', 800, 1000, 9, json.dumps(projected)))
+        candidate = record()
+        candidate['lifecycleObservation'] = {
+            'country': 'Thailand', 'endOfSaleDate': '2026-06-18', 'observedOn': '2026-10-28',
+            'source': {'url': 'https://www.se.com/th/en/product/UPS-1'}}
+        with patch('recommendation_engine._read_verified_evidence_records', create=True,
+                   return_value=[candidate]):
+            result = search_catalog_from_connection(connection, {
+                'query': 'UPS-1', 'mode': 'nearby', 'includeUnknown': True,
+                'requiredWatts': 600, 'requiredVa': 700, 'requiredOutlets': 2,
+                'runtimeRequirementMinutes': 5, 'headroomPercent': 0,
+            }, curve_catalog=[])
+        model = result['models'][0]
+        self.assertFalse(model['identityVerified'])
+        self.assertIsNone(model['manufacturerSku'])
+        self.assertEqual([], model['lifecycleObservations'])
 
 
 if __name__ == '__main__':
