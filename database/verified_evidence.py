@@ -15,7 +15,8 @@ from urllib.parse import unquote, urlsplit
 
 
 MANUFACTURER_DOMAINS = {
-    'apc': ('se.com', 'apc.com', 'schneider-electric.com'),
+    # Merten is a Schneider Electric brand; accept its product site only.
+    'apc': ('se.com', 'apc.com', 'schneider-electric.com', 'www.merten.de'),
     'schneider electric': ('se.com', 'schneider-electric.com'),
     # Eaton acquired Tripp Lite; its official asset host serves Eaton drawings.
     'eaton': ('eaton.com', 'assets.tripplite.com'),
@@ -24,7 +25,7 @@ MANUFACTURER_DOMAINS = {
     'syndome': ('syndome.com', 'syndome.co.th'),
     'vertiv': ('vertiv.com',),
 }
-_EXACT_ONLY_MANUFACTURER_HOSTS = frozenset({'assets.tripplite.com'})
+_EXACT_ONLY_MANUFACTURER_HOSTS = frozenset({'assets.tripplite.com', 'www.merten.de'})
 _CATEGORIES = {'UPS', 'voltage_regulator', 'inverter'}
 _OUTLET_TYPES = {None, 'IEC_C13', 'IEC_C19', 'NEMA_5_15R', 'UNIVERSAL', 'AS', 'HARDWIRE'}
 _OUTLET_POWERS = {'battery', 'surge', 'unknown'}
