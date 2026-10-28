@@ -236,6 +236,7 @@ def search_catalog_from_connection(connection, request, curve_catalog=None):
         row = {
             'productId': product['id'], 'manufacturer': product['manufacturer'],
             'model': product['model'], 'sku': product['sku'],
+            'manufacturerSku': product.get('manufacturer_sku') if identity_verified else None,
             'identityVerified': identity_verified,
             'ratings': {'watts': product['rating_w'], 'va': product['rating_va']},
             'ratingsVerified': {'watts': rating_w is not None, 'va': rating_va is not None},
@@ -249,9 +250,11 @@ def search_catalog_from_connection(connection, request, curve_catalog=None):
             'batteryBackupOutletCount': backed_outlets,
             'outletGroups': _verified_outlet_groups(product),
             'lifecycleObservations': [
-                observation for value in (product.get('lifecycle_observations') or [])
-                if (observation := _lifecycle_observation(value, product.get('manufacturer')))
-            ] if isinstance(product.get('manufacturer'), str) else [],
+                observation for value in product['lifecycle_observations']
+                if (observation := _lifecycle_observation(value, product.get('manufacturer'),
+                    product.get('manufacturer_sku') if identity_verified else None))
+            ] if isinstance(product.get('manufacturer'), str)
+                 and isinstance(product.get('lifecycle_observations'), list) else [],
             'batteryConfigurations': [{
                 'id': item['configurationId'], 'label': item['batteryConfiguration'],
                 'includedPacks': item['includedPacks'], 'extraPacks': item['extraPacks'],

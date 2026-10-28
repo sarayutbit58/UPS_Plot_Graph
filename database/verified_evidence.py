@@ -6,26 +6,41 @@ names. Prices and legacy source observations are preserved in the deep copy.
 
 from copy import deepcopy
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import math
 import re
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 MANUFACTURER_DOMAINS = {
     'apc': ('se.com', 'apc.com', 'schneider-electric.com'),
     'schneider electric': ('se.com', 'schneider-electric.com'),
-    'eaton': ('eaton.com',),
+    # Eaton acquired Tripp Lite; its official asset host serves Eaton drawings.
+    'eaton': ('eaton.com', 'assets.tripplite.com'),
     'cyberpower': ('cyberpower.com', 'cyberpowersystems.com'),
     'delta': ('deltaww.com', 'deltapowersolutions.com'),
     'syndome': ('syndome.com', 'syndome.co.th'),
     'vertiv': ('vertiv.com',),
 }
+_EXACT_ONLY_MANUFACTURER_HOSTS = frozenset({'assets.tripplite.com'})
 _CATEGORIES = {'UPS', 'voltage_regulator', 'inverter'}
 _OUTLET_TYPES = {None, 'IEC_C13', 'IEC_C19', 'NEMA_5_15R', 'UNIVERSAL', 'AS', 'HARDWIRE'}
 _OUTLET_POWERS = {'battery', 'surge', 'unknown'}
+_LIFECYCLE_REGIONS = {
+    'thailand': ('Thailand', 'th'), 'kingdom of thailand': ('Thailand', 'th'),
+    'th': ('Thailand', 'th'), 'tha': ('Thailand', 'th'),
+    'singapore': ('Singapore', 'sg'), 'indonesia': ('Indonesia', 'id'),
+    'malaysia': ('Malaysia', 'my'), 'india': ('India', 'in'),
+    'south africa': ('South Africa', 'za'), 'belgium': ('Belgium', 'be'),
+    'united states': ('United States', 'us'), 'united kingdom': ('United Kingdom', 'uk'),
+    'italy': ('Italy', 'it'), 'netherlands': ('Netherlands', 'nl'),
+    'germany': ('Germany', 'de'), 'egypt': ('Egypt', 'eg'),
+    'australia': ('Australia', 'au'), 'new zealand': ('New Zealand', 'nz'),
+    'france': ('France', 'fr'), 'philippines': ('Philippines', 'ph'),
+    'vietnam': ('Vietnam', 'vn'), 'myanmar': ('Myanmar', 'mm'),
+}
 
 
 def _text(value, limit=300):
@@ -52,7 +67,8 @@ def _source(value, manufacturer):
                                    for label in host.split('.'))):
             return None
         domains = MANUFACTURER_DOMAINS.get(manufacturer.casefold(), ())
-        if not any(host == domain or host.endswith('.' + domain) for domain in domains):
+        if not any(host == domain or (domain not in _EXACT_ONLY_MANUFACTURER_HOSTS
+                                     and host.endswith('.' + domain)) for domain in domains):
             return None
     except (TypeError, ValueError):
         return None
@@ -249,13 +265,14 @@ def _packs(value):
     return packs
 
 
-def _lifecycle_observation(value, manufacturer):
-    """Preserve a regional manufacturer notice without inferring Thai status."""
+def _lifecycle_observation(value, manufacturer, manufacturer_sku=None):
+    """Keep a notice only when its regional product URL matches the exact SKU."""
     if not isinstance(value, dict) or not _text(value.get('country'), 80):
         return None
-    country = value['country']
-    if not re.fullmatch(r'[A-Za-z][A-Za-z .-]{0,79}', country):
+    region = _LIFECYCLE_REGIONS.get(value['country'].casefold())
+    if not region or not _text(manufacturer_sku):
         return None
+    country, code = region
     source = _source(value.get('source'), manufacturer)
     dates = {}
     for key in ('endOfSaleDate', 'observedOn'):
@@ -267,6 +284,16 @@ def _lifecycle_observation(value, manufacturer):
         except ValueError:
             return None
     if not source:
+        return None
+    if date.fromisoformat(dates['observedOn']) > datetime.now(timezone(timedelta(hours=7))).date():
+        return None
+    path = urlsplit(source['url']).path
+    decoded = unquote(path)
+    segments = decoded.strip('/').split('/')
+    if (not path.casefold().startswith('/' + code + '/') or '\\' in decoded
+            or any(segment in {'.', '..'} for segment in segments) or len(segments) < 4
+            or segments[0].casefold() != code or segments[2].casefold() != 'product'
+            or segments[3].casefold() != manufacturer_sku.casefold()):
         return None
     return {'country': country, **dates, 'thailandStatus': 'unknown', 'source': source}
 
@@ -516,7 +543,8 @@ def apply_verified_evidence(inventory, records):
             _history(product, 'identity_source', [product['identity_source']])
         product['identity_source'] = identity_source
         product['product_category'] = record['category']
-        observation = _lifecycle_observation(record.get('lifecycleObservation'), manufacturer)
+        observation = _lifecycle_observation(record.get('lifecycleObservation'), manufacturer,
+                                             record.get('manufacturerSku'))
         if observation:
             observations = product.setdefault('lifecycle_observations', [])
             if isinstance(observations, list) and observation not in observations:

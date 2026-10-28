@@ -263,6 +263,7 @@ class VerifiedEvidenceTests(unittest.TestCase):
             ('APC', 'https://apc.com/spec'),
             ('APC', 'https://support.schneider-electric.com/spec'),
             ('Eaton', 'https://www.eaton.com/spec'),
+            ('Eaton', 'https://assets.tripplite.com/cad-drawing/example.pdf'),
             ('CyberPower', 'https://support.cyberpower.com/spec'),
             ('CyberPower', 'https://www.cyberpowersystems.com/spec'),
             ('Delta', 'https://www.deltaww.com/spec'),
@@ -281,6 +282,14 @@ class VerifiedEvidenceTests(unittest.TestCase):
                 result = self.apply([product(manufacturer=brand)], [candidate])[0]
                 self.assertTrue(result['identity_verified'])
                 self.assertTrue(result['rating_w_verified'])
+
+    def test_eaton_tripp_lite_asset_domain_does_not_allow_lookalikes(self):
+        validator = evidence_module.is_manufacturer_url
+        self.assertTrue(validator('Eaton', 'https://assets.tripplite.com/cad-drawing/example.pdf'))
+        self.assertFalse(validator('Eaton', 'https://assets.tripplite.com.attacker.test/example.pdf'))
+        self.assertFalse(validator('Eaton', 'https://sub.assets.tripplite.com/example.pdf'))
+        self.assertFalse(validator('Eaton', 'https://other.tripplite.com/example.pdf'))
+        self.assertFalse(validator('APC', 'https://assets.tripplite.com/cad-drawing/example.pdf'))
 
     def test_public_url_validator_uses_patchable_manufacturer_allowlist(self):
         validator = getattr(evidence_module, 'is_manufacturer_url', None)
